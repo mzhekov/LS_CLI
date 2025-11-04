@@ -43,6 +43,7 @@ NAV_ITEMS = [
     ("Network Map", "🗺️", "5"),
     ("Search", "🔍", "6"),
     ("Tags", "🏷️", "7"),
+    ("Workshop", "🔧", "8"),
     ("Exit", "❌", "q")
 ]
 
@@ -105,6 +106,10 @@ def interactive_main_menu():
             tags_menu()
             current_view = "Dashboard"
             continue
+        elif current_view == "Workshop":
+            workshop_menu()
+            current_view = "Dashboard"
+            continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
@@ -112,7 +117,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-6) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-8) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -2605,3 +2610,859 @@ def delete_company_relationship():
 
     questionary.press_any_key_to_continue().ask()
     session.close()
+
+
+def workshop_menu():
+    """Workshop - Analysis and problem-solving tools"""
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[1] Network Health", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[2] Key Connectors", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[3] Isolated Nodes", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[4] Relationship Health", style="magenta")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[5] Gap Analysis", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[6] Recommendations", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold cyan]🔧 Workshop - Analysis Tools[/]",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+        console.print()
+        
+        console.print(Panel(
+            "[bold yellow]Problem-Solving Toolkit[/]\n"
+            "[dim]Analyze your network, identify issues, and get actionable recommendations[/]",
+            border_style="yellow",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        console.print("[dim]Tip: Just press Enter to go back[/]")
+        console.print()
+
+        # Action prompt
+        action = questionary.text(
+            "Select tool (1-6):",
+            style=custom_style
+        ).ask()
+
+        if action is None:
+            break
+
+        action = action.strip()
+
+        # Empty input = back to dashboard
+        if action == '' or action == 'back':
+            break
+
+        if action == '1':
+            analyze_network_health(session)
+        elif action == '2':
+            find_key_connectors(session)
+        elif action == '3':
+            find_isolated_nodes(session)
+        elif action == '4':
+            relationship_health_check(session)
+        elif action == '5':
+            gap_analysis(session)
+        elif action == '6':
+            get_recommendations(session)
+        else:
+            console.print("[yellow]Invalid option. Try again.[/]")
+            time.sleep(1)
+
+    session.close()
+
+
+def analyze_network_health(session):
+    """Analyze overall network health and provide metrics"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+
+    console.clear()
+    console.print(Panel(
+        "[bold green]🏥 Network Health Analysis[/]\n"
+        "[dim]Overall state of your professional network[/]",
+        border_style="green"
+    ))
+    console.print()
+
+    # Gather data
+    profiles = session.query(Profile).all()
+    companies = session.query(Company).all()
+    profile_rels = session.query(ProfileRelationship).all()
+    company_rels = session.query(CompanyRelationship).all()
+
+    if not profiles:
+        console.print("[yellow]No data to analyze. Add some profiles first![/]")
+        questionary.press_any_key_to_continue().ask()
+        return
+
+    # Calculate metrics
+    total_nodes = len(profiles) + len(companies)
+    total_relationships = len(profile_rels) + len(company_rels)
+
+    # Connection density
+    max_possible_profile_connections = len(profiles) * (len(profiles) - 1) / 2 if len(profiles) > 1 else 1
+    profile_density = (len(profile_rels) / max_possible_profile_connections * 100) if max_possible_profile_connections > 0 else 0
+
+    # Relationship status distribution
+    good_rels = len([r for r in profile_rels + company_rels if r.status == "Good"])
+    bad_rels = len([r for r in profile_rels + company_rels if r.status == "Bad"])
+    neutral_rels = len([r for r in profile_rels + company_rels if r.status == "No Interest"])
+
+    # Profile completeness
+    complete_profiles = len([p for p in profiles if p.email and p.company_id and p.tags])
+    completeness_rate = (complete_profiles / len(profiles) * 100) if profiles else 0
+
+    # Connected vs isolated
+    connected_profiles = set()
+    for rel in profile_rels:
+        connected_profiles.add(rel.from_profile_id)
+        connected_profiles.add(rel.to_profile_id)
+    for p in profiles:
+        if p.company_id:
+            connected_profiles.add(p.id)
+    
+    isolated_profiles = len(profiles) - len(connected_profiles)
+    connectivity_rate = (len(connected_profiles) / len(profiles) * 100) if profiles else 0
+
+    # Display health metrics
+    console.print("[bold cyan]Network Size:[/]")
+    table = Table(show_header=False, box=box.SIMPLE, border_style="cyan")
+    table.add_column(style="cyan", width=30)
+    table.add_column(style="white")
+    
+    table.add_row("Total Nodes:", f"{total_nodes} ({len(profiles)} profiles, {len(companies)} companies)")
+    table.add_row("Total Relationships:", str(total_relationships))
+    table.add_row("Average Connections:", f"{total_relationships / len(profiles):.1f} per profile" if profiles else "0")
+    
+    console.print(table)
+    console.print()
+
+    # Health scores with color coding
+    console.print("[bold cyan]Health Scores:[/]")
+    health_table = Table(show_header=False, box=box.SIMPLE, border_style="cyan")
+    health_table.add_column(style="cyan", width=30)
+    health_table.add_column(style="white", width=50)
+
+    # Connectivity score
+    if connectivity_rate >= 75:
+        conn_color = "green"
+        conn_status = "Excellent ✓"
+    elif connectivity_rate >= 50:
+        conn_color = "yellow"
+        conn_status = "Good"
+    else:
+        conn_color = "red"
+        conn_status = "Needs Improvement"
+    
+    health_table.add_row("Connectivity:", f"[{conn_color}]{connectivity_rate:.0f}% {conn_status}[/]")
+
+    # Density score
+    if profile_density >= 20:
+        dens_color = "green"
+        dens_status = "Well Connected ✓"
+    elif profile_density >= 10:
+        dens_color = "yellow"
+        dens_status = "Moderate"
+    else:
+        dens_color = "red"
+        dens_status = "Sparse"
+    
+    health_table.add_row("Network Density:", f"[{dens_color}]{profile_density:.1f}% {dens_status}[/]")
+
+    # Completeness score
+    if completeness_rate >= 75:
+        comp_color = "green"
+        comp_status = "Excellent ✓"
+    elif completeness_rate >= 50:
+        comp_color = "yellow"
+        comp_status = "Good"
+    else:
+        comp_color = "red"
+        comp_status = "Needs Work"
+    
+    health_table.add_row("Data Completeness:", f"[{comp_color}]{completeness_rate:.0f}% {comp_status}[/]")
+
+    # Relationship health
+    if total_relationships > 0:
+        good_percentage = (good_rels / total_relationships * 100)
+        if good_percentage >= 75:
+            rel_color = "green"
+            rel_status = "Healthy ✓"
+        elif good_percentage >= 50:
+            rel_color = "yellow"
+            rel_status = "Fair"
+        else:
+            rel_color = "red"
+            rel_status = "Attention Needed"
+        
+        health_table.add_row("Relationship Health:", f"[{rel_color}]{good_percentage:.0f}% positive {rel_status}[/]")
+
+    console.print(health_table)
+    console.print()
+
+    # Issues and alerts
+    issues = []
+    if isolated_profiles > 0:
+        issues.append(f"[red]• {isolated_profiles} isolated profile(s) with no connections[/]")
+    if bad_rels > 0:
+        issues.append(f"[red]• {bad_rels} relationship(s) marked as 'Bad'[/]")
+    if completeness_rate < 50:
+        issues.append(f"[yellow]• Only {complete_profiles}/{len(profiles)} profiles have complete information[/]")
+    if profile_density < 5:
+        issues.append(f"[yellow]• Low network density - consider adding more connections[/]")
+
+    if issues:
+        console.print("[bold red]⚠ Issues Detected:[/]")
+        for issue in issues:
+            console.print(issue)
+        console.print()
+
+    # Overall health score
+    overall_score = (connectivity_rate + completeness_rate + (good_rels / total_relationships * 100 if total_relationships > 0 else 0)) / 3
+    
+    if overall_score >= 75:
+        overall_color = "green"
+        overall_status = "EXCELLENT"
+    elif overall_score >= 50:
+        overall_color = "yellow"
+        overall_status = "GOOD"
+    else:
+        overall_color = "red"
+        overall_status = "NEEDS IMPROVEMENT"
+
+    console.print(Panel(
+        f"[bold {overall_color}]Overall Health Score: {overall_score:.0f}%[/]\n"
+        f"[{overall_color}]Status: {overall_status}[/]",
+        border_style=overall_color,
+        title="[bold]Network Health Summary[/]"
+    ))
+
+    console.print()
+    questionary.press_any_key_to_continue().ask()
+
+
+def find_key_connectors(session):
+    """Identify the most connected and influential people in the network"""
+    from leadsauce.models.relationship import ProfileRelationship
+
+    console.clear()
+    console.print(Panel(
+        "[bold yellow]⭐ Key Connectors Analysis[/]\n"
+        "[dim]Identify your most connected and influential contacts[/]",
+        border_style="yellow"
+    ))
+    console.print()
+
+    profiles = session.query(Profile).all()
+    profile_rels = session.query(ProfileRelationship).all()
+
+    if not profiles:
+        console.print("[yellow]No profiles to analyze.[/]")
+        questionary.press_any_key_to_continue().ask()
+        return
+
+    # Calculate connection counts for each profile
+    connection_counts = {}
+    for profile in profiles:
+        count = 0
+        # Count outgoing relationships
+        count += len([r for r in profile_rels if r.from_profile_id == profile.id])
+        # Count incoming relationships
+        count += len([r for r in profile_rels if r.to_profile_id == profile.id])
+        # Count company connection
+        if profile.company_id:
+            count += 1
+        
+        connection_counts[profile.id] = count
+
+    # Sort by connection count
+    sorted_profiles = sorted(profiles, key=lambda p: connection_counts[p.id], reverse=True)
+
+    # Display top connectors
+    if sorted_profiles:
+        console.print("[bold cyan]🌟 Top Connectors:[/]\n")
+        
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+        table.add_column("Rank", style="dim", width=6)
+        table.add_column("Name", style="cyan")
+        table.add_column("Connections", style="yellow", justify="right")
+        table.add_column("Company", style="green")
+        table.add_column("Seniority", style="blue")
+
+        for i, profile in enumerate(sorted_profiles[:10], 1):
+            company = profile.company.name if profile.company else "-"
+            connections = connection_counts[profile.id]
+            
+            # Add medal emojis for top 3
+            if i == 1:
+                rank = "🥇 1"
+            elif i == 2:
+                rank = "🥈 2"
+            elif i == 3:
+                rank = "🥉 3"
+            else:
+                rank = f"   {i}"
+            
+            table.add_row(rank, profile.name, str(connections), company, profile.seniority.title())
+
+        console.print(table)
+        console.print()
+
+        # Provide insights
+        top_connector = sorted_profiles[0]
+        top_count = connection_counts[top_connector.id]
+        avg_connections = sum(connection_counts.values()) / len(profiles)
+
+        console.print(Panel(
+            f"[bold cyan]Insights:[/]\n"
+            f"• Top connector: [yellow]{top_connector.name}[/] with {top_count} connections\n"
+            f"• Average connections per profile: [yellow]{avg_connections:.1f}[/]\n"
+            f"• These connectors are key influencers in your network",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+
+    console.print()
+    questionary.press_any_key_to_continue().ask()
+
+
+def find_isolated_nodes(session):
+    """Find profiles and companies with no connections"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+
+    console.clear()
+    console.print(Panel(
+        "[bold red]🔴 Isolated Nodes Analysis[/]\n"
+        "[dim]Find contacts and companies with no connections[/]",
+        border_style="red"
+    ))
+    console.print()
+
+    profiles = session.query(Profile).all()
+    companies = session.query(Company).all()
+    profile_rels = session.query(ProfileRelationship).all()
+    company_rels = session.query(CompanyRelationship).all()
+
+    # Find isolated profiles (no relationships and no company)
+    connected_profile_ids = set()
+    for rel in profile_rels:
+        connected_profile_ids.add(rel.from_profile_id)
+        connected_profile_ids.add(rel.to_profile_id)
+    
+    isolated_profiles = [p for p in profiles if p.id not in connected_profile_ids and not p.company_id]
+
+    # Find isolated companies (no employees and no relationships)
+    connected_company_ids = set()
+    for rel in company_rels:
+        connected_company_ids.add(rel.from_company_id)
+        connected_company_ids.add(rel.to_company_id)
+    for p in profiles:
+        if p.company_id:
+            connected_company_ids.add(p.company_id)
+    
+    isolated_companies = [c for c in companies if c.id not in connected_company_ids]
+
+    # Display results
+    if isolated_profiles:
+        console.print(f"[bold red]👤 Isolated Profiles ({len(isolated_profiles)}):[/]\n")
+        
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="red")
+        table.add_column("Name", style="cyan")
+        table.add_column("Seniority", style="yellow")
+        table.add_column("Email", style="white")
+        table.add_column("Tags", style="green")
+
+        for profile in isolated_profiles[:20]:
+            email = profile.email or "-"
+            tags = ", ".join([t.name for t in profile.tags[:2]]) if profile.tags else "-"
+            table.add_row(profile.name, profile.seniority.title(), email, tags)
+
+        console.print(table)
+        console.print()
+
+        if len(isolated_profiles) > 20:
+            console.print(f"[dim]... and {len(isolated_profiles) - 20} more[/]\n")
+
+    if isolated_companies:
+        console.print(f"[bold red]🏢 Isolated Companies ({len(isolated_companies)}):[/]\n")
+        
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="red")
+        table.add_column("Name", style="cyan")
+        table.add_column("Industry", style="yellow")
+        table.add_column("Location", style="white")
+
+        for company in isolated_companies[:20]:
+            industry = company.industry or "-"
+            location = company.location or "-"
+            table.add_row(company.name, industry, location)
+
+        console.print(table)
+        console.print()
+
+    if not isolated_profiles and not isolated_companies:
+        console.print(Panel(
+            "[bold green]✓ No isolated nodes found![/]\n"
+            "[dim]All profiles and companies have at least one connection.[/]",
+            border_style="green"
+        ))
+    else:
+        console.print(Panel(
+            "[bold yellow]Recommendations:[/]\n"
+            f"• Add relationships for isolated profiles\n"
+            f"• Assign companies to profiles without one\n"
+            f"• Consider if these entries are still relevant",
+            border_style="yellow",
+            box=box.SIMPLE
+        ))
+
+    console.print()
+    questionary.press_any_key_to_continue().ask()
+
+
+def relationship_health_check(session):
+    """Analyze relationship health and suggest improvements"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+
+    console.clear()
+    console.print(Panel(
+        "[bold magenta]💔 Relationship Health Check[/]\n"
+        "[dim]Analyze relationship quality and identify issues[/]",
+        border_style="magenta"
+    ))
+    console.print()
+
+    profile_rels = session.query(ProfileRelationship).all()
+    company_rels = session.query(CompanyRelationship).all()
+
+    if not profile_rels and not company_rels:
+        console.print("[yellow]No relationships to analyze.[/]")
+        questionary.press_any_key_to_continue().ask()
+        return
+
+    # Categorize relationships by status
+    bad_profile_rels = [r for r in profile_rels if r.status == "Bad"]
+    bad_company_rels = [r for r in company_rels if r.status == "Bad"]
+    neutral_profile_rels = [r for r in profile_rels if r.status == "No Interest"]
+    neutral_company_rels = [r for r in company_rels if r.status == "No Interest"]
+    good_profile_rels = [r for r in profile_rels if r.status == "Good"]
+    good_company_rels = [r for r in company_rels if r.status == "Good"]
+
+    # Display status distribution
+    console.print("[bold cyan]Relationship Status Distribution:[/]\n")
+    
+    status_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+    status_table.add_column("Status", style="bold")
+    status_table.add_column("Profile Relationships", justify="right")
+    status_table.add_column("Company Relationships", justify="right")
+    status_table.add_column("Total", justify="right", style="bold")
+
+    status_table.add_row(
+        "[green]Good[/]",
+        str(len(good_profile_rels)),
+        str(len(good_company_rels)),
+        str(len(good_profile_rels) + len(good_company_rels))
+    )
+    status_table.add_row(
+        "[red]Bad[/]",
+        str(len(bad_profile_rels)),
+        str(len(bad_company_rels)),
+        str(len(bad_profile_rels) + len(bad_company_rels))
+    )
+    status_table.add_row(
+        "[dim]No Interest[/]",
+        str(len(neutral_profile_rels)),
+        str(len(neutral_company_rels)),
+        str(len(neutral_profile_rels) + len(neutral_company_rels))
+    )
+
+    console.print(status_table)
+    console.print()
+
+    # Show bad relationships that need attention
+    if bad_profile_rels:
+        console.print(f"[bold red]⚠ Bad Profile Relationships ({len(bad_profile_rels)}):[/]\n")
+        
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="red")
+        table.add_column("From", style="cyan")
+        table.add_column("→", style="yellow", width=3)
+        table.add_column("Type", style="yellow")
+        table.add_column("To", style="cyan")
+        table.add_column("Bidirectional", style="white")
+
+        for rel in bad_profile_rels[:10]:
+            arrow = "↔" if rel.bidirectional else "→"
+            bidir = "Yes" if rel.bidirectional else "No"
+            table.add_row(
+                rel.from_profile.name,
+                arrow,
+                rel.relationship_type,
+                rel.to_profile.name,
+                bidir
+            )
+
+        console.print(table)
+        console.print()
+
+    if bad_company_rels:
+        console.print(f"[bold red]⚠ Bad Company Relationships ({len(bad_company_rels)}):[/]\n")
+        
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="red")
+        table.add_column("From", style="cyan")
+        table.add_column("→", style="yellow", width=3)
+        table.add_column("Type", style="yellow")
+        table.add_column("To", style="cyan")
+
+        for rel in bad_company_rels[:10]:
+            arrow = "↔" if rel.bidirectional else "→"
+            table.add_row(
+                rel.from_company.name,
+                arrow,
+                rel.relationship_type,
+                rel.to_company.name
+            )
+
+        console.print(table)
+        console.print()
+
+    # Recommendations
+    recommendations = []
+    if len(bad_profile_rels) > 0:
+        recommendations.append(f"• Review {len(bad_profile_rels)} bad profile relationship(s)")
+    if len(bad_company_rels) > 0:
+        recommendations.append(f"• Review {len(bad_company_rels)} bad company relationship(s)")
+    if len(neutral_profile_rels) + len(neutral_company_rels) > len(profile_rels) + len(company_rels) * 0.3:
+        recommendations.append(f"• High number of 'No Interest' relationships - consider cleanup")
+
+    # One-way relationships that could be bidirectional
+    oneway_profile_rels = [r for r in profile_rels if not r.bidirectional]
+    if oneway_profile_rels:
+        recommendations.append(f"• {len(oneway_profile_rels)} one-way relationships could potentially be bidirectional")
+
+    if recommendations:
+        console.print(Panel(
+            "[bold yellow]Recommendations:[/]\n" + "\n".join(recommendations),
+            border_style="yellow",
+            box=box.SIMPLE
+        ))
+    else:
+        console.print(Panel(
+            "[bold green]✓ All relationships are in good standing![/]",
+            border_style="green"
+        ))
+
+    console.print()
+    questionary.press_any_key_to_continue().ask()
+
+
+def gap_analysis(session):
+    """Identify missing or incomplete data"""
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]📋 Gap Analysis[/]\n"
+        "[dim]Find missing or incomplete information[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    profiles = session.query(Profile).all()
+    companies = session.query(Company).all()
+
+    if not profiles and not companies:
+        console.print("[yellow]No data to analyze.[/]")
+        questionary.press_any_key_to_continue().ask()
+        return
+
+    # Analyze profiles
+    profiles_no_email = [p for p in profiles if not p.email]
+    profiles_no_company = [p for p in profiles if not p.company_id]
+    profiles_no_tags = [p for p in profiles if not p.tags]
+    profiles_no_phone = [p for p in profiles if not p.phone]
+    profiles_incomplete = [p for p in profiles if not p.email or not p.company_id or not p.tags]
+
+    # Analyze companies
+    companies_no_industry = [c for c in companies if not c.industry]
+    companies_no_location = [c for c in companies if not c.location]
+    companies_no_employees = [c for c in companies if not any(p.company_id == c.id for p in profiles)]
+
+    # Display gaps
+    console.print("[bold yellow]📊 Data Completeness:[/]\n")
+
+    gaps_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+    gaps_table.add_column("Category", style="cyan", width=30)
+    gaps_table.add_column("Count", style="yellow", justify="right")
+    gaps_table.add_column("Percentage", style="white", justify="right")
+
+    if profiles:
+        gaps_table.add_row(
+            "Profiles without email",
+            str(len(profiles_no_email)),
+            f"{len(profiles_no_email)/len(profiles)*100:.0f}%"
+        )
+        gaps_table.add_row(
+            "Profiles without company",
+            str(len(profiles_no_company)),
+            f"{len(profiles_no_company)/len(profiles)*100:.0f}%"
+        )
+        gaps_table.add_row(
+            "Profiles without tags",
+            str(len(profiles_no_tags)),
+            f"{len(profiles_no_tags)/len(profiles)*100:.0f}%"
+        )
+        gaps_table.add_row(
+            "Profiles without phone",
+            str(len(profiles_no_phone)),
+            f"{len(profiles_no_phone)/len(profiles)*100:.0f}%"
+        )
+        gaps_table.add_row(
+            "[bold]Incomplete profiles[/]",
+            f"[bold]{len(profiles_incomplete)}[/]",
+            f"[bold]{len(profiles_incomplete)/len(profiles)*100:.0f}%[/]"
+        )
+
+    if companies:
+        gaps_table.add_row(
+            "Companies without industry",
+            str(len(companies_no_industry)),
+            f"{len(companies_no_industry)/len(companies)*100:.0f}%"
+        )
+        gaps_table.add_row(
+            "Companies without location",
+            str(len(companies_no_location)),
+            f"{len(companies_no_location)/len(companies)*100:.0f}%"
+        )
+        gaps_table.add_row(
+            "Companies without employees",
+            str(len(companies_no_employees)),
+            f"{len(companies_no_employees)/len(companies)*100:.0f}%"
+        )
+
+    console.print(gaps_table)
+    console.print()
+
+    # Priority items to fix
+    if profiles_incomplete:
+        console.print(f"[bold red]🔴 High Priority ({len(profiles_incomplete)} profiles):[/]\n")
+        
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="red")
+        table.add_column("Name", style="cyan")
+        table.add_column("Missing", style="yellow")
+
+        for profile in profiles_incomplete[:10]:
+            missing = []
+            if not profile.email:
+                missing.append("email")
+            if not profile.company_id:
+                missing.append("company")
+            if not profile.tags:
+                missing.append("tags")
+            
+            table.add_row(profile.name, ", ".join(missing))
+
+        console.print(table)
+        console.print()
+
+    # Calculate completeness score
+    if profiles:
+        total_fields = len(profiles) * 3  # email, company, tags
+        filled_fields = (len(profiles) - len(profiles_no_email) + 
+                        len(profiles) - len(profiles_no_company) + 
+                        len(profiles) - len(profiles_no_tags))
+        completeness = (filled_fields / total_fields * 100) if total_fields > 0 else 0
+
+        if completeness >= 75:
+            color = "green"
+            status = "Excellent ✓"
+        elif completeness >= 50:
+            color = "yellow"
+            status = "Good"
+        else:
+            color = "red"
+            status = "Needs Improvement"
+
+        console.print(Panel(
+            f"[bold {color}]Data Completeness Score: {completeness:.0f}%[/]\n"
+            f"[{color}]Status: {status}[/]",
+            border_style=color,
+            title="[bold]Overall Score[/]"
+        ))
+
+    console.print()
+    questionary.press_any_key_to_continue().ask()
+
+
+def get_recommendations(session):
+    """Get actionable recommendations based on network analysis"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+
+    console.clear()
+    console.print(Panel(
+        "[bold blue]💡 Smart Recommendations[/]\n"
+        "[dim]Actionable insights to improve your network[/]",
+        border_style="blue"
+    ))
+    console.print()
+
+    profiles = session.query(Profile).all()
+    companies = session.query(Company).all()
+    profile_rels = session.query(ProfileRelationship).all()
+    company_rels = session.query(CompanyRelationship).all()
+
+    if not profiles:
+        console.print("[yellow]No data to analyze. Add some profiles first![/]")
+        questionary.press_any_key_to_continue().ask()
+        return
+
+    recommendations = []
+
+    # 1. Network expansion recommendations
+    connected_profile_ids = set()
+    for rel in profile_rels:
+        connected_profile_ids.add(rel.from_profile_id)
+        connected_profile_ids.add(rel.to_profile_id)
+    
+    isolated_count = len([p for p in profiles if p.id not in connected_profile_ids and not p.company_id])
+    if isolated_count > 0:
+        recommendations.append({
+            'priority': 'HIGH',
+            'category': '🔗 Network Expansion',
+            'action': f'Connect {isolated_count} isolated profile(s)',
+            'benefit': 'Increase network connectivity and discover new opportunities'
+        })
+
+    # 2. Relationship improvement
+    bad_rels = [r for r in profile_rels + company_rels if r.status == "Bad"]
+    if bad_rels:
+        recommendations.append({
+            'priority': 'HIGH',
+            'category': '💔 Relationship Health',
+            'action': f'Review and address {len(bad_rels)} bad relationship(s)',
+            'benefit': 'Repair or remove damaged connections'
+        })
+
+    # 3. Data completeness
+    incomplete_profiles = [p for p in profiles if not p.email or not p.company_id or not p.tags]
+    if len(incomplete_profiles) > len(profiles) * 0.3:
+        recommendations.append({
+            'priority': 'MEDIUM',
+            'category': '📋 Data Quality',
+            'action': f'Complete information for {len(incomplete_profiles)} profile(s)',
+            'benefit': 'Better insights and more effective networking'
+        })
+
+    # 4. Key connector engagement
+    connection_counts = {}
+    for profile in profiles:
+        count = len([r for r in profile_rels if r.from_profile_id == profile.id or r.to_profile_id == profile.id])
+        if profile.company_id:
+            count += 1
+        connection_counts[profile.id] = count
+
+    top_connectors = sorted(profiles, key=lambda p: connection_counts[p.id], reverse=True)[:3]
+    if top_connectors and connection_counts[top_connectors[0].id] > 5:
+        recommendations.append({
+            'priority': 'MEDIUM',
+            'category': '⭐ Strategic Networking',
+            'action': f'Leverage connections through {top_connectors[0].name}',
+            'benefit': 'Access to broader network through key influencer'
+        })
+
+    # 5. Bidirectional opportunity
+    oneway_rels = [r for r in profile_rels if not r.bidirectional and r.status == "Good"]
+    if len(oneway_rels) > 3:
+        recommendations.append({
+            'priority': 'LOW',
+            'category': '↔ Relationship Depth',
+            'action': f'Convert {len(oneway_rels)} one-way to bidirectional relationships',
+            'benefit': 'Strengthen existing connections'
+        })
+
+    # 6. Company clustering
+    company_groups = defaultdict(list)
+    for p in profiles:
+        if p.company_id:
+            company_groups[p.company_id].append(p)
+    
+    large_company_groups = [c for c, ps in company_groups.items() if len(ps) >= 3]
+    if large_company_groups:
+        recommendations.append({
+            'priority': 'LOW',
+            'category': '🏢 Internal Networks',
+            'action': f'Create internal connections within {len(large_company_groups)} organization(s)',
+            'benefit': 'Better understanding of organizational dynamics'
+        })
+
+    # Display recommendations
+    if recommendations:
+        # Group by priority
+        high_priority = [r for r in recommendations if r['priority'] == 'HIGH']
+        medium_priority = [r for r in recommendations if r['priority'] == 'MEDIUM']
+        low_priority = [r for r in recommendations if r['priority'] == 'LOW']
+
+        if high_priority:
+            console.print("[bold red]🔴 High Priority Actions:[/]\n")
+            for rec in high_priority:
+                console.print(Panel(
+                    f"[bold yellow]{rec['category']}[/]\n"
+                    f"[white]{rec['action']}[/]\n\n"
+                    f"[dim]💡 Benefit: {rec['benefit']}[/]",
+                    border_style="red",
+                    box=box.SIMPLE
+                ))
+            console.print()
+
+        if medium_priority:
+            console.print("[bold yellow]🟡 Medium Priority Actions:[/]\n")
+            for rec in medium_priority:
+                console.print(Panel(
+                    f"[bold yellow]{rec['category']}[/]\n"
+                    f"[white]{rec['action']}[/]\n\n"
+                    f"[dim]💡 Benefit: {rec['benefit']}[/]",
+                    border_style="yellow",
+                    box=box.SIMPLE
+                ))
+            console.print()
+
+        if low_priority:
+            console.print("[bold green]🟢 Low Priority Improvements:[/]\n")
+            for rec in low_priority:
+                console.print(Panel(
+                    f"[bold cyan]{rec['category']}[/]\n"
+                    f"[white]{rec['action']}[/]\n\n"
+                    f"[dim]💡 Benefit: {rec['benefit']}[/]",
+                    border_style="green",
+                    box=box.SIMPLE
+                ))
+            console.print()
+
+    else:
+        console.print(Panel(
+            "[bold green]🎉 Excellent![/]\n\n"
+            "[white]Your network is in great shape. No immediate actions needed.[/]",
+            border_style="green"
+        ))
+        console.print()
+
+    console.print(Panel(
+        "[dim]💡 Tip: Regularly check the Workshop for new insights as your network grows[/]",
+        border_style="cyan",
+        box=box.SIMPLE
+    ))
+
+    console.print()
+    questionary.press_any_key_to_continue().ask()
