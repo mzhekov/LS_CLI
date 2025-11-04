@@ -104,7 +104,7 @@ def init_database(database_url: Optional[str] = None):
 
     # Import all models to ensure they're registered
     from leadsauce.models import (
-        user, profile, company, interaction,
+        profile, company, interaction,
         reminder, tag, team, document, activity
     )
 

@@ -14,7 +14,6 @@ class Company(Base):
     __tablename__ = 'companies'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), index=True)
 
     # Basic info
@@ -30,7 +29,6 @@ class Company(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship('User', back_populates='companies')
     team = relationship('Team', back_populates='companies')
     profiles = relationship('Profile', back_populates='company')
 
@@ -41,7 +39,6 @@ class Company(Base):
         """Convert to dictionary"""
         data = {
             'id': self.id,
-            'user_id': self.user_id,
             'team_id': self.team_id,
             'name': self.name,
             'industry': self.industry,

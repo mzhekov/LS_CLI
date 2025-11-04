@@ -15,7 +15,6 @@ class Reminder(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     profile_id = Column(Integer, ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     parent_reminder_id = Column(Integer, ForeignKey('reminders.id', ondelete='SET NULL'))
 
     # Reminder details
@@ -41,7 +40,6 @@ class Reminder(Base):
 
     # Relationships
     profile = relationship('Profile', back_populates='reminders')
-    user = relationship('User', back_populates='reminders')
     parent_reminder = relationship('Reminder', remote_side=[id], backref='child_reminders')
 
     def __repr__(self):
@@ -52,7 +50,6 @@ class Reminder(Base):
         data = {
             'id': self.id,
             'profile_id': self.profile_id,
-            'user_id': self.user_id,
             'parent_reminder_id': self.parent_reminder_id,
             'title': self.title,
             'message': self.message,

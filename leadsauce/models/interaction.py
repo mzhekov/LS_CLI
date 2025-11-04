@@ -15,7 +15,6 @@ class Interaction(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     profile_id = Column(Integer, ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
 
     # Interaction details
     interaction_type = Column(String(50), nullable=False, index=True)  # meeting, call, email, note, event
@@ -32,7 +31,6 @@ class Interaction(Base):
 
     # Relationships
     profile = relationship('Profile', back_populates='interactions')
-    user = relationship('User', back_populates='interactions')
 
     def __repr__(self):
         return f"<Interaction(id={self.id}, type='{self.interaction_type}', profile_id={self.profile_id})>"
@@ -42,7 +40,6 @@ class Interaction(Base):
         data = {
             'id': self.id,
             'profile_id': self.profile_id,
-            'user_id': self.user_id,
             'interaction_type': self.interaction_type,
             'subject': self.subject,
             'notes': self.notes,

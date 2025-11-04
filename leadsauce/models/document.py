@@ -15,7 +15,6 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     profile_id = Column(Integer, ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
-    uploaded_by_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     parent_document_id = Column(Integer, ForeignKey('documents.id', ondelete='SET NULL'))
 
     # File info
@@ -40,7 +39,6 @@ class Document(Base):
 
     # Relationships
     profile = relationship('Profile', back_populates='documents')
-    uploaded_by = relationship('User')
     parent_document = relationship('Document', remote_side=[id], backref='versions')
 
     def __repr__(self):
@@ -51,7 +49,7 @@ class Document(Base):
         data = {
             'id': self.id,
             'profile_id': self.profile_id,
-            'uploaded_by_id': self.uploaded_by_id,
+            
             'parent_document_id': self.parent_document_id,
             'filename': self.filename,
             'original_filename': self.original_filename,

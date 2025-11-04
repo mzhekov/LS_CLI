@@ -14,7 +14,6 @@ class Activity(Base):
     __tablename__ = 'activities'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), index=True)
 
     # Activity details
@@ -30,7 +29,6 @@ class Activity(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Relationships
-    user = relationship('User')
     team = relationship('Team')
 
     def __repr__(self):
@@ -40,7 +38,7 @@ class Activity(Base):
         """Convert to dictionary"""
         return {
             'id': self.id,
-            'user_id': self.user_id,
+            
             'team_id': self.team_id,
             'activity_type': self.activity_type,
             'entity_type': self.entity_type,
@@ -48,5 +46,5 @@ class Activity(Base):
             'description': self.description,
             'metadata': self.activity_metadata,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'user_email': self.user.email if self.user else None
+            
         }

@@ -24,6 +24,5 @@ relationships = Table(
     Column('to_profile_id', Integer, ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False),
     Column('relation_type', String(100), nullable=False),
     Column('note', Text),
-    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
     Column('created_at', DateTime, default=datetime.utcnow)
 )

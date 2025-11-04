@@ -15,7 +15,6 @@ class Profile(Base):
     __tablename__ = 'profiles'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), index=True)
     company_id = Column(Integer, ForeignKey('companies.id', ondelete='SET NULL'), index=True)
 
@@ -47,16 +46,11 @@ class Profile(Base):
     last_contact = Column(DateTime, index=True)
     interaction_count = Column(Integer, default=0)
 
-    # Assignment
-    assigned_to_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'))
-
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship('User', foreign_keys=[user_id], back_populates='profiles')
-    assigned_to = relationship('User', foreign_keys=[assigned_to_id])
     company = relationship('Company', back_populates='profiles')
     team = relationship('Team', back_populates='profiles')
     interactions = relationship('Interaction', back_populates='profile', cascade='all, delete-orphan', order_by='Interaction.interaction_date.desc()')
@@ -71,7 +65,6 @@ class Profile(Base):
         """Convert to dictionary"""
         data = {
             'id': self.id,
-            'user_id': self.user_id,
             'team_id': self.team_id,
             'company_id': self.company_id,
             'name': self.name,
@@ -90,7 +83,6 @@ class Profile(Base):
             'notes': self.notes,
             'last_contact': self.last_contact.isoformat() if self.last_contact else None,
             'interaction_count': self.interaction_count,
-            'assigned_to_id': self.assigned_to_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

@@ -2,7 +2,6 @@
 Database models
 """
 
-from leadsauce.models.user import User
 from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
 from leadsauce.models.interaction import Interaction
@@ -14,7 +13,6 @@ from leadsauce.models.activity import Activity
 from leadsauce.models.associations import profile_tags, relationships
 
 __all__ = [
-    'User',
     'Profile',
     'Company',
     'Interaction',

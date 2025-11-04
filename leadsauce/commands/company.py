@@ -6,7 +6,6 @@ import click
 import json
 from tabulate import tabulate
 from leadsauce.utils.db import get_session
-from leadsauce.utils.decorators import require_auth
 from leadsauce.utils.formatters import print_success, print_error, print_info, format_date
 from leadsauce.models.company import Company
 from leadsauce.models.profile import Profile
@@ -25,18 +24,17 @@ def company():
 @click.option('--location', help='Location')
 @click.option('--website', help='Website URL')
 @click.option('--notes', help='Notes')
-@require_auth
+
 @click.pass_context
 def create_company(ctx, name, industry, size, location, website, notes):
     """Create a new company"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         # Check if company already exists
         existing = session.query(Company).filter(
-            Company.user_id == user_id,
+            1==1,
             Company.name.ilike(name)
         ).first()
 
@@ -46,7 +44,7 @@ def create_company(ctx, name, industry, size, location, website, notes):
 
         # Create company
         new_company = Company(
-            user_id=user_id,
+            
             name=name,
             industry=industry,
             size=size,
@@ -74,16 +72,15 @@ def create_company(ctx, name, industry, size, location, website, notes):
 @click.option('--limit', default=50, help='Number of results')
 @click.option('--format', 'output_format', type=click.Choice(['table', 'json', 'csv']), default='table', help='Output format')
 @click.option('--industry', help='Filter by industry')
-@require_auth
+
 @click.pass_context
 def list_companies(ctx, limit, output_format, industry):
     """List companies"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
-        query = session.query(Company).filter(Company.user_id == user_id)
+        query = session.query(Company).filter(1==1)
 
         if industry:
             query = query.filter(Company.industry.ilike(f"%{industry}%"))
@@ -138,18 +135,17 @@ def list_companies(ctx, limit, output_format, industry):
 @company.command('show')
 @click.argument('company_id', type=int)
 @click.option('--show-contacts', is_flag=True, help='Show associated contacts')
-@require_auth
+
 @click.pass_context
 def show_company(ctx, company_id, show_contacts):
     """Show company details"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         company = session.query(Company).filter(
             Company.id == company_id,
-            Company.user_id == user_id
+            1==1
         ).first()
 
         if not company:
@@ -190,18 +186,17 @@ def show_company(ctx, company_id, show_contacts):
 @company.command('delete')
 @click.argument('company_id', type=int)
 @click.option('--force', is_flag=True, help='Skip confirmation')
-@require_auth
+
 @click.pass_context
 def delete_company(ctx, company_id, force):
     """Delete a company"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         company = session.query(Company).filter(
             Company.id == company_id,
-            Company.user_id == user_id
+            1==1
         ).first()
 
         if not company:

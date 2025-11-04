@@ -8,7 +8,6 @@ from datetime import datetime
 from tabulate import tabulate
 from sqlalchemy import or_
 from leadsauce.utils.db import get_session
-from leadsauce.utils.decorators import require_auth
 from leadsauce.utils.validators import validate_email, validate_phone, parse_tags
 from leadsauce.utils.formatters import print_success, print_error, print_info, format_date
 from leadsauce.utils.constants import SENIORITY_LEVELS, GENERATION_TYPES
@@ -37,7 +36,7 @@ def profile():
 @click.option('--tags', help='Comma-separated tags')
 @click.option('--notes', help='Additional notes')
 @click.option('--interactive', is_flag=True, help='Interactive mode')
-@require_auth
+
 @click.pass_context
 def create_profile(ctx, name, seniority, company, email, phone, generation, married, has_children, skills, tags, notes, interactive):
     """Create a new profile"""
@@ -68,7 +67,6 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         # Handle company
         company_id = None
@@ -77,12 +75,12 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
             if company.isdigit():
                 company_obj = session.query(Company).filter(
                     Company.id == int(company),
-                    Company.user_id == user_id
+                    1==1
                 ).first()
             else:
                 company_obj = session.query(Company).filter(
                     Company.name.ilike(f"%{company}%"),
-                    Company.user_id == user_id
+                    1==1
                 ).first()
 
             if company_obj:
@@ -92,7 +90,7 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
                 # Create new company
                 if click.confirm(f"Company '{company}' not found. Create it?", default=True):
                     new_company = Company(
-                        user_id=user_id,
+                        
                         name=company
                     )
                     session.add(new_company)
@@ -102,7 +100,7 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
 
         # Create profile
         new_profile = Profile(
-            user_id=user_id,
+            
             company_id=company_id,
             name=name,
             email=email or None,
@@ -124,12 +122,12 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
             for tag_name in tag_names:
                 # Find or create tag
                 tag = session.query(Tag).filter(
-                    Tag.user_id == user_id,
+                    1==1,
                     Tag.name == tag_name
                 ).first()
 
                 if not tag:
-                    tag = Tag(user_id=user_id, name=tag_name)
+                    tag = Tag( name=tag_name)
                     session.add(tag)
                     session.flush()
 
@@ -161,16 +159,15 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
 @click.option('--company', help='Filter by company')
 @click.option('--seniority', type=click.Choice(SENIORITY_LEVELS, case_sensitive=False), help='Filter by seniority')
 @click.option('--sort-by', default='name', help='Sort field')
-@require_auth
+
 @click.pass_context
 def list_profiles(ctx, limit, offset, output_format, filters, tags, company, seniority, sort_by):
     """List profiles"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
-        query = session.query(Profile).filter(Profile.user_id == user_id)
+        query = session.query(Profile).filter(1==1)
 
         # Apply seniority filter
         if seniority:
@@ -262,18 +259,17 @@ def list_profiles(ctx, limit, offset, output_format, filters, tags, company, sen
 @profile.command('show')
 @click.argument('profile_id', type=int)
 @click.option('--format', 'output_format', type=click.Choice(['text', 'json']), default='text', help='Output format')
-@require_auth
+
 @click.pass_context
 def show_profile(ctx, profile_id, output_format):
     """Show profile details"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         profile = session.query(Profile).filter(
             Profile.id == profile_id,
-            Profile.user_id == user_id
+            1==1
         ).first()
 
         if not profile:
@@ -335,18 +331,17 @@ def show_profile(ctx, profile_id, output_format):
 @profile.command('delete')
 @click.argument('profile_id', type=int)
 @click.option('--force', is_flag=True, help='Skip confirmation')
-@require_auth
+
 @click.pass_context
 def delete_profile(ctx, profile_id, force):
     """Delete a profile"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         profile = session.query(Profile).filter(
             Profile.id == profile_id,
-            Profile.user_id == user_id
+            1==1
         ).first()
 
         if not profile:
@@ -376,14 +371,13 @@ def delete_profile(ctx, profile_id, force):
 @click.argument('query')
 @click.option('--fields', default='name,email,good_at', help='Fields to search (comma-separated)')
 @click.option('--limit', default=20, help='Number of results')
-@require_auth
+
 @click.pass_context
 def search_profiles(ctx, query, fields, limit):
     """Search profiles"""
 
     try:
         session = get_session()
-        user_id = ctx.obj['user_id']
 
         field_list = [f.strip() for f in fields.split(',')]
 
@@ -398,7 +392,7 @@ def search_profiles(ctx, query, fields, limit):
             raise click.Abort()
 
         profiles = session.query(Profile).filter(
-            Profile.user_id == user_id,
+            1==1,
             or_(*filters)
         ).limit(limit).all()
 

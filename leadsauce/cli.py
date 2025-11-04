@@ -6,7 +6,6 @@ import click
 from leadsauce.utils.config import get_config, init_config
 from leadsauce.utils.db import init_database
 from leadsauce.utils.constants import APP_VERSION, APP_DIR, CONFIG_FILE
-from leadsauce.commands import auth
 
 
 @click.group()
@@ -80,8 +79,8 @@ def init(ctx):
         click.secho("LeadSauce CLI initialized successfully!", fg='green', bold=True)
         click.echo()
         click.secho("Next steps:", fg='cyan')
-        click.echo("  1. Register an account:  leadsauce auth register")
-        click.echo("  2. Login:                leadsauce auth login")
+        click.echo("  1. Create a profile:     leadsauce profile create --name 'John Doe' --seniority executive")
+        click.echo("  2. List profiles:        leadsauce profile list")
         click.echo("  3. Get help:             leadsauce --help")
         click.echo()
 
@@ -109,10 +108,7 @@ def version(ctx, output_format):
         click.echo(f"Configuration directory: {APP_DIR}")
 
 
-# Register command groups
-cli.add_command(auth.auth)
-
-# Import and register additional commands
+# Import and register command groups
 from leadsauce.commands import profile, company
 cli.add_command(profile.profile)
 cli.add_command(company.company)

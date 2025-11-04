@@ -15,10 +15,9 @@ class Tag(Base):
     __tablename__ = 'tags'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
 
     # Tag details
-    name = Column(String(100), nullable=False, index=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)
     color = Column(String(7))  # Hex color code (e.g., #FF5733)
     description = Column(String(255))
 
@@ -27,13 +26,7 @@ class Tag(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship('User', back_populates='tags')
     profiles = relationship('Profile', secondary=profile_tags, back_populates='tags')
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint('user_id', 'name', name='unique_user_tag'),
-    )
 
     def __repr__(self):
         return f"<Tag(id={self.id}, name='{self.name}')>"
@@ -42,7 +35,6 @@ class Tag(Base):
         """Convert to dictionary"""
         data = {
             'id': self.id,
-            'user_id': self.user_id,
             'name': self.name,
             'color': self.color,
             'description': self.description,
