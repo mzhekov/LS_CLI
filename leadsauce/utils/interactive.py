@@ -2,6 +2,7 @@
 Interactive TUI for LeadSauce CLI with top bar navigation
 """
 
+import time
 import questionary
 from questionary import Style
 from rich.console import Console
