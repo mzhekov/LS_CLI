@@ -222,9 +222,11 @@ def profiles_menu():
         actions_text = Text()
         actions_text.append("[a] Add", style="green")
         actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
         actions_text.append("[s] Search", style="cyan")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[r] Refresh", style="yellow")
+        actions_text.append("[r] Refresh", style="blue")
         actions_text.append(" • ", style="dim")
         actions_text.append("[Enter] Back", style="dim white")
 
@@ -264,12 +266,12 @@ def profiles_menu():
             ))
 
         console.print()
-        console.print("[dim]Tip: Press Enter (empty) or type '1' to go back to dashboard[/]")
+        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
         console.print()
 
         # Action prompt
         action = questionary.text(
-            "Action ([a]dd/[s]earch/[#] view profile):",
+            "Action ([a]dd/[e]dit/[s]earch/[#] view):",
             style=custom_style
         ).ask()
 
@@ -285,6 +287,28 @@ def profiles_menu():
 
         if action == 'a':
             add_profile_interactive()
+        elif action == 'e':
+            # Edit a profile - show selection menu
+            if not profiles:
+                console.print("[yellow]No profiles to edit[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Quick selection for edit
+            profile_choices = [{'name': f"{idx+1}. {p.name}", 'value': p.id} for idx, p in enumerate(profiles)]
+            profile_choices.append({'name': '← Cancel', 'value': None})
+
+            profile_id = questionary.select(
+                "Select profile to edit:",
+                choices=profile_choices,
+                style=custom_style
+            ).ask()
+
+            if profile_id:
+                profile = session.query(Profile).filter(Profile.id == profile_id).first()
+                if profile:
+                    edit_profile_interactive(profile, session)
         elif action == 's':
             search_interactive()
         elif action == 'r':
@@ -360,7 +384,7 @@ def companies_menu():
             ))
 
         console.print()
-        console.print("[dim]Tip: Press Enter (empty) or type '1' to go back to dashboard[/]")
+        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
         console.print()
 
         # Action prompt
@@ -453,7 +477,7 @@ def tags_menu():
             ))
 
         console.print()
-        console.print("[dim]Tip: Press Enter (empty) or type '1' to go back to dashboard[/]")
+        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
         console.print()
 
         # Action prompt
