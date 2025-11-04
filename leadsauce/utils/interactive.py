@@ -38,9 +38,10 @@ NAV_ITEMS = [
     ("Dashboard", "📊", "1"),
     ("Profiles", "👥", "2"),
     ("Companies", "🏢", "3"),
-    ("Network Map", "🗺️", "4"),
-    ("Search", "🔍", "5"),
-    ("Tags", "🏷️", "6"),
+    ("Relationships", "🔗", "4"),
+    ("Network Map", "🗺️", "5"),
+    ("Search", "🔍", "6"),
+    ("Tags", "🏷️", "7"),
     ("Exit", "❌", "q")
 ]
 
@@ -85,6 +86,10 @@ def interactive_main_menu():
             continue
         elif current_view == "Companies":
             companies_menu()
+            current_view = "Dashboard"
+            continue
+        elif current_view == "Relationships":
+            relationships_menu()
             current_view = "Dashboard"
             continue
         elif current_view == "Network Map":
@@ -512,11 +517,53 @@ def tags_menu():
     session.close()
 
 
+def relationships_menu():
+    """Show relationships management menu"""
+    while True:
+        console.clear()
+        console.print(Panel(
+            "[bold cyan]🔗 Relationships Management[/]\n"
+            "[dim]Manage connections between people and companies[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        choices = [
+            "👥 Add Profile Relationship",
+            "📋 View Profile Relationships",
+            "🏢 Add Company Relationship",
+            "📋 View Company Relationships",
+            "← Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Dashboard":
+            break
+        elif action == "👥 Add Profile Relationship":
+            add_profile_relationship()
+        elif action == "📋 View Profile Relationships":
+            view_profile_relationships()
+        elif action == "🏢 Add Company Relationship":
+            add_company_relationship()
+        elif action == "📋 View Company Relationships":
+            view_company_relationships()
+
+
 def show_network_map():
-    """Show relationship map between profiles"""
+    """Show comprehensive relationship map between profiles and companies"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+
     session = get_session()
 
     profiles = session.query(Profile).all()
+    companies = session.query(Company).all()
+    profile_relationships = session.query(ProfileRelationship).all()
+    company_relationships = session.query(CompanyRelationship).all()
 
     if not profiles:
         console.print(Panel(
@@ -543,10 +590,58 @@ def show_network_map():
     # Display network map
     console.print(Panel(
         "[bold cyan]Network Relationship Map[/]\n"
-        "[dim]Showing connections by company and shared tags[/]",
+        "[dim]Connections, relationships, and network analysis[/]",
         border_style="cyan"
     ))
     console.print()
+
+    # Show explicit profile relationships first
+    if profile_relationships:
+        console.print("[bold magenta]🔗 Profile Relationships:[/]\n")
+
+        # Group by from_profile
+        by_profile = {}
+        for rel in profile_relationships:
+            if rel.from_profile_id not in by_profile:
+                by_profile[rel.from_profile_id] = []
+            by_profile[rel.from_profile_id].append(rel)
+
+        for profile_id, rels in list(by_profile.items())[:5]:  # Show first 5
+            profile = rels[0].from_profile
+            console.print(f"  [cyan]{profile.name}[/]")
+
+            for rel in rels:
+                arrow = "↔" if rel.bidirectional else "→"
+                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/]")
+
+        if len(by_profile) > 5:
+            console.print(f"  [dim]... and {len(by_profile) - 5} more profiles with relationships[/]")
+
+        console.print()
+
+    # Show explicit company relationships
+    if company_relationships:
+        console.print("[bold magenta]🔗 Company Relationships:[/]\n")
+
+        # Group by from_company
+        by_company = {}
+        for rel in company_relationships:
+            if rel.from_company_id not in by_company:
+                by_company[rel.from_company_id] = []
+            by_company[rel.from_company_id].append(rel)
+
+        for company_id, rels in list(by_company.items())[:5]:  # Show first 5
+            company = rels[0].from_company
+            console.print(f"  [cyan]{company.name}[/]")
+
+            for rel in rels:
+                arrow = "↔" if rel.bidirectional else "→"
+                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/]")
+
+        if len(by_company) > 5:
+            console.print(f"  [dim]... and {len(by_company) - 5} more companies with relationships[/]")
+
+        console.print()
 
     # Company-based connections
     if company_groups:
@@ -599,7 +694,10 @@ def show_network_map():
     stats_table.add_column(style="white")
 
     stats_table.add_row("Total Profiles:", str(len(profiles)))
-    stats_table.add_row("Companies:", str(len(company_groups)))
+    stats_table.add_row("Total Companies:", str(len(companies)))
+    stats_table.add_row("Profile Relationships:", str(len(profile_relationships)))
+    stats_table.add_row("Company Relationships:", str(len(company_relationships)))
+    stats_table.add_row("Companies with Profiles:", str(len(company_groups)))
     stats_table.add_row("Shared Tags:", str(len([c for c in strong_connections if len(c[1]) > 1])))
 
     # Calculate connectivity
@@ -609,7 +707,7 @@ def show_network_map():
             connected_profiles.add(p.id)
 
     connectivity = len(connected_profiles) / len(profiles) * 100 if profiles else 0
-    stats_table.add_row("Connectivity:", f"{connectivity:.0f}%")
+    stats_table.add_row("Tag Connectivity:", f"{connectivity:.0f}%")
 
     console.print(Panel(stats_table, title="[bold yellow]Network Stats[/]", border_style="yellow"))
 
@@ -1476,4 +1574,284 @@ def delete_tag_interactive():
         console.print(f"\n[green]✓ Deleted tag '{tag.name}'[/]\n")
         questionary.press_any_key_to_continue().ask()
 
+    session.close()
+
+
+def add_profile_relationship():
+    """Add a relationship between two profiles"""
+    from leadsauce.models.relationship import ProfileRelationship, PROFILE_RELATIONSHIP_TYPES
+
+    session = get_session()
+    profiles = session.query(Profile).order_by(Profile.name).all()
+
+    if len(profiles) < 2:
+        console.print("\n[yellow]You need at least 2 profiles to create a relationship.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]➕ Add Profile Relationship[/]\n"
+        "[dim]Create a connection between two people[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    # Select FROM profile
+    from_choices = [{'name': f"{p.name} ({p.company.name if p.company else 'No company'})", 'value': p.id} for p in profiles]
+    from_choices.append({'name': '← Cancel', 'value': None})
+
+    from_profile_id = questionary.select(
+        "From (source person):",
+        choices=from_choices,
+        style=custom_style
+    ).ask()
+
+    if not from_profile_id:
+        session.close()
+        return
+
+    # Select TO profile (exclude the FROM profile)
+    to_choices = [{'name': f"{p.name} ({p.company.name if p.company else 'No company'})", 'value': p.id} 
+                  for p in profiles if p.id != from_profile_id]
+    to_choices.append({'name': '← Cancel', 'value': None})
+
+    to_profile_id = questionary.select(
+        "To (target person):",
+        choices=to_choices,
+        style=custom_style
+    ).ask()
+
+    if not to_profile_id:
+        session.close()
+        return
+
+    # Select relationship type
+    relationship_type = questionary.select(
+        "Relationship type:",
+        choices=PROFILE_RELATIONSHIP_TYPES,
+        style=custom_style
+    ).ask()
+
+    # Is it bidirectional?
+    bidirectional = questionary.confirm(
+        "Is this a two-way relationship? (e.g., 'friends' vs 'reports to')",
+        style=custom_style,
+        default=True
+    ).ask()
+
+    # Optional description
+    description = questionary.text(
+        "Description (optional):",
+        style=custom_style
+    ).ask()
+
+    # Create relationship
+    try:
+        new_relationship = ProfileRelationship(
+            from_profile_id=from_profile_id,
+            to_profile_id=to_profile_id,
+            relationship_type=relationship_type,
+            bidirectional=bidirectional,
+            description=description or None
+        )
+
+        session.add(new_relationship)
+        session.commit()
+
+        from_profile = session.query(Profile).filter(Profile.id == from_profile_id).first()
+        to_profile = session.query(Profile).filter(Profile.id == to_profile_id).first()
+
+        console.print(f"\n[green]✓ Created relationship: {from_profile.name} → {relationship_type} → {to_profile.name}[/]\n")
+        if bidirectional:
+            console.print(f"[dim](Bidirectional relationship created)[/]\n")
+        questionary.press_any_key_to_continue().ask()
+
+    except Exception as e:
+        console.print(f"\n[red]✗ Error creating relationship: {str(e)}[/]\n")
+        session.rollback()
+        questionary.press_any_key_to_continue().ask()
+    finally:
+        session.close()
+
+
+def view_profile_relationships():
+    """View all profile relationships"""
+    from leadsauce.models.relationship import ProfileRelationship
+
+    session = get_session()
+    relationships = session.query(ProfileRelationship).all()
+
+    console.clear()
+    console.print(Panel(
+        f"[bold cyan]Profile Relationships ({len(relationships)} total)[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    if relationships:
+        # Group by from_profile
+        by_profile = {}
+        for rel in relationships:
+            if rel.from_profile_id not in by_profile:
+                by_profile[rel.from_profile_id] = []
+            by_profile[rel.from_profile_id].append(rel)
+
+        for profile_id, rels in by_profile.items():
+            profile = rels[0].from_profile
+            console.print(f"[cyan]{profile.name}[/]")
+
+            for rel in rels:
+                arrow = "↔" if rel.bidirectional else "→"
+                console.print(f"  {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/]")
+                if rel.description:
+                    console.print(f"     [dim]{rel.description}[/]")
+
+            console.print()
+    else:
+        console.print("[yellow]No relationships created yet.[/]")
+
+    console.print()
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    session.close()
+
+
+def add_company_relationship():
+    """Add a relationship between two companies"""
+    from leadsauce.models.relationship import CompanyRelationship, COMPANY_RELATIONSHIP_TYPES
+
+    session = get_session()
+    companies = session.query(Company).order_by(Company.name).all()
+
+    if len(companies) < 2:
+        console.print("\n[yellow]You need at least 2 companies to create a relationship.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]➕ Add Company Relationship[/]\n"
+        "[dim]Create a connection between two companies[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    # Select FROM company
+    from_choices = [{'name': f"{c.name} ({c.industry or 'No industry'})", 'value': c.id} for c in companies]
+    from_choices.append({'name': '← Cancel', 'value': None})
+
+    from_company_id = questionary.select(
+        "From (source company):",
+        choices=from_choices,
+        style=custom_style
+    ).ask()
+
+    if not from_company_id:
+        session.close()
+        return
+
+    # Select TO company (exclude the FROM company)
+    to_choices = [{'name': f"{c.name} ({c.industry or 'No industry'})", 'value': c.id} 
+                  for c in companies if c.id != from_company_id]
+    to_choices.append({'name': '← Cancel', 'value': None})
+
+    to_company_id = questionary.select(
+        "To (target company):",
+        choices=to_choices,
+        style=custom_style
+    ).ask()
+
+    if not to_company_id:
+        session.close()
+        return
+
+    # Select relationship type
+    relationship_type = questionary.select(
+        "Relationship type:",
+        choices=COMPANY_RELATIONSHIP_TYPES,
+        style=custom_style
+    ).ask()
+
+    # Is it bidirectional?
+    bidirectional = questionary.confirm(
+        "Is this a two-way relationship? (e.g., 'partners' vs 'supplier')",
+        style=custom_style,
+        default=True
+    ).ask()
+
+    # Optional description
+    description = questionary.text(
+        "Description (optional):",
+        style=custom_style
+    ).ask()
+
+    # Create relationship
+    try:
+        new_relationship = CompanyRelationship(
+            from_company_id=from_company_id,
+            to_company_id=to_company_id,
+            relationship_type=relationship_type,
+            bidirectional=bidirectional,
+            description=description or None
+        )
+
+        session.add(new_relationship)
+        session.commit()
+
+        from_company = session.query(Company).filter(Company.id == from_company_id).first()
+        to_company = session.query(Company).filter(Company.id == to_company_id).first()
+
+        console.print(f"\n[green]✓ Created relationship: {from_company.name} → {relationship_type} → {to_company.name}[/]\n")
+        if bidirectional:
+            console.print(f"[dim](Bidirectional relationship created)[/]\n")
+        questionary.press_any_key_to_continue().ask()
+
+    except Exception as e:
+        console.print(f"\n[red]✗ Error creating relationship: {str(e)}[/]\n")
+        session.rollback()
+        questionary.press_any_key_to_continue().ask()
+    finally:
+        session.close()
+
+
+def view_company_relationships():
+    """View all company relationships"""
+    from leadsauce.models.relationship import CompanyRelationship
+
+    session = get_session()
+    relationships = session.query(CompanyRelationship).all()
+
+    console.clear()
+    console.print(Panel(
+        f"[bold cyan]Company Relationships ({len(relationships)} total)[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    if relationships:
+        # Group by from_company
+        by_company = {}
+        for rel in relationships:
+            if rel.from_company_id not in by_company:
+                by_company[rel.from_company_id] = []
+            by_company[rel.from_company_id].append(rel)
+
+        for company_id, rels in by_company.items():
+            company = rels[0].from_company
+            console.print(f"[cyan]{company.name}[/]")
+
+            for rel in rels:
+                arrow = "↔" if rel.bidirectional else "→"
+                console.print(f"  {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/]")
+                if rel.description:
+                    console.print(f"     [dim]{rel.description}[/]")
+
+            console.print()
+    else:
+        console.print("[yellow]No relationships created yet.[/]")
+
+    console.print()
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
     session.close()
