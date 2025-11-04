@@ -33,32 +33,36 @@ custom_style = Style([
     ('text', ''),
 ])
 
-# Navigation menu items
+# Navigation menu items with keyboard shortcuts
 NAV_ITEMS = [
-    ("Dashboard", "📊"),
-    ("Profiles", "👥"),
-    ("Companies", "🏢"),
-    ("Network Map", "🗺️"),
-    ("Search", "🔍"),
-    ("Tags", "🏷️"),
-    ("Exit", "❌")
+    ("Dashboard", "📊", "1"),
+    ("Profiles", "👥", "2"),
+    ("Companies", "🏢", "3"),
+    ("Network Map", "🗺️", "4"),
+    ("Search", "🔍", "5"),
+    ("Tags", "🏷️", "6"),
+    ("Exit", "❌", "q")
 ]
 
 
 def render_top_bar(current_view="Dashboard"):
-    """Render the top navigation bar"""
+    """Render the interactive top navigation bar with keyboard shortcuts"""
     nav_text = Text()
 
-    for i, (name, icon) in enumerate(NAV_ITEMS):
+    for i, (name, icon, key) in enumerate(NAV_ITEMS):
         if i > 0:
             nav_text.append(" │ ", style="dim")
 
         if name == current_view:
-            nav_text.append(f"{icon} {name}", style="bold cyan on #1a1a1a")
+            nav_text.append(f"{icon} ", style="bold cyan")
+            nav_text.append(f"[{key}]", style="bold yellow")
+            nav_text.append(f" {name}", style="bold cyan on #1a1a1a")
         else:
-            nav_text.append(f"{icon} {name}", style="white")
+            nav_text.append(f"{icon} ", style="white")
+            nav_text.append(f"[{key}]", style="dim yellow")
+            nav_text.append(f" {name}", style="white")
 
-    return Panel(nav_text, style="cyan", box=box.SIMPLE)
+    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle="[dim]Press number keys to navigate[/]")
 
 
 def interactive_main_menu():
@@ -85,6 +89,8 @@ def interactive_main_menu():
             continue
         elif current_view == "Network Map":
             show_network_map()
+            current_view = "Dashboard"
+            continue
         elif current_view == "Search":
             search_interactive()
             current_view = "Dashboard"
@@ -97,24 +103,54 @@ def interactive_main_menu():
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
 
-        # Navigation menu at bottom
+        # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
-        nav_choices = [f"{icon} {name}" for name, icon in NAV_ITEMS]
+        console.print("[dim]You can either:[/]")
+        console.print("[dim]  • Type a number (1-6) or 'q' to quit[/]")
+        console.print("[dim]  • Press Enter to use arrow keys[/]")
+        console.print()
 
-        action = questionary.select(
-            "Navigate to:",
-            choices=nav_choices,
-            style=custom_style
+        # Create a simple text prompt that accepts keyboard shortcuts
+        nav_input = questionary.text(
+            "Quick nav:",
+            style=custom_style,
+            default=""
         ).ask()
 
-        if not action:
+        if not nav_input:
             break
 
-        # Extract view name from selection
-        for name, icon in NAV_ITEMS:
-            if action == f"{icon} {name}":
-                current_view = name
+        nav_input = nav_input.strip()
+
+        # Map keyboard shortcuts to views
+        shortcut_map = {key: name for name, icon, key in NAV_ITEMS}
+
+        if nav_input in shortcut_map:
+            # Direct keyboard shortcut
+            current_view = shortcut_map[nav_input]
+        elif nav_input == "":
+            # Empty input - show arrow key menu
+            nav_choices = [f"{icon} [{key}] {name}" for name, icon, key in NAV_ITEMS]
+
+            action = questionary.select(
+                "Navigate to:",
+                choices=nav_choices,
+                style=custom_style
+            ).ask()
+
+            if not action:
                 break
+
+            # Extract view name from selection
+            for name, icon, key in NAV_ITEMS:
+                if action == f"{icon} [{key}] {name}":
+                    current_view = name
+                    break
+        else:
+            # Invalid input
+            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-6 or q[/]")
+            import time
+            time.sleep(1.5)
 
 
 def show_dashboard_view():
