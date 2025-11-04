@@ -816,21 +816,23 @@ def show_network_map():
                 })
 
     # Simple circular layout algorithm
-    width = 80
-    height = 30
+    width = 100  # Increased to accommodate labels
+    height = 35
     center_x = width // 2
     center_y = height // 2
 
     # Calculate radius based on number of nodes
-    radius = min(width // 2 - 5, height // 2 - 2)
+    radius = min(width // 2 - 15, height // 2 - 3)
 
     # Position nodes in a circle
     positions = []
+    angles = []
     for i, node in enumerate(nodes):
         angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
         x = int(center_x + radius * math.cos(angle))
         y = int(center_y + radius * math.sin(angle))
         positions.append((x, y))
+        angles.append(angle)
 
     # Create canvas
     canvas = [[' ' for _ in range(width)] for _ in range(height)]
@@ -881,14 +883,59 @@ def show_network_map():
 
             steps += 1
 
-    # Draw nodes (profiles and companies)
-    for i, (node, (x, y)) in enumerate(zip(nodes, positions)):
+    # Draw nodes with labels (profiles and companies)
+    for i, (node, (x, y), angle) in enumerate(zip(nodes, positions, angles)):
         if 0 <= y < height and 0 <= x < width:
             # Mark node position
             if node['type'] == 'profile':
                 canvas[y][x] = '👤'
             else:
                 canvas[y][x] = '🏢'
+
+            # Add label next to node
+            # Truncate name to 10 characters
+            label = node['name'][:10]
+
+            # Determine label position based on angle (position around circle)
+            # Right side (0 to 45 degrees or 315 to 360)
+            if (angle >= 0 and angle < math.pi / 4) or (angle >= 7 * math.pi / 4):
+                label_x = x + 2
+                label_y = y
+            # Top right (45 to 90)
+            elif angle >= math.pi / 4 and angle < math.pi / 2:
+                label_x = x + 2
+                label_y = y - 1
+            # Top (90 to 135)
+            elif angle >= math.pi / 2 and angle < 3 * math.pi / 4:
+                label_x = x - len(label) // 2
+                label_y = y - 1
+            # Top left (135 to 180)
+            elif angle >= 3 * math.pi / 4 and angle < math.pi:
+                label_x = x - len(label) - 1
+                label_y = y - 1
+            # Left (180 to 225)
+            elif angle >= math.pi and angle < 5 * math.pi / 4:
+                label_x = x - len(label) - 1
+                label_y = y
+            # Bottom left (225 to 270)
+            elif angle >= 5 * math.pi / 4 and angle < 3 * math.pi / 2:
+                label_x = x - len(label) - 1
+                label_y = y + 1
+            # Bottom (270 to 315)
+            elif angle >= 3 * math.pi / 2 and angle < 7 * math.pi / 4:
+                label_x = x - len(label) // 2
+                label_y = y + 1
+            else:
+                label_x = x + 2
+                label_y = y
+
+            # Draw label character by character
+            for j, char in enumerate(label):
+                lx = label_x + j
+                ly = label_y
+                if 0 <= ly < height and 0 <= lx < width:
+                    if canvas[ly][lx] == ' ':  # Only draw if space is empty
+                        canvas[ly][lx] = char
 
     # Render canvas with rich formatting
     console.print()
