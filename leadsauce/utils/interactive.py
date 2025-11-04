@@ -211,108 +211,265 @@ def show_dashboard_view():
 
 
 def profiles_menu():
-    """Show profiles action menu"""
+    """Show profiles list with action shortcuts in top bar"""
+    session = get_session()
+
     while True:
         console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[s] Search", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[1] Back to Dashboard", style="white")
+
         console.print(Panel(
-            "[bold cyan]👥 Profiles Management[/]\n"
-            "[dim]Choose an action[/]",
-            border_style="cyan"
+            actions_text,
+            title="[bold cyan]👥 Profiles[/]",
+            border_style="cyan",
+            box=box.SIMPLE
         ))
         console.print()
 
-        choices = [
-            "📋 Browse All Profiles",
-            "➕ Add New Profile",
-            "🔍 Search Profiles",
-            "← Back to Dashboard"
-        ]
+        # Get profiles
+        profiles = session.query(Profile).order_by(Profile.name).all()
 
-        action = questionary.select(
-            "What would you like to do?",
-            choices=choices,
+        if profiles:
+            # Display profiles list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Name", style="cyan")
+            table.add_column("Seniority", style="blue")
+            table.add_column("Company", style="green")
+            table.add_column("Tags", style="yellow")
+
+            for idx, p in enumerate(profiles, 1):
+                company = p.company.name if p.company else "-"
+                tags = ", ".join([t.name for t in p.tags[:2]]) if p.tags else "-"
+                if len(p.tags) > 2:
+                    tags += "..."
+                table.add_row(str(idx), p.name, p.seniority.title(), company, tags)
+
+            console.print(table)
+            console.print(f"\n[dim]{len(profiles)} profile(s) total[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No profiles yet. Press 'a' to add your first contact![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Action prompt
+        action = questionary.text(
+            "Action ([a]dd/[s]earch/[1-9] view profile/[1] dashboard):",
             style=custom_style
         ).ask()
 
-        if not action or action == "← Back to Dashboard":
+        if not action:
             break
-        elif action == "📋 Browse All Profiles":
-            browse_profiles()
-        elif action == "➕ Add New Profile":
+
+        action = action.strip().lower()
+
+        if action == 'a':
             add_profile_interactive()
-        elif action == "🔍 Search Profiles":
+        elif action == 's':
             search_interactive()
+        elif action == 'r':
+            continue  # Refresh
+        elif action == '1' and len(action) == 1:
+            break  # Back to dashboard
+        elif action.isdigit():
+            # View profile by number
+            idx = int(action) - 1
+            if 0 <= idx < len(profiles):
+                show_profile_details(profiles[idx].id, session)
+            else:
+                console.print(f"[yellow]Invalid number. Choose 1-{len(profiles)}[/]")
+                questionary.press_any_key_to_continue().ask()
+        else:
+            console.print(f"[yellow]Invalid action '{action}'[/]")
+            import time
+            time.sleep(1)
+
+    session.close()
 
 
 def companies_menu():
-    """Show companies action menu"""
+    """Show companies list with action shortcuts in top bar"""
+    session = get_session()
+
     while True:
         console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[1] Back to Dashboard", style="white")
+
         console.print(Panel(
-            "[bold cyan]🏢 Companies Management[/]\n"
-            "[dim]Choose an action[/]",
-            border_style="cyan"
+            actions_text,
+            title="[bold cyan]🏢 Companies[/]",
+            border_style="cyan",
+            box=box.SIMPLE
         ))
         console.print()
 
-        choices = [
-            "📋 Browse All Companies",
-            "➕ Add New Company",
-            "✏️  Edit Company",
-            "← Back to Dashboard"
-        ]
+        # Get companies
+        companies = session.query(Company).order_by(Company.name).all()
 
-        action = questionary.select(
-            "What would you like to do?",
-            choices=choices,
+        if companies:
+            # Display companies list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Name", style="cyan")
+            table.add_column("Industry", style="blue")
+            table.add_column("Profiles", justify="right", style="green")
+            table.add_column("Location", style="yellow")
+
+            for idx, c in enumerate(companies, 1):
+                table.add_row(
+                    str(idx),
+                    c.name,
+                    c.industry or "-",
+                    str(len(c.profiles)),
+                    c.location or "-"
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]{len(companies)} company(ies) total[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No companies yet. Press 'a' to add one![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Action prompt
+        action = questionary.text(
+            "Action ([a]dd/[e]dit/[1-9] view company/[1] dashboard):",
             style=custom_style
         ).ask()
 
-        if not action or action == "← Back to Dashboard":
+        if not action:
             break
-        elif action == "📋 Browse All Companies":
-            browse_companies()
-        elif action == "➕ Add New Company":
+
+        action = action.strip().lower()
+
+        if action == 'a':
             add_company_interactive()
-        elif action == "✏️  Edit Company":
+        elif action == 'e':
             edit_company_menu()
+        elif action == 'r':
+            continue  # Refresh
+        elif action == '1' and len(action) == 1:
+            break  # Back to dashboard
+        elif action.isdigit():
+            # View company by number
+            idx = int(action) - 1
+            if 0 <= idx < len(companies):
+                show_company_details(companies[idx], session)
+            else:
+                console.print(f"[yellow]Invalid number. Choose 1-{len(companies)}[/]")
+                questionary.press_any_key_to_continue().ask()
+        else:
+            console.print(f"[yellow]Invalid action '{action}'[/]")
+            import time
+            time.sleep(1)
+
+    session.close()
 
 
 def tags_menu():
-    """Show tags action menu"""
+    """Show tags list with action shortcuts in top bar"""
+    session = get_session()
+
     while True:
         console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[1] Back to Dashboard", style="white")
+
         console.print(Panel(
-            "[bold cyan]🏷️  Tags Management[/]\n"
-            "[dim]Choose an action[/]",
-            border_style="cyan"
+            actions_text,
+            title="[bold cyan]🏷️  Tags[/]",
+            border_style="cyan",
+            box=box.SIMPLE
         ))
         console.print()
 
-        choices = [
-            "📋 View All Tags",
-            "➕ Add New Tag",
-            "✏️  Edit Tag",
-            "🗑️  Delete Tag",
-            "← Back to Dashboard"
-        ]
+        # Get tags
+        tags = session.query(Tag).order_by(Tag.name).all()
 
-        action = questionary.select(
-            "What would you like to do?",
-            choices=choices,
+        if tags:
+            # Display tags list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Tag", style="cyan")
+            table.add_column("Color", style="white")
+            table.add_column("Profiles", justify="right", style="green")
+
+            for idx, tag in enumerate(tags, 1):
+                count = len(tag.profiles)
+                color_display = f"[{tag.color or 'white'}]●[/]" if tag.color else "-"
+                table.add_row(str(idx), tag.name, color_display, str(count))
+
+            console.print(table)
+            console.print(f"\n[dim]{len(tags)} tag(s) total[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No tags yet. Press 'a' to add one![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Action prompt
+        action = questionary.text(
+            "Action ([a]dd/[e]dit/[d]elete/[1] dashboard):",
             style=custom_style
         ).ask()
 
-        if not action or action == "← Back to Dashboard":
+        if not action:
             break
-        elif action == "📋 View All Tags":
-            view_tags_detailed()
-        elif action == "➕ Add New Tag":
+
+        action = action.strip().lower()
+
+        if action == 'a':
             add_tag_interactive()
-        elif action == "✏️  Edit Tag":
+        elif action == 'e':
             edit_tag_interactive()
-        elif action == "🗑️  Delete Tag":
+        elif action == 'd':
             delete_tag_interactive()
+        elif action == 'r':
+            continue  # Refresh
+        elif action == '1':
+            break  # Back to dashboard
+        else:
+            console.print(f"[yellow]Invalid action '{action}'[/]")
+            import time
+            time.sleep(1)
+
+    session.close()
 
 
 def show_network_map():
@@ -791,6 +948,51 @@ def browse_companies():
         break
 
     session.close()
+
+
+def show_company_details(company, session):
+    """Show detailed view of a company with its profiles"""
+    console.clear()
+
+    # Display company info
+    table = Table(show_header=False, box=box.ROUNDED, border_style="cyan")
+    table.add_column("Field", style="cyan bold", width=20)
+    table.add_column("Value", style="white")
+
+    table.add_row("Name", company.name)
+    table.add_row("Industry", company.industry or "-")
+    table.add_row("Size", company.size or "-")
+    table.add_row("Location", company.location or "-")
+    table.add_row("Website", company.website or "-")
+    if company.notes:
+        table.add_row("Notes", company.notes[:100] + "..." if len(company.notes) > 100 else company.notes)
+
+    console.print(Panel(table, title=f"[bold cyan]Company Details[/]", border_style="cyan"))
+    console.print()
+
+    # Show profiles at this company
+    if company.profiles:
+        console.print(f"[bold yellow]Profiles at {company.name}:[/]\n")
+        profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
+        profiles_table.add_column("Name", style="cyan")
+        profiles_table.add_column("Seniority", style="blue")
+        profiles_table.add_column("Email", style="green")
+
+        for p in company.profiles[:10]:  # Show first 10
+            profiles_table.add_row(
+                p.name,
+                p.seniority.title(),
+                p.email or "-"
+            )
+
+        console.print(profiles_table)
+        if len(company.profiles) > 10:
+            console.print(f"\n[dim]... and {len(company.profiles) - 10} more[/]")
+    else:
+        console.print("[dim]No profiles associated with this company yet[/]")
+
+    console.print()
+    questionary.press_any_key_to_continue("Press any key to go back...").ask()
 
 
 def add_company_interactive():
