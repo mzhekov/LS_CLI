@@ -3,12 +3,14 @@ Main CLI application
 """
 
 import click
+import sys
+from pathlib import Path
 from leadsauce.utils.config import get_config, init_config
 from leadsauce.utils.db import init_database
-from leadsauce.utils.constants import APP_VERSION, APP_DIR, CONFIG_FILE
+from leadsauce.utils.constants import APP_VERSION, APP_DIR, CONFIG_FILE, DATABASE_FILE
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=APP_VERSION)
 @click.option('--config', type=click.Path(), help='Path to config file')
 @click.option('--debug', is_flag=True, help='Enable debug mode')
@@ -20,13 +22,13 @@ def cli(ctx, config, debug):
     A powerful command-line tool for managing your professional contacts,
     companies, interactions, and relationships.
 
+    Run without arguments to see the dashboard.
     Use 'leadsauce COMMAND --help' for help on a specific command.
     """
     ctx.ensure_object(dict)
 
     # Load configuration
     if config:
-        from pathlib import Path
         ctx.obj['config'] = get_config()
         ctx.obj['config'].config_path = Path(config)
         ctx.obj['config']._load_config()
@@ -43,6 +45,17 @@ def cli(ctx, config, debug):
     except Exception as e:
         if debug:
             click.secho(f"Database initialization warning: {e}", fg='yellow')
+
+    # If no subcommand is provided, show dashboard
+    if ctx.invoked_subcommand is None:
+        # Check if database exists (first run)
+        if not DATABASE_FILE.exists():
+            from leadsauce.utils.dashboard import show_welcome
+            show_welcome()
+            click.echo("Run 'leadsauce init' to set up the database.")
+        else:
+            from leadsauce.utils.dashboard import show_dashboard
+            show_dashboard()
 
 
 @cli.command()
@@ -76,13 +89,10 @@ def init(ctx):
         click.secho(f"✓ Created directories in {APP_DIR}", fg='green')
 
         click.echo()
-        click.secho("LeadSauce CLI initialized successfully!", fg='green', bold=True)
-        click.echo()
-        click.secho("Next steps:", fg='cyan')
-        click.echo("  1. Create a profile:     leadsauce profile create --name 'John Doe' --seniority executive")
-        click.echo("  2. List profiles:        leadsauce profile list")
-        click.echo("  3. Get help:             leadsauce --help")
-        click.echo()
+
+        # Show welcome message
+        from leadsauce.utils.dashboard import show_welcome
+        show_welcome()
 
     except Exception as e:
         click.secho(f"✗ Initialization failed: {str(e)}", fg='red')
@@ -106,6 +116,19 @@ def version(ctx, output_format):
     else:
         click.echo(f"LeadSauce CLI version {APP_VERSION}")
         click.echo(f"Configuration directory: {APP_DIR}")
+
+
+@cli.command()
+@click.option('--mini', is_flag=True, help='Show mini dashboard')
+@click.pass_context
+def dashboard(ctx, mini):
+    """Display dashboard with overview and statistics"""
+    from leadsauce.utils.dashboard import show_dashboard, show_mini_dashboard
+
+    if mini:
+        show_mini_dashboard()
+    else:
+        show_dashboard()
 
 
 # Import and register command groups

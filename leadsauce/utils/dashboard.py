@@ -1,0 +1,224 @@
+"""
+Dashboard utilities for displaying overview with rich TUI
+"""
+
+import click
+from datetime import datetime, timedelta
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.layout import Layout
+from rich.text import Text
+from rich.columns import Columns
+from rich import box
+from leadsauce.utils.db import get_session
+from leadsauce.models.profile import Profile
+from leadsauce.models.company import Company
+from leadsauce.models.tag import Tag
+from leadsauce.models.interaction import Interaction
+from leadsauce.models.reminder import Reminder
+
+console = Console()
+
+
+def show_dashboard():
+    """Display main dashboard with stats and overview"""
+    session = get_session()
+
+    try:
+        # Get stats
+        total_profiles = session.query(Profile).count()
+        total_companies = session.query(Company).count()
+        total_tags = session.query(Tag).count()
+        total_interactions = session.query(Interaction).count()
+
+        # Get active reminders
+        active_reminders = session.query(Reminder).filter(
+            Reminder.completed == False
+        ).count()
+
+        # Get overdue reminders
+        overdue_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date < datetime.utcnow()
+        ).count()
+
+        # Get today's reminders
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        today_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date >= today_start,
+            Reminder.reminder_date < today_end
+        ).count()
+
+        # Recent profiles (last 5)
+        recent_profiles = session.query(Profile).order_by(
+            Profile.created_at.desc()
+        ).limit(5).all()
+
+        # Clear screen for better presentation
+        console.clear()
+        console.print()
+
+        # Header
+        header = Text("LeadSauce CLI", style="bold cyan", justify="center")
+        subtitle = Text("Professional Network Management", style="dim", justify="center")
+        console.print(Panel(
+            Text.assemble(header, "\n", subtitle),
+            box=box.DOUBLE,
+            border_style="cyan",
+            padding=(1, 2)
+        ))
+        console.print()
+
+        # Stats Section - Using Columns for side-by-side display
+        stats_table = Table(show_header=False, box=None, padding=(0, 2))
+        stats_table.add_column(justify="left", style="cyan")
+        stats_table.add_column(justify="right", style="bold white")
+        stats_table.add_column(justify="left", style="cyan")
+        stats_table.add_column(justify="right", style="bold white")
+
+        stats_table.add_row("👥 Profiles", str(total_profiles), "🏢 Companies", str(total_companies))
+        stats_table.add_row("💬 Interactions", str(total_interactions), "🏷️  Tags", str(total_tags))
+
+        console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
+        console.print()
+
+        # Reminders Section
+        reminders_table = Table(show_header=False, box=None, padding=(0, 2))
+        reminders_table.add_column(justify="left", width=20)
+        reminders_table.add_column(justify="right", style="bold")
+
+        if overdue_reminders > 0:
+            reminders_table.add_row("⚠️  Overdue", f"[bold red]{overdue_reminders}[/]")
+        else:
+            reminders_table.add_row("✓ Overdue", f"[green]{overdue_reminders}[/]")
+
+        if today_reminders > 0:
+            reminders_table.add_row("📅 Today", f"[yellow]{today_reminders}[/]")
+        else:
+            reminders_table.add_row("📅 Today", f"[dim]{today_reminders}[/]")
+
+        reminders_table.add_row("📝 Total Active", str(active_reminders))
+
+        console.print(Panel(reminders_table, title="[bold yellow]⏰ Reminders[/]", border_style="yellow"))
+        console.print()
+
+        # Recent Profiles Section
+        if recent_profiles:
+            profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1))
+            profiles_table.add_column("Name", style="cyan")
+            profiles_table.add_column("Seniority", style="magenta")
+            profiles_table.add_column("Company", style="blue")
+            profiles_table.add_column("Added", style="dim")
+
+            for profile in recent_profiles:
+                # Format date
+                days_ago = (datetime.utcnow() - profile.created_at).days
+                if days_ago == 0:
+                    date_str = "today"
+                elif days_ago == 1:
+                    date_str = "yesterday"
+                else:
+                    date_str = f"{days_ago}d ago"
+
+                # Format company
+                company_str = profile.company.name if profile.company else "-"
+
+                profiles_table.add_row(
+                    profile.name,
+                    profile.seniority,
+                    company_str,
+                    date_str
+                )
+
+            console.print(Panel(profiles_table, title="[bold yellow]👥 Recent Profiles[/]", border_style="yellow"))
+            console.print()
+
+        # Quick Commands Section
+        commands_table = Table(show_header=False, box=None, padding=(0, 1))
+        commands_table.add_column(style="cyan", width=35)
+        commands_table.add_column(style="dim")
+
+        commands_table.add_row("leadsauce profile create", "Create a new profile")
+        commands_table.add_row("leadsauce profile list", "List all profiles")
+        commands_table.add_row("leadsauce company list", "List all companies")
+        commands_table.add_row("leadsauce reminder list", "View reminders")
+        commands_table.add_row("leadsauce --help", "Show all commands")
+
+        console.print(Panel(commands_table, title="[bold yellow]💡 Quick Commands[/]", border_style="yellow"))
+        console.print()
+
+        # Status message
+        if overdue_reminders > 0:
+            console.print(Panel(
+                "[bold red]⚠️  You have overdue reminders![/]\n"
+                "[yellow]Run:[/] [cyan]leadsauce reminder list --overdue[/]",
+                border_style="red",
+                padding=(0, 2)
+            ))
+        elif total_profiles == 0:
+            console.print(Panel(
+                "[bold green]🚀 Get started by creating your first profile![/]\n"
+                "[yellow]Run:[/] [cyan]leadsauce profile create --interactive[/]",
+                border_style="green",
+                padding=(0, 2)
+            ))
+        else:
+            console.print("[dim]✨ Everything looks good! Keep building your network.[/]")
+
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error loading dashboard: {str(e)}[/]")
+    finally:
+        session.close()
+
+
+def show_mini_dashboard():
+    """Display minimal dashboard (for quick view)"""
+    session = get_session()
+
+    try:
+        total_profiles = session.query(Profile).count()
+        total_companies = session.query(Company).count()
+        overdue_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date < datetime.utcnow()
+        ).count()
+
+        console.print()
+        console.print("[bold cyan]LeadSauce CLI[/]")
+        console.print(f"[dim]📊 {total_profiles} profiles · {total_companies} companies[/]")
+
+        if overdue_reminders > 0:
+            console.print(f"[red]⚠️  {overdue_reminders} overdue reminders[/]")
+
+        console.print()
+        console.print("[dim]Run[/] [cyan]'leadsauce dashboard'[/] [dim]for full overview[/]")
+        console.print("[dim]Run[/] [cyan]'leadsauce --help'[/] [dim]for all commands[/]")
+        console.print()
+
+    except Exception:
+        pass
+    finally:
+        session.close()
+
+
+def show_welcome():
+    """Show welcome message for first-time users"""
+    console.print()
+    console.print(Panel(
+        "[bold cyan]Welcome to LeadSauce CLI![/]\n\n"
+        "Professional network management from your terminal.\n\n"
+        "[yellow]Quick Start:[/]\n"
+        "  1. [cyan]leadsauce profile create --interactive[/]\n"
+        "  2. [cyan]leadsauce profile list[/]\n"
+        "  3. [cyan]leadsauce dashboard[/]\n\n"
+        "[dim]Run[/] [cyan]leadsauce --help[/] [dim]for all commands[/]",
+        title="[bold green]🎉 Getting Started[/]",
+        border_style="green",
+        padding=(1, 2)
+    ))
+    console.print()
