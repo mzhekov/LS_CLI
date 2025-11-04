@@ -717,8 +717,10 @@ def relationships_menu():
 
 
 def show_network_map():
-    """Show comprehensive relationship map between profiles and companies"""
+    """Show visual network graph of relationships between profiles and companies"""
     from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+    import math
+    import random
 
     session = get_session()
 
@@ -727,155 +729,217 @@ def show_network_map():
     profile_relationships = session.query(ProfileRelationship).all()
     company_relationships = session.query(CompanyRelationship).all()
 
-    if not profiles:
+    if not profiles and not companies:
         console.print(Panel(
-            "[yellow]No profiles to map. Add some profiles first![/]",
+            "[yellow]No data to visualize. Add some profiles and companies first![/]",
             border_style="yellow"
         ))
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         session.close()
         return
 
-    # Build relationship data
-    company_groups = defaultdict(list)
-    tag_connections = defaultdict(set)
-
-    for profile in profiles:
-        # Group by company
-        if profile.company:
-            company_groups[profile.company.name].append(profile)
-
-        # Track tag connections
-        for tag in profile.tags:
-            tag_connections[tag.name].add(profile.id)
-
-    # Display network map
+    console.clear()
     console.print(Panel(
-        "[bold cyan]Network Relationship Map[/]\n"
-        "[dim]Connections, relationships, and network analysis[/]",
+        "[bold cyan]🗺️  Network Relationship Map[/]\n"
+        "[dim]Visual representation of connections[/]",
         border_style="cyan"
     ))
     console.print()
 
-    # Show explicit profile relationships first
-    if profile_relationships:
-        console.print("[bold magenta]🔗 Profile Relationships:[/]\n")
+    # Build network structure
+    nodes = []
+    node_map = {}  # id -> node index
+    edges = []
 
-        # Group by from_profile
-        by_profile = {}
-        for rel in profile_relationships:
-            if rel.from_profile_id not in by_profile:
-                by_profile[rel.from_profile_id] = []
-            by_profile[rel.from_profile_id].append(rel)
+    # Add profile nodes
+    for profile in profiles:
+        node_id = f"p_{profile.id}"
+        node_idx = len(nodes)
+        node_map[node_id] = node_idx
+        nodes.append({
+            'id': node_id,
+            'name': profile.name[:20],  # Truncate long names
+            'type': 'profile',
+            'entity': profile
+        })
 
-        for profile_id, rels in list(by_profile.items())[:5]:  # Show first 5
-            profile = rels[0].from_profile
-            console.print(f"  [cyan]{profile.name}[/]")
+    # Add company nodes
+    for company in companies:
+        node_id = f"c_{company.id}"
+        node_idx = len(nodes)
+        node_map[node_id] = node_idx
+        nodes.append({
+            'id': node_id,
+            'name': company.name[:20],
+            'type': 'company',
+            'entity': company
+        })
 
-            for rel in rels:
-                arrow = "↔" if rel.bidirectional else "→"
-                # Color code status
-                status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
-                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/] [{status_color}][{rel.status}][/]")
+    # Add profile relationships as edges
+    for rel in profile_relationships:
+        from_id = f"p_{rel.from_profile_id}"
+        to_id = f"p_{rel.to_profile_id}"
+        if from_id in node_map and to_id in node_map:
+            edges.append({
+                'from': node_map[from_id],
+                'to': node_map[to_id],
+                'type': rel.relationship_type,
+                'status': rel.status,
+                'bidirectional': rel.bidirectional
+            })
 
-        if len(by_profile) > 5:
-            console.print(f"  [dim]... and {len(by_profile) - 5} more profiles with relationships[/]")
+    # Add company relationships as edges
+    for rel in company_relationships:
+        from_id = f"c_{rel.from_company_id}"
+        to_id = f"c_{rel.to_company_id}"
+        if from_id in node_map and to_id in node_map:
+            edges.append({
+                'from': node_map[from_id],
+                'to': node_map[to_id],
+                'type': rel.relationship_type,
+                'status': rel.status,
+                'bidirectional': rel.bidirectional
+            })
 
-        console.print()
+    # Add profile-company edges (employment)
+    for profile in profiles:
+        if profile.company_id:
+            from_id = f"p_{profile.id}"
+            to_id = f"c_{profile.company_id}"
+            if from_id in node_map and to_id in node_map:
+                edges.append({
+                    'from': node_map[from_id],
+                    'to': node_map[to_id],
+                    'type': 'works_at',
+                    'status': 'Good',
+                    'bidirectional': False
+                })
 
-    # Show explicit company relationships
-    if company_relationships:
-        console.print("[bold magenta]🔗 Company Relationships:[/]\n")
+    # Simple circular layout algorithm
+    width = 80
+    height = 30
+    center_x = width // 2
+    center_y = height // 2
 
-        # Group by from_company
-        by_company = {}
-        for rel in company_relationships:
-            if rel.from_company_id not in by_company:
-                by_company[rel.from_company_id] = []
-            by_company[rel.from_company_id].append(rel)
+    # Calculate radius based on number of nodes
+    radius = min(width // 2 - 5, height // 2 - 2)
 
-        for company_id, rels in list(by_company.items())[:5]:  # Show first 5
-            company = rels[0].from_company
-            console.print(f"  [cyan]{company.name}[/]")
+    # Position nodes in a circle
+    positions = []
+    for i, node in enumerate(nodes):
+        angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
+        x = int(center_x + radius * math.cos(angle))
+        y = int(center_y + radius * math.sin(angle))
+        positions.append((x, y))
 
-            for rel in rels:
-                arrow = "↔" if rel.bidirectional else "→"
-                # Color code status
-                status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
-                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/] [{status_color}][{rel.status}][/]")
+    # Create canvas
+    canvas = [[' ' for _ in range(width)] for _ in range(height)]
 
-        if len(by_company) > 5:
-            console.print(f"  [dim]... and {len(by_company) - 5} more companies with relationships[/]")
+    # Draw edges first (so nodes appear on top)
+    for edge in edges:
+        from_pos = positions[edge['from']]
+        to_pos = positions[edge['to']]
 
-        console.print()
+        # Simple line drawing using Bresenham-like algorithm
+        x0, y0 = from_pos
+        x1, y1 = to_pos
 
-    # Company-based connections
-    if company_groups:
-        console.print("[bold yellow]📊 By Company:[/]\n")
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
 
-        for company_name, company_profiles in sorted(company_groups.items()):
-            if len(company_profiles) > 1:
-                # Create visual connection
-                console.print(f"  [cyan]🏢 {company_name}[/]")
+        # Draw line
+        x, y = x0, y0
+        steps = 0
+        max_steps = width + height  # Prevent infinite loops
 
-                for i, profile in enumerate(company_profiles):
-                    connector = "├──" if i < len(company_profiles) - 1 else "└──"
-                    tags_str = ", ".join([t.name for t in profile.tags[:2]]) if profile.tags else "no tags"
-                    console.print(f"    {connector} [white]{profile.name}[/] [dim]({profile.seniority}, {tags_str})[/]")
+        while steps < max_steps:
+            if 0 <= y < height and 0 <= x < width:
+                # Choose line character based on status
+                if edge['type'] == 'works_at':
+                    char = '·'  # Dotted for employment
+                elif edge['bidirectional']:
+                    char = '═'  # Double line for bidirectional
+                else:
+                    char = '─'  # Single line
 
-                console.print()
+                if canvas[y][x] == ' ':
+                    canvas[y][x] = char
 
-    # Tag-based connections
-    console.print("[bold yellow]🏷️  By Shared Tags:[/]\n")
+            if x == x1 and y == y1:
+                break
 
-    strong_connections = []
-    for tag_name, profile_ids in tag_connections.items():
-        if len(profile_ids) > 1:
-            tag_profiles = [p for p in profiles if p.id in profile_ids]
-            strong_connections.append((tag_name, tag_profiles))
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
 
-    if strong_connections:
-        # Show top connections
-        strong_connections.sort(key=lambda x: len(x[1]), reverse=True)
+            steps += 1
 
-        for tag_name, tag_profiles in strong_connections[:5]:  # Show top 5
-            console.print(f"  [green]🏷️  {tag_name}[/] ({len(tag_profiles)} profiles)")
+    # Draw nodes (profiles and companies)
+    for i, (node, (x, y)) in enumerate(zip(nodes, positions)):
+        if 0 <= y < height and 0 <= x < width:
+            # Mark node position
+            if node['type'] == 'profile':
+                canvas[y][x] = '👤'
+            else:
+                canvas[y][x] = '🏢'
 
-            for i, profile in enumerate(tag_profiles[:4]):  # Show first 4
-                connector = "├──" if i < min(len(tag_profiles), 4) - 1 else "└──"
-                company_str = f"@ {profile.company.name}" if profile.company else "no company"
-                console.print(f"    {connector} [white]{profile.name}[/] [dim]({company_str})[/]")
+    # Render canvas with rich formatting
+    console.print()
+    for row in canvas:
+        line = ''.join(row)
+        console.print(line)
 
-            if len(tag_profiles) > 4:
-                console.print(f"    └── [dim]... and {len(tag_profiles) - 4} more[/]")
+    console.print()
+    console.print(Panel(
+        "[bold cyan]Legend:[/]\n"
+        "👤 = Profile  •  🏢 = Company  •  ─ = Relationship  •  ═ = Bidirectional  •  · = Works at",
+        border_style="cyan",
+        box=box.SIMPLE
+    ))
+    console.print()
 
-            console.print()
-    else:
-        console.print("  [dim]No shared tags between profiles yet[/]\n")
+    # Show node labels below the map
+    console.print("[bold cyan]Nodes:[/]")
 
-    # Network statistics
+    # Group by type
+    profile_nodes = [n for n in nodes if n['type'] == 'profile']
+    company_nodes = [n for n in nodes if n['type'] == 'company']
+
+    if profile_nodes:
+        console.print("\n[bold yellow]👤 Profiles:[/]")
+        for node in profile_nodes[:10]:  # Show first 10
+            console.print(f"  • {node['name']}")
+        if len(profile_nodes) > 10:
+            console.print(f"  [dim]... and {len(profile_nodes) - 10} more[/]")
+
+    if company_nodes:
+        console.print("\n[bold yellow]🏢 Companies:[/]")
+        for node in company_nodes[:10]:
+            console.print(f"  • {node['name']}")
+        if len(company_nodes) > 10:
+            console.print(f"  [dim]... and {len(company_nodes) - 10} more[/]")
+
+    # Show statistics
     console.print()
     stats_table = Table(show_header=False, box=None, padding=(0, 2))
     stats_table.add_column(style="cyan bold", justify="right")
     stats_table.add_column(style="white")
 
-    stats_table.add_row("Total Profiles:", str(len(profiles)))
-    stats_table.add_row("Total Companies:", str(len(companies)))
-    stats_table.add_row("Profile Relationships:", str(len(profile_relationships)))
-    stats_table.add_row("Company Relationships:", str(len(company_relationships)))
-    stats_table.add_row("Companies with Profiles:", str(len(company_groups)))
-    stats_table.add_row("Shared Tags:", str(len([c for c in strong_connections if len(c[1]) > 1])))
+    stats_table.add_row("Total Nodes:", str(len(nodes)))
+    stats_table.add_row("Profiles:", str(len(profile_nodes)))
+    stats_table.add_row("Companies:", str(len(company_nodes)))
+    stats_table.add_row("Relationships:", str(len(profile_relationships)))
+    stats_table.add_row("Company Relations:", str(len(company_relationships)))
+    stats_table.add_row("Total Connections:", str(len(edges)))
 
-    # Calculate connectivity
-    connected_profiles = set()
-    for _, tag_profiles in strong_connections:
-        for p in tag_profiles:
-            connected_profiles.add(p.id)
-
-    connectivity = len(connected_profiles) / len(profiles) * 100 if profiles else 0
-    stats_table.add_row("Tag Connectivity:", f"{connectivity:.0f}%")
-
-    console.print(Panel(stats_table, title="[bold yellow]Network Stats[/]", border_style="yellow"))
+    console.print(Panel(stats_table, title="[bold cyan]Network Stats[/]", border_style="cyan"))
 
     console.print()
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
