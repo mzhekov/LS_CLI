@@ -105,19 +105,20 @@ def interactive_main_menu():
 
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
-        console.print("[dim]You can either:[/]")
+        console.print("[dim]Navigation:[/]")
         console.print("[dim]  • Type a number (1-6) or 'q' to quit[/]")
-        console.print("[dim]  • Press Enter to use arrow keys[/]")
+        console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
         # Create a simple text prompt that accepts keyboard shortcuts
         nav_input = questionary.text(
-            "Quick nav:",
+            "Quick nav (or Enter for menu):",
             style=custom_style,
             default=""
         ).ask()
 
-        if not nav_input:
+        if nav_input is None:
+            # User pressed Ctrl+C
             break
 
         nav_input = nav_input.strip()
@@ -225,7 +226,7 @@ def profiles_menu():
         actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="yellow")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[1] Back to Dashboard", style="white")
+        actions_text.append("[Enter] Back", style="dim white")
 
         console.print(Panel(
             actions_text,
@@ -263,17 +264,24 @@ def profiles_menu():
             ))
 
         console.print()
+        console.print("[dim]Tip: Press Enter (empty) or type '1' to go back to dashboard[/]")
+        console.print()
 
         # Action prompt
         action = questionary.text(
-            "Action ([a]dd/[s]earch/[1-9] view profile/[1] dashboard):",
+            "Action ([a]dd/[s]earch/[#] view profile):",
             style=custom_style
         ).ask()
 
-        if not action:
+        if action is None:
+            # Ctrl+C pressed
             break
 
         action = action.strip().lower()
+
+        # Empty input = back to dashboard
+        if action == '' or action == '1':
+            break
 
         if action == 'a':
             add_profile_interactive()
@@ -281,8 +289,6 @@ def profiles_menu():
             search_interactive()
         elif action == 'r':
             continue  # Refresh
-        elif action == '1' and len(action) == 1:
-            break  # Back to dashboard
         elif action.isdigit():
             # View profile by number
             idx = int(action) - 1
@@ -314,7 +320,7 @@ def companies_menu():
         actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="cyan")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[1] Back to Dashboard", style="white")
+        actions_text.append("[Enter] Back", style="dim white")
 
         console.print(Panel(
             actions_text,
@@ -354,17 +360,24 @@ def companies_menu():
             ))
 
         console.print()
+        console.print("[dim]Tip: Press Enter (empty) or type '1' to go back to dashboard[/]")
+        console.print()
 
         # Action prompt
         action = questionary.text(
-            "Action ([a]dd/[e]dit/[1-9] view company/[1] dashboard):",
+            "Action ([a]dd/[e]dit/[#] view company):",
             style=custom_style
         ).ask()
 
-        if not action:
+        if action is None:
+            # Ctrl+C pressed
             break
 
         action = action.strip().lower()
+
+        # Empty input = back to dashboard
+        if action == '' or action == '1':
+            break
 
         if action == 'a':
             add_company_interactive()
@@ -372,8 +385,6 @@ def companies_menu():
             edit_company_menu()
         elif action == 'r':
             continue  # Refresh
-        elif action == '1' and len(action) == 1:
-            break  # Back to dashboard
         elif action.isdigit():
             # View company by number
             idx = int(action) - 1
@@ -407,7 +418,7 @@ def tags_menu():
         actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="cyan")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[1] Back to Dashboard", style="white")
+        actions_text.append("[Enter] Back", style="dim white")
 
         console.print(Panel(
             actions_text,
@@ -442,17 +453,24 @@ def tags_menu():
             ))
 
         console.print()
+        console.print("[dim]Tip: Press Enter (empty) or type '1' to go back to dashboard[/]")
+        console.print()
 
         # Action prompt
         action = questionary.text(
-            "Action ([a]dd/[e]dit/[d]elete/[1] dashboard):",
+            "Action ([a]dd/[e]dit/[d]elete):",
             style=custom_style
         ).ask()
 
-        if not action:
+        if action is None:
+            # Ctrl+C pressed
             break
 
         action = action.strip().lower()
+
+        # Empty input = back to dashboard
+        if action == '' or action == '1':
+            break
 
         if action == 'a':
             add_tag_interactive()
@@ -462,8 +480,6 @@ def tags_menu():
             delete_tag_interactive()
         elif action == 'r':
             continue  # Refresh
-        elif action == '1':
-            break  # Back to dashboard
         else:
             console.print(f"[yellow]Invalid action '{action}'[/]")
             import time
