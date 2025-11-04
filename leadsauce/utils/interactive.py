@@ -1,5 +1,5 @@
 """
-Interactive TUI for LeadSauce CLI
+Interactive TUI for LeadSauce CLI with top bar navigation
 """
 
 import questionary
@@ -8,6 +8,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
+from rich.layout import Layout
+from rich.text import Text
+from collections import defaultdict
 from leadsauce.utils.db import get_session
 from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
@@ -30,62 +33,242 @@ custom_style = Style([
     ('text', ''),
 ])
 
+# Navigation menu items
+NAV_ITEMS = [
+    ("Dashboard", "📊"),
+    ("Profiles", "👥"),
+    ("Companies", "🏢"),
+    ("Network Map", "🗺️"),
+    ("Search", "🔍"),
+    ("Tags", "🏷️"),
+    ("Exit", "❌")
+]
+
+
+def render_top_bar(current_view="Dashboard"):
+    """Render the top navigation bar"""
+    nav_text = Text()
+
+    for i, (name, icon) in enumerate(NAV_ITEMS):
+        if i > 0:
+            nav_text.append(" │ ", style="dim")
+
+        if name == current_view:
+            nav_text.append(f"{icon} {name}", style="bold cyan on #1a1a1a")
+        else:
+            nav_text.append(f"{icon} {name}", style="white")
+
+    return Panel(nav_text, style="cyan", box=box.SIMPLE)
+
 
 def interactive_main_menu():
-    """Main interactive menu"""
+    """Main interactive menu with top bar navigation and dashboard as main screen"""
+    current_view = "Dashboard"
+
     while True:
         console.clear()
-        console.print()
-        console.print(Panel(
-            "[bold cyan]LeadSauce Interactive Mode[/]\n"
-            "[dim]Use arrow keys to navigate, Enter to select[/]",
-            border_style="cyan"
-        ))
+
+        # Show top bar
+        console.print(render_top_bar(current_view))
         console.print()
 
-        choices = [
-            "📊 View Dashboard",
-            "👥 Browse Profiles",
-            "➕ Add New Profile",
-            "🏢 Browse Companies",
-            "➕ Add New Company",
-            "🔍 Search",
-            "🏷️  Manage Tags",
-            "❌ Exit"
-        ]
-
-        action = questionary.select(
-            "What would you like to do?",
-            choices=choices,
-            style=custom_style
-        ).ask()
-
-        if not action or action == "❌ Exit":
+        # Show current view content
+        if current_view == "Dashboard":
+            show_dashboard_view()
+        elif current_view == "Profiles":
+            browse_profiles()
+            current_view = "Dashboard"  # Return to dashboard after
+            continue
+        elif current_view == "Companies":
+            browse_companies()
+            current_view = "Dashboard"
+            continue
+        elif current_view == "Network Map":
+            show_network_map()
+        elif current_view == "Search":
+            search_interactive()
+            current_view = "Dashboard"
+            continue
+        elif current_view == "Tags":
+            manage_tags()
+            current_view = "Dashboard"
+            continue
+        elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
 
-        if action == "📊 View Dashboard":
-            from leadsauce.utils.dashboard import show_dashboard
-            show_dashboard()
-            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        # Navigation menu at bottom
+        console.print()
+        nav_choices = [f"{icon} {name}" for name, icon in NAV_ITEMS]
 
-        elif action == "👥 Browse Profiles":
-            browse_profiles()
+        action = questionary.select(
+            "Navigate to:",
+            choices=nav_choices,
+            style=custom_style
+        ).ask()
 
-        elif action == "➕ Add New Profile":
-            add_profile_interactive()
+        if not action:
+            break
 
-        elif action == "🏢 Browse Companies":
-            browse_companies()
+        # Extract view name from selection
+        for name, icon in NAV_ITEMS:
+            if action == f"{icon} {name}":
+                current_view = name
+                break
 
-        elif action == "➕ Add New Company":
-            add_company_interactive()
 
-        elif action == "🔍 Search":
-            search_interactive()
+def show_dashboard_view():
+    """Show the main dashboard with statistics and quick actions"""
+    session = get_session()
 
-        elif action == "🏷️  Manage Tags":
-            manage_tags()
+    # Get statistics
+    total_profiles = session.query(Profile).count()
+    total_companies = session.query(Company).count()
+    total_tags = session.query(Tag).count()
+
+    # Get recent profiles
+    recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(5).all()
+
+    # Create statistics panel
+    stats_table = Table(show_header=False, box=None, padding=(0, 2))
+    stats_table.add_column(style="cyan bold", justify="right")
+    stats_table.add_column(style="white")
+
+    stats_table.add_row("Profiles:", str(total_profiles))
+    stats_table.add_row("Companies:", str(total_companies))
+    stats_table.add_row("Tags:", str(total_tags))
+
+    console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
+    console.print()
+
+    # Recent profiles
+    if recent_profiles:
+        profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+        profiles_table.add_column("Name", style="cyan")
+        profiles_table.add_column("Seniority", style="blue")
+        profiles_table.add_column("Company", style="green")
+
+        for p in recent_profiles:
+            profiles_table.add_row(
+                p.name,
+                p.seniority.title(),
+                p.company.name if p.company else "-"
+            )
+
+        console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
+    else:
+        console.print(Panel(
+            "[yellow]No profiles yet. Navigate to Profiles to add your first contact![/]",
+            border_style="yellow"
+        ))
+
+    session.close()
+
+
+def show_network_map():
+    """Show relationship map between profiles"""
+    session = get_session()
+
+    profiles = session.query(Profile).all()
+
+    if not profiles:
+        console.print(Panel(
+            "[yellow]No profiles to map. Add some profiles first![/]",
+            border_style="yellow"
+        ))
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        session.close()
+        return
+
+    # Build relationship data
+    company_groups = defaultdict(list)
+    tag_connections = defaultdict(set)
+
+    for profile in profiles:
+        # Group by company
+        if profile.company:
+            company_groups[profile.company.name].append(profile)
+
+        # Track tag connections
+        for tag in profile.tags:
+            tag_connections[tag.name].add(profile.id)
+
+    # Display network map
+    console.print(Panel(
+        "[bold cyan]Network Relationship Map[/]\n"
+        "[dim]Showing connections by company and shared tags[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    # Company-based connections
+    if company_groups:
+        console.print("[bold yellow]📊 By Company:[/]\n")
+
+        for company_name, company_profiles in sorted(company_groups.items()):
+            if len(company_profiles) > 1:
+                # Create visual connection
+                console.print(f"  [cyan]🏢 {company_name}[/]")
+
+                for i, profile in enumerate(company_profiles):
+                    connector = "├──" if i < len(company_profiles) - 1 else "└──"
+                    tags_str = ", ".join([t.name for t in profile.tags[:2]]) if profile.tags else "no tags"
+                    console.print(f"    {connector} [white]{profile.name}[/] [dim]({profile.seniority}, {tags_str})[/]")
+
+                console.print()
+
+    # Tag-based connections
+    console.print("[bold yellow]🏷️  By Shared Tags:[/]\n")
+
+    strong_connections = []
+    for tag_name, profile_ids in tag_connections.items():
+        if len(profile_ids) > 1:
+            tag_profiles = [p for p in profiles if p.id in profile_ids]
+            strong_connections.append((tag_name, tag_profiles))
+
+    if strong_connections:
+        # Show top connections
+        strong_connections.sort(key=lambda x: len(x[1]), reverse=True)
+
+        for tag_name, tag_profiles in strong_connections[:5]:  # Show top 5
+            console.print(f"  [green]🏷️  {tag_name}[/] ({len(tag_profiles)} profiles)")
+
+            for i, profile in enumerate(tag_profiles[:4]):  # Show first 4
+                connector = "├──" if i < min(len(tag_profiles), 4) - 1 else "└──"
+                company_str = f"@ {profile.company.name}" if profile.company else "no company"
+                console.print(f"    {connector} [white]{profile.name}[/] [dim]({company_str})[/]")
+
+            if len(tag_profiles) > 4:
+                console.print(f"    └── [dim]... and {len(tag_profiles) - 4} more[/]")
+
+            console.print()
+    else:
+        console.print("  [dim]No shared tags between profiles yet[/]\n")
+
+    # Network statistics
+    console.print()
+    stats_table = Table(show_header=False, box=None, padding=(0, 2))
+    stats_table.add_column(style="cyan bold", justify="right")
+    stats_table.add_column(style="white")
+
+    stats_table.add_row("Total Profiles:", str(len(profiles)))
+    stats_table.add_row("Companies:", str(len(company_groups)))
+    stats_table.add_row("Shared Tags:", str(len([c for c in strong_connections if len(c[1]) > 1])))
+
+    # Calculate connectivity
+    connected_profiles = set()
+    for _, tag_profiles in strong_connections:
+        for p in tag_profiles:
+            connected_profiles.add(p.id)
+
+    connectivity = len(connected_profiles) / len(profiles) * 100 if profiles else 0
+    stats_table.add_row("Connectivity:", f"{connectivity:.0f}%")
+
+    console.print(Panel(stats_table, title="[bold yellow]Network Stats[/]", border_style="yellow"))
+
+    console.print()
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    session.close()
 
 
 def browse_profiles():
