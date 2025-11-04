@@ -22,6 +22,7 @@ class ProfileRelationship(Base):
     # Relationship details
     relationship_type = Column(String(100), nullable=False)  # e.g., "reports to", "mentor", "friend", "colleague"
     description = Column(Text)
+    status = Column(String(50), default="Good")  # "Good", "Bad", "No Interest"
 
     # Is this bidirectional? (e.g., "friends" is bidirectional, "reports to" is not)
     bidirectional = Column(Boolean, default=False)
@@ -35,7 +36,7 @@ class ProfileRelationship(Base):
     to_profile = relationship('Profile', foreign_keys=[to_profile_id], backref='relationships_to')
 
     def __repr__(self):
-        return f"<ProfileRelationship(from={self.from_profile_id}, to={self.to_profile_id}, type='{self.relationship_type}')>"
+        return f"<ProfileRelationship(from={self.from_profile_id}, to={self.to_profile_id}, type='{self.relationship_type}', status='{self.status}')>"
 
     def to_dict(self, include_profiles=False):
         """Convert to dictionary"""
@@ -45,6 +46,7 @@ class ProfileRelationship(Base):
             'to_profile_id': self.to_profile_id,
             'relationship_type': self.relationship_type,
             'description': self.description,
+            'status': self.status,
             'bidirectional': self.bidirectional,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
@@ -79,6 +81,7 @@ class CompanyRelationship(Base):
     # Relationship details
     relationship_type = Column(String(100), nullable=False)  # e.g., "partner", "supplier", "client", "competitor", "parent company"
     description = Column(Text)
+    status = Column(String(50), default="Good")  # "Good", "Bad", "No Interest"
 
     # Is this bidirectional? (e.g., "partners" is bidirectional, "supplier" might not be)
     bidirectional = Column(Boolean, default=False)
@@ -92,7 +95,7 @@ class CompanyRelationship(Base):
     to_company = relationship('Company', foreign_keys=[to_company_id], backref='relationships_to')
 
     def __repr__(self):
-        return f"<CompanyRelationship(from={self.from_company_id}, to={self.to_company_id}, type='{self.relationship_type}')>"
+        return f"<CompanyRelationship(from={self.from_company_id}, to={self.to_company_id}, type='{self.relationship_type}', status='{self.status}')>"
 
     def to_dict(self, include_companies=False):
         """Convert to dictionary"""
@@ -102,6 +105,7 @@ class CompanyRelationship(Base):
             'to_company_id': self.to_company_id,
             'relationship_type': self.relationship_type,
             'description': self.description,
+            'status': self.status,
             'bidirectional': self.bidirectional,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
@@ -152,4 +156,11 @@ COMPANY_RELATIONSHIP_TYPES = [
     "Affiliate",
     "Strategic Alliance",
     "Other"
+]
+
+# Relationship status options
+RELATIONSHIP_STATUS = [
+    "Good",
+    "Bad",
+    "No Interest"
 ]

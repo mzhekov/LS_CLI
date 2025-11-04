@@ -15,7 +15,8 @@ from leadsauce.models.relationship import (
     ProfileRelationship,
     CompanyRelationship,
     PROFILE_RELATIONSHIP_TYPES,
-    COMPANY_RELATIONSHIP_TYPES
+    COMPANY_RELATIONSHIP_TYPES,
+    RELATIONSHIP_STATUS
 )
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     'ProfileRelationship',
     'CompanyRelationship',
     'PROFILE_RELATIONSHIP_TYPES',
-    'COMPANY_RELATIONSHIP_TYPES'
+    'COMPANY_RELATIONSHIP_TYPES',
+    'RELATIONSHIP_STATUS'
 ]

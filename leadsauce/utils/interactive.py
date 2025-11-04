@@ -612,7 +612,9 @@ def show_network_map():
 
             for rel in rels:
                 arrow = "↔" if rel.bidirectional else "→"
-                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/]")
+                # Color code status
+                status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/] [{status_color}][{rel.status}][/]")
 
         if len(by_profile) > 5:
             console.print(f"  [dim]... and {len(by_profile) - 5} more profiles with relationships[/]")
@@ -636,7 +638,9 @@ def show_network_map():
 
             for rel in rels:
                 arrow = "↔" if rel.bidirectional else "→"
-                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/]")
+                # Color code status
+                status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                console.print(f"    {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/] [{status_color}][{rel.status}][/]")
 
         if len(by_company) > 5:
             console.print(f"  [dim]... and {len(by_company) - 5} more companies with relationships[/]")
@@ -1579,7 +1583,7 @@ def delete_tag_interactive():
 
 def add_profile_relationship():
     """Add a relationship between two profiles"""
-    from leadsauce.models.relationship import ProfileRelationship, PROFILE_RELATIONSHIP_TYPES
+    from leadsauce.models.relationship import ProfileRelationship, PROFILE_RELATIONSHIP_TYPES, RELATIONSHIP_STATUS
 
     session = get_session()
     profiles = session.query(Profile).order_by(Profile.name).all()
@@ -1641,6 +1645,14 @@ def add_profile_relationship():
         default=True
     ).ask()
 
+    # Select status
+    status = questionary.select(
+        "Relationship status:",
+        choices=RELATIONSHIP_STATUS,
+        style=custom_style,
+        default="Good"
+    ).ask()
+
     # Optional description
     description = questionary.text(
         "Description (optional):",
@@ -1653,6 +1665,7 @@ def add_profile_relationship():
             from_profile_id=from_profile_id,
             to_profile_id=to_profile_id,
             relationship_type=relationship_type,
+            status=status,
             bidirectional=bidirectional,
             description=description or None
         )
@@ -1704,7 +1717,9 @@ def view_profile_relationships():
 
             for rel in rels:
                 arrow = "↔" if rel.bidirectional else "→"
-                console.print(f"  {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/]")
+                # Color code status
+                status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                console.print(f"  {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_profile.name}[/] [{status_color}][{rel.status}][/]")
                 if rel.description:
                     console.print(f"     [dim]{rel.description}[/]")
 
@@ -1719,7 +1734,7 @@ def view_profile_relationships():
 
 def add_company_relationship():
     """Add a relationship between two companies"""
-    from leadsauce.models.relationship import CompanyRelationship, COMPANY_RELATIONSHIP_TYPES
+    from leadsauce.models.relationship import CompanyRelationship, COMPANY_RELATIONSHIP_TYPES, RELATIONSHIP_STATUS
 
     session = get_session()
     companies = session.query(Company).order_by(Company.name).all()
@@ -1781,6 +1796,14 @@ def add_company_relationship():
         default=True
     ).ask()
 
+    # Select status
+    status = questionary.select(
+        "Relationship status:",
+        choices=RELATIONSHIP_STATUS,
+        style=custom_style,
+        default="Good"
+    ).ask()
+
     # Optional description
     description = questionary.text(
         "Description (optional):",
@@ -1793,6 +1816,7 @@ def add_company_relationship():
             from_company_id=from_company_id,
             to_company_id=to_company_id,
             relationship_type=relationship_type,
+            status=status,
             bidirectional=bidirectional,
             description=description or None
         )
@@ -1844,7 +1868,9 @@ def view_company_relationships():
 
             for rel in rels:
                 arrow = "↔" if rel.bidirectional else "→"
-                console.print(f"  {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/]")
+                # Color code status
+                status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                console.print(f"  {arrow} [yellow]{rel.relationship_type}[/] → [white]{rel.to_company.name}[/] [{status_color}][{rel.status}][/]")
                 if rel.description:
                     console.print(f"     [dim]{rel.description}[/]")
 
