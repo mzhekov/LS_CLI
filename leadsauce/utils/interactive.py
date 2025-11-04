@@ -519,46 +519,201 @@ def tags_menu():
 
 
 def relationships_menu():
-    """Show relationships management menu"""
+    """Show relationships list with action shortcuts in top bar"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+
+    session = get_session()
+    view_filter = 'all'  # 'all', 'profile', 'company'
+
     while True:
         console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[p] Profile Only", style="cyan" if view_filter == 'profile' else "dim")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[c] Company Only", style="cyan" if view_filter == 'company' else "dim")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        filter_label = ""
+        if view_filter == 'profile':
+            filter_label = " (Profile Only)"
+        elif view_filter == 'company':
+            filter_label = " (Company Only)"
+
         console.print(Panel(
-            "[bold cyan]🔗 Relationships Management[/]\n"
-            "[dim]Manage connections between people and companies[/]",
-            border_style="cyan"
+            actions_text,
+            title=f"[bold cyan]🔗 Relationships{filter_label}[/]",
+            border_style="cyan",
+            box=box.SIMPLE
         ))
         console.print()
 
-        choices = [
-            "👥 Add Profile Relationship",
-            "✏️  Edit Profile Relationship",
-            "📋 View Profile Relationships",
-            "🏢 Add Company Relationship",
-            "✏️  Edit Company Relationship",
-            "📋 View Company Relationships",
-            "← Back to Dashboard"
-        ]
+        # Get relationships
+        profile_rels = session.query(ProfileRelationship).all()
+        company_rels = session.query(CompanyRelationship).all()
 
-        action = questionary.select(
-            "What would you like to do?",
-            choices=choices,
+        # Apply filter
+        display_profile = view_filter in ['all', 'profile']
+        display_company = view_filter in ['all', 'company']
+
+        has_data = (display_profile and profile_rels) or (display_company and company_rels)
+
+        if has_data:
+            # Display relationships
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Type", style="magenta", width=8)
+            table.add_column("From", style="cyan")
+            table.add_column("→", style="yellow", width=3)
+            table.add_column("Relationship", style="yellow")
+            table.add_column("To", style="cyan")
+            table.add_column("Status", style="white")
+
+            idx = 1
+
+            # Add profile relationships
+            if display_profile:
+                for rel in profile_rels:
+                    arrow = "↔" if rel.bidirectional else "→"
+                    status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                    table.add_row(
+                        str(idx),
+                        "👥 Person",
+                        rel.from_profile.name,
+                        arrow,
+                        rel.relationship_type,
+                        rel.to_profile.name,
+                        f"[{status_color}]{rel.status}[/]"
+                    )
+                    idx += 1
+
+            # Add company relationships
+            if display_company:
+                for rel in company_rels:
+                    arrow = "↔" if rel.bidirectional else "→"
+                    status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                    table.add_row(
+                        str(idx),
+                        "🏢 Company",
+                        rel.from_company.name,
+                        arrow,
+                        rel.relationship_type,
+                        rel.to_company.name,
+                        f"[{status_color}]{rel.status}[/]"
+                    )
+                    idx += 1
+
+            console.print(table)
+
+            profile_count = len(profile_rels) if display_profile else 0
+            company_count = len(company_rels) if display_company else 0
+            total = profile_count + company_count
+
+            if view_filter == 'all':
+                console.print(f"\n[dim]{total} relationship(s) total ({profile_count} profile, {company_count} company)[/]")
+            else:
+                console.print(f"\n[dim]{total} relationship(s) shown[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No relationships yet. Press 'a' to create your first relationship![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
+        console.print()
+
+        # Action prompt
+        action = questionary.text(
+            "Action ([a]dd/[e]dit/[d]elete/[p]rofile/[c]ompany):",
             style=custom_style
         ).ask()
 
-        if not action or action == "← Back to Dashboard":
+        if action is None:
+            # Ctrl+C pressed
             break
-        elif action == "👥 Add Profile Relationship":
-            add_profile_relationship()
-        elif action == "✏️  Edit Profile Relationship":
-            edit_profile_relationship()
-        elif action == "📋 View Profile Relationships":
-            view_profile_relationships()
-        elif action == "🏢 Add Company Relationship":
-            add_company_relationship()
-        elif action == "✏️  Edit Company Relationship":
-            edit_company_relationship()
-        elif action == "📋 View Company Relationships":
-            view_company_relationships()
+
+        action = action.strip().lower()
+
+        # Empty input = back to dashboard
+        if action == '' or action == '1':
+            break
+
+        if action == 'a':
+            # Add relationship - ask which type
+            rel_type = questionary.select(
+                "Add which type of relationship?",
+                choices=[
+                    "👥 Profile Relationship",
+                    "🏢 Company Relationship",
+                    "← Cancel"
+                ],
+                style=custom_style
+            ).ask()
+
+            if rel_type == "👥 Profile Relationship":
+                add_profile_relationship()
+            elif rel_type == "🏢 Company Relationship":
+                add_company_relationship()
+
+        elif action == 'e':
+            # Edit relationship - ask which type
+            rel_type = questionary.select(
+                "Edit which type of relationship?",
+                choices=[
+                    "👥 Profile Relationship",
+                    "🏢 Company Relationship",
+                    "← Cancel"
+                ],
+                style=custom_style
+            ).ask()
+
+            if rel_type == "👥 Profile Relationship":
+                edit_profile_relationship()
+            elif rel_type == "🏢 Company Relationship":
+                edit_company_relationship()
+
+        elif action == 'd':
+            # Delete relationship - ask which type
+            rel_type = questionary.select(
+                "Delete which type of relationship?",
+                choices=[
+                    "👥 Profile Relationship",
+                    "🏢 Company Relationship",
+                    "← Cancel"
+                ],
+                style=custom_style
+            ).ask()
+
+            if rel_type == "👥 Profile Relationship":
+                delete_profile_relationship()
+            elif rel_type == "🏢 Company Relationship":
+                delete_company_relationship()
+
+        elif action == 'p':
+            view_filter = 'profile' if view_filter != 'profile' else 'all'
+
+        elif action == 'c':
+            view_filter = 'company' if view_filter != 'company' else 'all'
+
+        elif action == 'r':
+            # Refresh - just loop again
+            continue
+        else:
+            console.print("[yellow]Invalid action. Try again.[/]")
+            time.sleep(1)
+
+    session.close()
 
 
 def show_network_map():
@@ -2205,4 +2360,137 @@ def edit_company_relationship():
                 session.close()
                 return
 
+    session.close()
+
+def delete_profile_relationship():
+    """Delete a profile relationship"""
+    from leadsauce.models.relationship import ProfileRelationship
+
+    session = get_session()
+    relationships = session.query(ProfileRelationship).all()
+
+    if not relationships:
+        console.print("\n[yellow]No profile relationships to delete.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    console.clear()
+    console.print(Panel(
+        "[bold red]🗑️  Delete Profile Relationship[/]\n"
+        "[dim]Select a relationship to delete[/]",
+        border_style="red"
+    ))
+    console.print()
+
+    # Build choices
+    rel_choices = []
+    for rel in relationships:
+        arrow = "↔" if rel.bidirectional else "→"
+        status_label = f"[{rel.status}]"
+        label = f"{rel.from_profile.name} {arrow} {rel.relationship_type} → {rel.to_profile.name} {status_label}"
+        rel_choices.append({'name': label, 'value': rel.id})
+    rel_choices.append({'name': '← Cancel', 'value': None})
+
+    rel_id = questionary.select(
+        "Select relationship to delete:",
+        choices=rel_choices,
+        style=custom_style
+    ).ask()
+
+    if not rel_id:
+        session.close()
+        return
+
+    # Get the relationship
+    relationship = session.query(ProfileRelationship).filter(ProfileRelationship.id == rel_id).first()
+
+    if not relationship:
+        console.print("\n[red]Relationship not found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Confirm deletion
+    confirm = questionary.confirm(
+        f"Delete relationship: {relationship.from_profile.name} → {relationship.relationship_type} → {relationship.to_profile.name}?",
+        style=custom_style,
+        default=False
+    ).ask()
+
+    if confirm:
+        session.delete(relationship)
+        session.commit()
+        console.print(f"\n[green]✓ Relationship deleted successfully[/]\n")
+    else:
+        console.print(f"\n[yellow]Deletion cancelled[/]\n")
+
+    questionary.press_any_key_to_continue().ask()
+    session.close()
+
+
+def delete_company_relationship():
+    """Delete a company relationship"""
+    from leadsauce.models.relationship import CompanyRelationship
+
+    session = get_session()
+    relationships = session.query(CompanyRelationship).all()
+
+    if not relationships:
+        console.print("\n[yellow]No company relationships to delete.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    console.clear()
+    console.print(Panel(
+        "[bold red]🗑️  Delete Company Relationship[/]\n"
+        "[dim]Select a relationship to delete[/]",
+        border_style="red"
+    ))
+    console.print()
+
+    # Build choices
+    rel_choices = []
+    for rel in relationships:
+        arrow = "↔" if rel.bidirectional else "→"
+        status_label = f"[{rel.status}]"
+        label = f"{rel.from_company.name} {arrow} {rel.relationship_type} → {rel.to_company.name} {status_label}"
+        rel_choices.append({'name': label, 'value': rel.id})
+    rel_choices.append({'name': '← Cancel', 'value': None})
+
+    rel_id = questionary.select(
+        "Select relationship to delete:",
+        choices=rel_choices,
+        style=custom_style
+    ).ask()
+
+    if not rel_id:
+        session.close()
+        return
+
+    # Get the relationship
+    relationship = session.query(CompanyRelationship).filter(CompanyRelationship.id == rel_id).first()
+
+    if not relationship:
+        console.print("\n[red]Relationship not found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Confirm deletion
+    confirm = questionary.confirm(
+        f"Delete relationship: {relationship.from_company.name} → {relationship.relationship_type} → {relationship.to_company.name}?",
+        style=custom_style,
+        default=False
+    ).ask()
+
+    if confirm:
+        session.delete(relationship)
+        session.commit()
+        console.print(f"\n[green]✓ Relationship deleted successfully[/]\n")
+    else:
+        console.print(f"\n[yellow]Deletion cancelled[/]\n")
+
+    questionary.press_any_key_to_continue().ask()
     session.close()
