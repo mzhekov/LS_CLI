@@ -131,6 +131,18 @@ def dashboard(ctx, mini):
         show_dashboard()
 
 
+@cli.command()
+@click.pass_context
+def tui(ctx):
+    """Launch interactive TUI mode with menus and navigation
+
+    Navigate using arrow keys, select with Enter, and interact
+    with your network without typing commands.
+    """
+    from leadsauce.utils.interactive import interactive_main_menu
+    interactive_main_menu()
+
+
 # Import and register command groups
 from leadsauce.commands import profile, company
 cli.add_command(profile.profile)
