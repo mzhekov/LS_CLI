@@ -15,8 +15,8 @@ class Profile(Base):
     __tablename__ = 'profiles'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), index=True)
-    company_id = Column(Integer, ForeignKey('companies.id', ondelete='SET NULL'), index=True)
+    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), nullable=True, index=True)
+    company_id = Column(Integer, ForeignKey('companies.id', ondelete='SET NULL'), nullable=True, index=True)
 
     # Basic info
     name = Column(String(255), nullable=False, index=True)

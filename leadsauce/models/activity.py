@@ -14,7 +14,7 @@ class Activity(Base):
     __tablename__ = 'activities'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), index=True)
+    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), nullable=True, index=True)
 
     # Activity details
     activity_type = Column(String(50), nullable=False, index=True)  # create, update, delete, etc.

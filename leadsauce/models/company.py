@@ -14,7 +14,7 @@ class Company(Base):
     __tablename__ = 'companies'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), index=True)
+    team_id = Column(Integer, ForeignKey('teams.id', ondelete='SET NULL'), nullable=True, index=True)
 
     # Basic info
     name = Column(String(255), nullable=False, index=True)
