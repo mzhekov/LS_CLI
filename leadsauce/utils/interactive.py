@@ -80,11 +80,11 @@ def interactive_main_menu():
         if current_view == "Dashboard":
             show_dashboard_view()
         elif current_view == "Profiles":
-            browse_profiles()
+            profiles_menu()
             current_view = "Dashboard"  # Return to dashboard after
             continue
         elif current_view == "Companies":
-            browse_companies()
+            companies_menu()
             current_view = "Dashboard"
             continue
         elif current_view == "Network Map":
@@ -96,7 +96,7 @@ def interactive_main_menu():
             current_view = "Dashboard"
             continue
         elif current_view == "Tags":
-            manage_tags()
+            tags_menu()
             current_view = "Dashboard"
             continue
         elif current_view == "Exit":
@@ -194,11 +194,125 @@ def show_dashboard_view():
         console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
     else:
         console.print(Panel(
-            "[yellow]No profiles yet. Navigate to Profiles to add your first contact![/]",
+            "[yellow]No profiles yet. Press [2] to add your first contact![/]",
             border_style="yellow"
         ))
 
+    # Quick actions hint
+    console.print()
+    console.print(Panel(
+        "[bold cyan]Quick Actions:[/]\n"
+        "[dim]Press [2] for Profiles • [3] for Companies • [4] for Network Map[/]",
+        border_style="cyan",
+        box=box.SIMPLE
+    ))
+
     session.close()
+
+
+def profiles_menu():
+    """Show profiles action menu"""
+    while True:
+        console.clear()
+        console.print(Panel(
+            "[bold cyan]👥 Profiles Management[/]\n"
+            "[dim]Choose an action[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        choices = [
+            "📋 Browse All Profiles",
+            "➕ Add New Profile",
+            "🔍 Search Profiles",
+            "← Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Dashboard":
+            break
+        elif action == "📋 Browse All Profiles":
+            browse_profiles()
+        elif action == "➕ Add New Profile":
+            add_profile_interactive()
+        elif action == "🔍 Search Profiles":
+            search_interactive()
+
+
+def companies_menu():
+    """Show companies action menu"""
+    while True:
+        console.clear()
+        console.print(Panel(
+            "[bold cyan]🏢 Companies Management[/]\n"
+            "[dim]Choose an action[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        choices = [
+            "📋 Browse All Companies",
+            "➕ Add New Company",
+            "✏️  Edit Company",
+            "← Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Dashboard":
+            break
+        elif action == "📋 Browse All Companies":
+            browse_companies()
+        elif action == "➕ Add New Company":
+            add_company_interactive()
+        elif action == "✏️  Edit Company":
+            edit_company_menu()
+
+
+def tags_menu():
+    """Show tags action menu"""
+    while True:
+        console.clear()
+        console.print(Panel(
+            "[bold cyan]🏷️  Tags Management[/]\n"
+            "[dim]Choose an action[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        choices = [
+            "📋 View All Tags",
+            "➕ Add New Tag",
+            "✏️  Edit Tag",
+            "🗑️  Delete Tag",
+            "← Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Dashboard":
+            break
+        elif action == "📋 View All Tags":
+            view_tags_detailed()
+        elif action == "➕ Add New Tag":
+            add_tag_interactive()
+        elif action == "✏️  Edit Tag":
+            edit_tag_interactive()
+        elif action == "🗑️  Delete Tag":
+            delete_tag_interactive()
 
 
 def show_network_map():
@@ -760,29 +874,299 @@ def search_interactive():
 
 
 def manage_tags():
-    """Manage tags interactively"""
+    """Manage tags interactively (legacy function)"""
+    view_tags_detailed()
+
+
+def edit_company_menu():
+    """Edit company selection menu"""
     session = get_session()
+    companies = session.query(Company).order_by(Company.name).all()
 
-    while True:
-        console.clear()
-        tags = session.query(Tag).order_by(Tag.name).all()
+    if not companies:
+        console.print("\n[yellow]No companies found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
 
-        console.print(Panel(
-            f"[bold cyan]Tags ({len(tags)} total)[/]",
-            border_style="cyan"
-        ))
-        console.print()
+    # Create choices
+    company_choices = [{'name': c.name, 'value': c.id} for c in companies]
+    company_choices.append({'name': '← Cancel', 'value': None})
 
-        if tags:
-            for tag in tags:
-                count = len(tag.profiles)
-                color = tag.color or "white"
-                console.print(f"  • [{color}]{tag.name}[/] ({count} profiles)")
-        else:
-            console.print("[yellow]No tags found[/]")
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]✏️  Edit Company[/]\n"
+        "[dim]Select a company to edit[/]",
+        border_style="cyan"
+    ))
+    console.print()
 
-        console.print()
-        questionary.press_any_key_to_continue("Press any key to go back...").ask()
-        break
+    company_id = questionary.select(
+        "Select company:",
+        choices=company_choices,
+        style=custom_style
+    ).ask()
+
+    if company_id:
+        company = session.query(Company).filter(Company.id == company_id).first()
+        if company:
+            edit_company_interactive(company, session)
+
+    session.close()
+
+
+def edit_company_interactive(company, session):
+    """Edit a company interactively"""
+    console.clear()
+    console.print(Panel(
+        f"[bold cyan]Edit Company: {company.name}[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    fields = [
+        "Name",
+        "Industry",
+        "Size",
+        "Location",
+        "Website",
+        "← Cancel"
+    ]
+
+    field = questionary.select(
+        "What would you like to edit?",
+        choices=fields,
+        style=custom_style
+    ).ask()
+
+    if not field or field == "← Cancel":
+        return
+
+    if field == "Name":
+        new_value = questionary.text("Company name:", default=company.name, style=custom_style).ask()
+        if new_value:
+            company.name = new_value
+    elif field == "Industry":
+        new_value = questionary.text("Industry:", default=company.industry or "", style=custom_style).ask()
+        company.industry = new_value or None
+    elif field == "Size":
+        new_value = questionary.text("Size:", default=company.size or "", style=custom_style).ask()
+        company.size = new_value or None
+    elif field == "Location":
+        new_value = questionary.text("Location:", default=company.location or "", style=custom_style).ask()
+        company.location = new_value or None
+    elif field == "Website":
+        new_value = questionary.text("Website:", default=company.website or "", style=custom_style).ask()
+        company.website = new_value or None
+
+    session.commit()
+    console.print(f"\n[green]✓ Updated {company.name}[/]\n")
+    questionary.press_any_key_to_continue().ask()
+
+
+def view_tags_detailed():
+    """View all tags with detailed information"""
+    session = get_session()
+    tags = session.query(Tag).order_by(Tag.name).all()
+
+    console.clear()
+    console.print(Panel(
+        f"[bold cyan]Tags ({len(tags)} total)[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    if tags:
+        # Create table
+        table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+        table.add_column("Tag", style="cyan")
+        table.add_column("Color", style="white")
+        table.add_column("Profiles", justify="right", style="green")
+
+        for tag in tags:
+            count = len(tag.profiles)
+            color_display = f"[{tag.color or 'white'}]●[/]" if tag.color else "-"
+            table.add_row(tag.name, color_display, str(count))
+
+        console.print(table)
+    else:
+        console.print("[yellow]No tags found[/]")
+
+    console.print()
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    session.close()
+
+
+def add_tag_interactive():
+    """Add a new tag interactively"""
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]➕ Add New Tag[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    name = questionary.text("Tag name:", style=custom_style).ask()
+    if not name:
+        return
+
+    color_choices = [
+        "red", "green", "blue", "yellow", "cyan", "magenta",
+        "white", "bright_red", "bright_green", "bright_blue"
+    ]
+    color = questionary.select("Color (optional):", choices=["Skip"] + color_choices, style=custom_style).ask()
+    if color == "Skip":
+        color = None
+
+    session = get_session()
+    try:
+        # Check if tag already exists
+        existing = session.query(Tag).filter(Tag.name == name).first()
+        if existing:
+            console.print(f"\n[yellow]Tag '{name}' already exists![/]\n")
+            questionary.press_any_key_to_continue().ask()
+            session.close()
+            return
+
+        new_tag = Tag(name=name, color=color)
+        session.add(new_tag)
+        session.commit()
+
+        console.print(f"\n[green]✓ Tag '{name}' created successfully![/]\n")
+        questionary.press_any_key_to_continue().ask()
+
+    except Exception as e:
+        console.print(f"\n[red]✗ Error creating tag: {str(e)}[/]\n")
+        session.rollback()
+        questionary.press_any_key_to_continue().ask()
+    finally:
+        session.close()
+
+
+def edit_tag_interactive():
+    """Edit a tag interactively"""
+    session = get_session()
+    tags = session.query(Tag).order_by(Tag.name).all()
+
+    if not tags:
+        console.print("\n[yellow]No tags found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Create choices
+    tag_choices = [{'name': t.name, 'value': t.id} for t in tags]
+    tag_choices.append({'name': '← Cancel', 'value': None})
+
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]✏️  Edit Tag[/]\n"
+        "[dim]Select a tag to edit[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    tag_id = questionary.select(
+        "Select tag:",
+        choices=tag_choices,
+        style=custom_style
+    ).ask()
+
+    if not tag_id:
+        session.close()
+        return
+
+    tag = session.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        session.close()
+        return
+
+    # Edit options
+    fields = ["Name", "Color", "← Cancel"]
+    field = questionary.select(
+        f"Edit {tag.name}:",
+        choices=fields,
+        style=custom_style
+    ).ask()
+
+    if not field or field == "← Cancel":
+        session.close()
+        return
+
+    if field == "Name":
+        new_name = questionary.text("Tag name:", default=tag.name, style=custom_style).ask()
+        if new_name:
+            tag.name = new_name
+    elif field == "Color":
+        color_choices = [
+            "red", "green", "blue", "yellow", "cyan", "magenta",
+            "white", "bright_red", "bright_green", "bright_blue"
+        ]
+        new_color = questionary.select(
+            "Color:",
+            choices=["None"] + color_choices,
+            default=tag.color or "None",
+            style=custom_style
+        ).ask()
+        tag.color = None if new_color == "None" else new_color
+
+    session.commit()
+    console.print(f"\n[green]✓ Updated tag '{tag.name}'[/]\n")
+    questionary.press_any_key_to_continue().ask()
+    session.close()
+
+
+def delete_tag_interactive():
+    """Delete a tag interactively"""
+    session = get_session()
+    tags = session.query(Tag).order_by(Tag.name).all()
+
+    if not tags:
+        console.print("\n[yellow]No tags found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Create choices
+    tag_choices = []
+    for t in tags:
+        count = len(t.profiles)
+        tag_choices.append({'name': f"{t.name} ({count} profiles)", 'value': t.id})
+    tag_choices.append({'name': '← Cancel', 'value': None})
+
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]🗑️  Delete Tag[/]\n"
+        "[dim]Select a tag to delete[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    tag_id = questionary.select(
+        "Select tag:",
+        choices=tag_choices,
+        style=custom_style
+    ).ask()
+
+    if not tag_id:
+        session.close()
+        return
+
+    tag = session.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        session.close()
+        return
+
+    # Confirm deletion
+    profile_count = len(tag.profiles)
+    if questionary.confirm(
+        f"Delete tag '{tag.name}'? (Used by {profile_count} profile(s))",
+        style=custom_style,
+        default=False
+    ).ask():
+        session.delete(tag)
+        session.commit()
+        console.print(f"\n[green]✓ Deleted tag '{tag.name}'[/]\n")
+        questionary.press_any_key_to_continue().ask()
 
     session.close()
