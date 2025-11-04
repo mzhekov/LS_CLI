@@ -833,86 +833,128 @@ def add_profile_interactive():
 
 
 def edit_profile_interactive(profile, session):
-    """Edit profile interactively"""
-    console.clear()
-    console.print(Panel(
-        f"[bold cyan]Edit Profile: {profile.name}[/]",
-        border_style="cyan"
-    ))
-    console.print()
+    """Edit profile interactively - allows editing multiple fields"""
 
-    # What to edit
-    fields = [
-        "Name",
-        "Email",
-        "Phone",
-        "Seniority",
-        "Company",
-        "Tags",
-        "Skills",
-        "Notes",
-        "← Cancel"
-    ]
+    while True:
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]Edit Profile: {profile.name}[/]",
+            border_style="cyan"
+        ))
+        console.print()
 
-    field = questionary.select(
-        "What would you like to edit?",
-        choices=fields,
-        style=custom_style
-    ).ask()
+        # Show current values
+        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table.add_column(style="dim", justify="right")
+        info_table.add_column(style="white")
 
-    if not field or field == "← Cancel":
-        return
+        info_table.add_row("Name:", profile.name)
+        info_table.add_row("Email:", profile.email or "-")
+        info_table.add_row("Phone:", profile.phone or "-")
+        info_table.add_row("Seniority:", profile.seniority.title())
+        info_table.add_row("Company:", profile.company.name if profile.company else "-")
+        info_table.add_row("Tags:", ", ".join([t.name for t in profile.tags]) if profile.tags else "-")
+        info_table.add_row("Skills:", profile.good_at or "-")
 
-    if field == "Name":
-        new_value = questionary.text("Name:", default=profile.name, style=custom_style).ask()
-        if new_value:
-            profile.name = new_value
+        console.print(info_table)
+        console.print()
 
-    elif field == "Email":
-        new_value = questionary.text("Email:", default=profile.email or "", style=custom_style).ask()
-        profile.email = new_value or None
+        # What to edit
+        fields = [
+            "Name",
+            "Email",
+            "Phone",
+            "Seniority",
+            "Company",
+            "Tags",
+            "Skills",
+            "Notes",
+            "← Done Editing"
+        ]
 
-    elif field == "Phone":
-        new_value = questionary.text("Phone:", default=profile.phone or "", style=custom_style).ask()
-        profile.phone = new_value or None
-
-    elif field == "Seniority":
-        new_value = questionary.select(
-            "Seniority:",
-            choices=[s.title() for s in SENIORITY_LEVELS],
-            default=profile.seniority.title(),
+        field = questionary.select(
+            "What would you like to edit?",
+            choices=fields,
             style=custom_style
         ).ask()
-        if new_value:
-            profile.seniority = new_value.lower()
 
-    elif field == "Tags":
-        current_tags = ", ".join([t.name for t in profile.tags])
-        new_value = questionary.text("Tags (comma-separated):", default=current_tags, style=custom_style).ask()
-        if new_value is not None:
-            # Clear existing tags
-            profile.tags = []
-            # Add new tags
-            tag_names = parse_tags(new_value)
-            for tag_name in tag_names:
-                tag = session.query(Tag).filter(Tag.name == tag_name).first()
-                if not tag:
-                    tag = Tag(name=tag_name)
-                    session.add(tag)
+        if not field or field == "← Done Editing":
+            break
+
+        if field == "Name":
+            new_value = questionary.text("Name:", default=profile.name, style=custom_style).ask()
+            if new_value:
+                profile.name = new_value
+
+        elif field == "Email":
+            new_value = questionary.text("Email:", default=profile.email or "", style=custom_style).ask()
+            profile.email = new_value or None
+
+        elif field == "Phone":
+            new_value = questionary.text("Phone:", default=profile.phone or "", style=custom_style).ask()
+            profile.phone = new_value or None
+
+        elif field == "Seniority":
+            new_value = questionary.select(
+                "Seniority:",
+                choices=[s.title() for s in SENIORITY_LEVELS],
+                default=profile.seniority.title(),
+                style=custom_style
+            ).ask()
+            if new_value:
+                profile.seniority = new_value.lower()
+
+        elif field == "Company":
+            companies = session.query(Company).order_by(Company.name).all()
+            company_choices = [{'name': '-- No Company --', 'value': None}]
+            company_choices.extend([{'name': c.name, 'value': c.id} for c in companies])
+            company_choices.append({'name': '+ Create New', 'value': 'new'})
+
+            company_id = questionary.select(
+                "Company:",
+                choices=company_choices,
+                style=custom_style
+            ).ask()
+
+            if company_id == 'new':
+                company_name = questionary.text("New company name:", style=custom_style).ask()
+                if company_name:
+                    new_company = Company(name=company_name)
+                    session.add(new_company)
                     session.flush()
-                profile.tags.append(tag)
+                    profile.company_id = new_company.id
+            else:
+                profile.company_id = company_id
 
-    elif field == "Skills":
-        new_value = questionary.text("Skills:", default=profile.good_at or "", style=custom_style).ask()
-        profile.good_at = new_value or None
+        elif field == "Tags":
+            current_tags = ", ".join([t.name for t in profile.tags])
+            new_value = questionary.text("Tags (comma-separated):", default=current_tags, style=custom_style).ask()
+            if new_value is not None:
+                # Clear existing tags
+                profile.tags = []
+                # Add new tags
+                tag_names = parse_tags(new_value)
+                for tag_name in tag_names:
+                    tag = session.query(Tag).filter(Tag.name == tag_name).first()
+                    if not tag:
+                        tag = Tag(name=tag_name)
+                        session.add(tag)
+                        session.flush()
+                    profile.tags.append(tag)
 
-    elif field == "Notes":
-        new_value = questionary.text("Notes:", default=profile.notes or "", style=custom_style).ask()
-        profile.notes = new_value or None
+        elif field == "Skills":
+            new_value = questionary.text("Skills:", default=profile.good_at or "", style=custom_style).ask()
+            profile.good_at = new_value or None
 
-    session.commit()
-    console.print(f"\n[green]✓ Updated {profile.name}[/]\n")
-    questionary.press_any_key_to_continue().ask()
+        elif field == "Notes":
+            new_value = questionary.text("Notes:", default=profile.notes or "", style=custom_style).ask()
+            profile.notes = new_value or None
+
+        # Commit after each field change
+        session.commit()
+        console.print(f"\n[green]✓ Updated {profile.name}[/]\n")
+        import time
+        time.sleep(0.5)  # Brief pause to show success message
 
 
 def browse_companies():
@@ -1118,52 +1160,75 @@ def edit_company_menu():
 
 
 def edit_company_interactive(company, session):
-    """Edit a company interactively"""
-    console.clear()
-    console.print(Panel(
-        f"[bold cyan]Edit Company: {company.name}[/]",
-        border_style="cyan"
-    ))
-    console.print()
+    """Edit a company interactively - allows editing multiple fields"""
 
-    fields = [
-        "Name",
-        "Industry",
-        "Size",
-        "Location",
-        "Website",
-        "← Cancel"
-    ]
+    while True:
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]Edit Company: {company.name}[/]",
+            border_style="cyan"
+        ))
+        console.print()
 
-    field = questionary.select(
-        "What would you like to edit?",
-        choices=fields,
-        style=custom_style
-    ).ask()
+        # Show current values
+        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table.add_column(style="dim", justify="right")
+        info_table.add_column(style="white")
 
-    if not field or field == "← Cancel":
-        return
+        info_table.add_row("Name:", company.name)
+        info_table.add_row("Industry:", company.industry or "-")
+        info_table.add_row("Size:", company.size or "-")
+        info_table.add_row("Location:", company.location or "-")
+        info_table.add_row("Website:", company.website or "-")
+        info_table.add_row("Profiles:", str(len(company.profiles)))
 
-    if field == "Name":
-        new_value = questionary.text("Company name:", default=company.name, style=custom_style).ask()
-        if new_value:
-            company.name = new_value
-    elif field == "Industry":
-        new_value = questionary.text("Industry:", default=company.industry or "", style=custom_style).ask()
-        company.industry = new_value or None
-    elif field == "Size":
-        new_value = questionary.text("Size:", default=company.size or "", style=custom_style).ask()
-        company.size = new_value or None
-    elif field == "Location":
-        new_value = questionary.text("Location:", default=company.location or "", style=custom_style).ask()
-        company.location = new_value or None
-    elif field == "Website":
-        new_value = questionary.text("Website:", default=company.website or "", style=custom_style).ask()
-        company.website = new_value or None
+        console.print(info_table)
+        console.print()
 
-    session.commit()
-    console.print(f"\n[green]✓ Updated {company.name}[/]\n")
-    questionary.press_any_key_to_continue().ask()
+        fields = [
+            "Name",
+            "Industry",
+            "Size",
+            "Location",
+            "Website",
+            "Notes",
+            "← Done Editing"
+        ]
+
+        field = questionary.select(
+            "What would you like to edit?",
+            choices=fields,
+            style=custom_style
+        ).ask()
+
+        if not field or field == "← Done Editing":
+            break
+
+        if field == "Name":
+            new_value = questionary.text("Company name:", default=company.name, style=custom_style).ask()
+            if new_value:
+                company.name = new_value
+        elif field == "Industry":
+            new_value = questionary.text("Industry:", default=company.industry or "", style=custom_style).ask()
+            company.industry = new_value or None
+        elif field == "Size":
+            new_value = questionary.text("Size:", default=company.size or "", style=custom_style).ask()
+            company.size = new_value or None
+        elif field == "Location":
+            new_value = questionary.text("Location:", default=company.location or "", style=custom_style).ask()
+            company.location = new_value or None
+        elif field == "Website":
+            new_value = questionary.text("Website:", default=company.website or "", style=custom_style).ask()
+            company.website = new_value or None
+        elif field == "Notes":
+            new_value = questionary.text("Notes:", default=company.notes or "", style=custom_style).ask()
+            company.notes = new_value or None
+
+        # Commit after each field change
+        session.commit()
+        console.print(f"\n[green]✓ Updated {company.name}[/]\n")
+        import time
+        time.sleep(0.5)  # Brief pause to show success message
 
 
 def view_tags_detailed():
