@@ -143,6 +143,128 @@ def tui(ctx):
     interactive_main_menu()
 
 
+@cli.command()
+@click.option('--backup', is_flag=True, help='Create a backup before migrating')
+def migrate(backup):
+    """Migrate database to remove authentication-related columns
+
+    This command removes user_id and related columns from the database
+    schema after the authentication system was removed. Safe to run
+    multiple times.
+
+    Example:
+        leadsauce migrate
+        leadsauce migrate --backup
+    """
+    import sqlite3
+    import shutil
+    from datetime import datetime
+
+    click.echo("LeadSauce Database Migration")
+    click.echo("=" * 60)
+    click.echo(f"Database: {DATABASE_FILE}")
+
+    if not DATABASE_FILE.exists():
+        click.secho("✗ Database not found. Nothing to migrate.", fg='yellow')
+        return
+
+    # Create backup if requested
+    if backup:
+        backup_path = DATABASE_FILE.parent / f"database_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        click.echo(f"\nCreating backup at: {backup_path}")
+        shutil.copy2(DATABASE_FILE, backup_path)
+        click.secho(f"✓ Backup created", fg='green')
+
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+
+    # Tables and columns to remove
+    tables_to_fix = {
+        'companies': 'user_id',
+        'profiles': 'user_id',
+        'tags': 'user_id',
+        'interactions': 'user_id',
+        'reminders': 'user_id',
+        'documents': 'uploaded_by_id',
+        'activities': 'user_id',
+        'teams': 'created_by_id',
+    }
+
+    migrated = []
+    skipped = []
+
+    click.echo("\nMigrating tables...")
+
+    for table_name, column_name in tables_to_fix.items():
+        try:
+            # Check if table exists
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+            if not cursor.fetchone():
+                skipped.append(f"{table_name} (table doesn't exist)")
+                continue
+
+            # Check if column exists
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if column_name not in column_names:
+                skipped.append(f"{table_name}.{column_name}")
+                continue
+
+            # Get columns to keep
+            columns_to_keep = [col for col in columns if col[1] != column_name]
+
+            # Build new schema
+            column_defs = []
+            for col in columns_to_keep:
+                col_name, col_type, not_null, default_val, pk = col[1], col[2], col[3], col[4], col[5]
+                not_null_str = " NOT NULL" if not_null else ""
+                default_str = f" DEFAULT {default_val}" if default_val is not None else ""
+                pk_str = " PRIMARY KEY" if pk else ""
+                column_defs.append(f"{col_name} {col_type}{not_null_str}{default_str}{pk_str}")
+
+            # Create new table
+            cursor.execute(f"CREATE TABLE {table_name}_new ({', '.join(column_defs)})")
+
+            # Copy data
+            keep_column_names = [col[1] for col in columns_to_keep]
+            cursor.execute(f"""
+                INSERT INTO {table_name}_new ({', '.join(keep_column_names)})
+                SELECT {', '.join(keep_column_names)}
+                FROM {table_name}
+            """)
+
+            # Replace old table
+            cursor.execute(f"DROP TABLE {table_name}")
+            cursor.execute(f"ALTER TABLE {table_name}_new RENAME TO {table_name}")
+
+            migrated.append(f"{table_name}.{column_name}")
+            click.secho(f"  ✓ {table_name}.{column_name}", fg='green')
+
+        except Exception as e:
+            click.secho(f"  ✗ Error migrating {table_name}: {e}", fg='red')
+            conn.rollback()
+            conn.close()
+            sys.exit(1)
+
+    conn.commit()
+    conn.close()
+
+    click.echo("\n" + "=" * 60)
+    click.secho("Migration complete!", fg='green', bold=True)
+    click.echo("=" * 60)
+
+    if migrated:
+        click.echo(f"\n✓ Migrated {len(migrated)} columns")
+
+    if skipped:
+        click.echo(f"\n✓ Already correct: {len(skipped)} columns")
+
+    click.echo("\nYou can now use LeadSauce CLI normally:")
+    click.echo("  leadsauce tui")
+
+
 # Import and register command groups
 from leadsauce.commands import profile, company
 cli.add_command(profile.profile)

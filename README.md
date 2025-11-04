@@ -34,12 +34,10 @@ pip install -e .
 ## Quick Start
 
 ```bash
-# Initialize configuration
-leadsauce init
+# Launch the interactive TUI (recommended for first-time users)
+leadsauce tui
 
-# Register/Login
-leadsauce auth register --email user@example.com
-leadsauce auth login --email user@example.com
+# Or use commands directly:
 
 # Create your first contact
 leadsauce profile create --name "John Doe" --seniority executive
@@ -47,15 +45,26 @@ leadsauce profile create --name "John Doe" --seniority executive
 # List contacts
 leadsauce profile list
 
-# Add an interaction
-leadsauce interaction add <profile_id> --type meeting --subject "Q4 Planning"
+# View the dashboard
+leadsauce
 
-# Set a reminder
-leadsauce reminder create <profile_id> --title "Follow up" --date "2025-11-15"
-
-# View network insights
-leadsauce insights dashboard
+# Get help on any command
+leadsauce --help
+leadsauce profile --help
 ```
+
+## Upgrading from Older Versions
+
+If you're upgrading from a version that had authentication, run the migration command to update your database schema:
+
+```bash
+# Migrate database (removes authentication-related columns)
+leadsauce migrate --backup
+
+# The --backup flag creates a backup before migrating (recommended)
+```
+
+See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for more details.
 
 ## Documentation
 
@@ -68,16 +77,17 @@ leadsauce insights dashboard
 
 ```
 leadsauce
-├── auth          # Authentication and user management
+├── tui           # Interactive TUI mode with arrow-key navigation
+├── migrate       # Database migration utility
 ├── profile       # Contact management
 ├── company       # Company management
-├── interaction   # Interaction logging
-├── reminder      # Reminder and task management
-├── tag           # Tag management
-├── team          # Team collaboration
-├── document      # Document management
-├── bulk          # Bulk operations
-├── insights      # Analytics and insights
+├── interaction   # Interaction logging (coming soon)
+├── reminder      # Reminder and task management (coming soon)
+├── tag           # Tag management (coming soon)
+├── team          # Team collaboration (coming soon)
+├── document      # Document management (coming soon)
+├── bulk          # Bulk operations (coming soon)
+├── insights      # Analytics and insights (coming soon)
 ├── relationship  # Relationship mapping
 ├── search        # Global search
 ├── export        # Export operations
