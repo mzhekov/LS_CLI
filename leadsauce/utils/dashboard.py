@@ -105,9 +105,9 @@ def show_dashboard():
 
         if total_goals > 0:
             goals_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1))
-            goals_table.add_column("Goal", style="cyan", width=30)
+            goals_table.add_column("Goal", style="cyan", width=25)
             goals_table.add_column("Progress", style="green", width=12)
-            goals_table.add_column("Tasks", style="magenta", width=10)
+            goals_table.add_column("Linked Tasks", style="magenta", width=30)
             goals_table.add_column("Target", style="dim", width=12)
 
             for goal in goals_in_progress:
@@ -129,12 +129,22 @@ def show_dashboard():
                 progress_bar = "█" * int(goal.progress / 10) + "░" * (10 - int(goal.progress / 10))
                 progress_str = f"{progress_bar} {goal.progress:.0f}%"
 
-                # Task summary
-                summary = goal.get_summary()
-                task_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+                # Task summary - show task names with status
+                if goal.tasks:
+                    task_items = []
+                    for task in goal.tasks[:2]:  # Show first 2 tasks
+                        status_icon = "✓" if task.status == 'completed' else "○"
+                        task_name = task.title[:12] + "..." if len(task.title) > 12 else task.title
+                        task_items.append(f"{status_icon} {task_name}")
+
+                    task_str = ", ".join(task_items)
+                    if len(goal.tasks) > 2:
+                        task_str += f" [dim]+{len(goal.tasks)-2}[/]"
+                else:
+                    task_str = "[dim]No tasks linked[/]"
 
                 # Truncate title if too long
-                title = goal.title[:27] + "..." if len(goal.title) > 27 else goal.title
+                title = goal.title[:23] + "..." if len(goal.title) > 23 else goal.title
 
                 goals_table.add_row(title, progress_str, task_str, target_str)
 
