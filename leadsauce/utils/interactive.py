@@ -20,6 +20,7 @@ from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
 from leadsauce.models.tag import Tag
 from leadsauce.models.task import Task
+from leadsauce.models.goal import Goal
 from leadsauce.utils.constants import SENIORITY_LEVELS, GENERATION_TYPES
 from leadsauce.utils.validators import validate_email, validate_phone, parse_tags
 from datetime import datetime, timedelta
@@ -65,12 +66,13 @@ NAV_ITEMS = [
     ("Dashboard", "📊", "1"),
     ("Profiles", "👥", "2"),
     ("Companies", "🏢", "3"),
-    ("Network & Relationships", "🗺️", "4"),
-    ("Search", "🔍", "5"),
-    ("Tags", "🏷️", "6"),
-    ("Workshop", "🔧", "7"),
-    ("Export", "📤", "8"),
-    ("Import", "📥", "9"),
+    ("Goals", "🎯", "4"),
+    ("Network & Relationships", "🗺️", "5"),
+    ("Search", "🔍", "6"),
+    ("Tags", "🏷️", "7"),
+    ("Workshop", "🔧", "8"),
+    ("Export", "📤", "9"),
+    ("Import", "📥", "0"),
     ("Exit", "❌", "q")
 ]
 
@@ -122,6 +124,13 @@ def interactive_main_menu():
             continue
         elif current_view == "Companies":
             new_view = companies_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
+        elif current_view == "Goals":
+            new_view = goals_menu()
             if new_view:
                 current_view = new_view
             else:
@@ -5378,6 +5387,700 @@ def export_menu():
 
         # Check for keyboard shortcuts to navigate
         # (Similar pattern to other menus)
+
+    session.close()
+    return None
+
+
+def goals_menu():
+    """Goals management menu with comprehensive CRUD operations"""
+    from leadsauce.utils.validators import validate_date, parse_tags
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+    from sqlalchemy import or_
+
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Goals"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[v] View Details", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[l] Link Entity", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[u] Unlink Entity", style="magenta")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[p] Update Progress", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold cyan]🎯 Goals[/]",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Get goals
+        goals = session.query(Goal).order_by(Goal.created_at.desc()).all()
+
+        if goals:
+            # Display goals list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Title", style="cyan bold", width=30)
+            table.add_column("Status", style="blue", width=12)
+            table.add_column("Priority", style="yellow", width=8)
+            table.add_column("Progress", style="green", width=20)
+            table.add_column("Tasks", style="magenta", width=8)
+            table.add_column("Profiles", style="cyan", width=8)
+            table.add_column("Companies", style="blue", width=10)
+            table.add_column("Target", style="dim", width=12)
+
+            for idx, goal in enumerate(goals, 1):
+                summary = goal.get_summary()
+
+                # Format status with overdue warning
+                status_str = goal.status.title()
+                if goal.is_overdue():
+                    status_str = f"[red]{status_str} ⚠[/]"
+
+                # Progress bar
+                progress_blocks = int(goal.progress / 10)
+                progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+                progress_str = f"{progress_bar} {goal.progress:.0f}%"
+
+                # Task summary
+                tasks_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+
+                # Target date
+                if goal.target_date:
+                    days_until = (goal.target_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        target_str = f"[red]{abs(days_until)}d ago[/]"
+                    elif days_until == 0:
+                        target_str = "[yellow]Today[/]"
+                    elif days_until == 1:
+                        target_str = "[yellow]Tomorrow[/]"
+                    else:
+                        target_str = f"{days_until}d"
+                else:
+                    target_str = "-"
+
+                # Truncate title if too long
+                title = goal.title[:28] + "..." if len(goal.title) > 28 else goal.title
+
+                table.add_row(
+                    str(idx),
+                    title,
+                    status_str,
+                    goal.priority.title(),
+                    progress_str,
+                    tasks_str,
+                    str(summary['total_profiles']),
+                    str(summary['total_companies']),
+                    target_str
+                )
+
+            console.print(table)
+            console.print()
+            console.print(f"[dim]Total: {len(goals)} goals[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No goals yet. Press [bold green]'a'[/] to create your first goal![/]",
+                border_style="yellow",
+                box=box.ROUNDED
+            ))
+
+        console.print()
+
+        # Get action
+        action = questionary.text(
+            "Action:",
+            style=custom_style
+        ).ask()
+
+        if action is None or action.strip() == "":
+            session.close()
+            return None
+
+        action = action.strip().lower()
+
+        # Handle actions
+        if action == 'a':
+            # Add new goal
+            console.print("\n[bold cyan]Create New Goal[/]\n")
+
+            title = questionary.text(
+                "Goal Title:",
+                validate=lambda x: len(x) > 0 or "Title is required"
+            ).ask()
+
+            if not title:
+                continue
+
+            description = questionary.text(
+                "Description (optional):",
+                default=""
+            ).ask()
+
+            priority = questionary.select(
+                "Priority:",
+                choices=REMINDER_PRIORITIES
+            ).ask()
+
+            target_date_str = questionary.text(
+                "Target Date (YYYY-MM-DD or +30d, optional):",
+                default=""
+            ).ask()
+
+            target_date = None
+            if target_date_str:
+                target_date = validate_date(target_date_str)
+                if not target_date:
+                    console.print("[red]Invalid date format. Goal created without target date.[/]")
+
+            try:
+                new_goal = Goal(
+                    title=title,
+                    description=description if description else None,
+                    priority=priority.lower(),
+                    target_date=target_date
+                )
+
+                session.add(new_goal)
+                session.commit()
+
+                console.print(f"\n[green]✓ Goal created successfully! ID: {new_goal.id}[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            except Exception as e:
+                session.rollback()
+                console.print(f"[red]Error creating goal: {str(e)}[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'v':
+            # View goal details
+            if not goals:
+                console.print("[yellow]No goals to view.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [
+                f"#{g.id} - {g.title[:50]}" for g in goals
+            ]
+
+            selected = questionary.select(
+                "Select a goal to view:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                console.clear()
+                console.print(render_top_bar("Goals"))
+                console.print()
+
+                summary = goal.get_summary()
+
+                # Goal details panel
+                details = Text()
+                details.append(f"\n🎯 Goal #{goal.id}\n", style="bold cyan")
+                details.append(f"\n{'─' * 60}\n", style="dim")
+                details.append(f"\nTitle: ", style="bold")
+                details.append(f"{goal.title}\n")
+                details.append(f"Description: ", style="bold")
+                details.append(f"{goal.description or 'N/A'}\n")
+                details.append(f"Status: ", style="bold")
+                details.append(f"{goal.status.title()}", style="green" if goal.status == "completed" else "yellow")
+                if goal.is_overdue():
+                    details.append(" ⚠ OVERDUE", style="bold red")
+                details.append("\n")
+                details.append(f"Priority: ", style="bold")
+                details.append(f"{goal.priority.title()}\n", style="yellow")
+                details.append(f"Progress: ", style="bold")
+
+                # Progress bar
+                progress_blocks = int(goal.progress / 10)
+                progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+                details.append(f"{progress_bar} {goal.progress:.0f}%\n", style="green")
+
+                details.append(f"Target Date: ", style="bold")
+                if goal.target_date:
+                    details.append(f"{goal.target_date.strftime('%Y-%m-%d')}\n")
+                else:
+                    details.append("N/A\n")
+
+                details.append(f"\n{'─' * 60}\n", style="dim")
+                details.append(f"\nRelated Entities:\n", style="bold yellow")
+                details.append(f"\n📋 Tasks: {summary['total_tasks']} total\n", style="bold")
+                if goal.tasks:
+                    details.append(f"  ✓ Completed: {summary['completed_tasks']}\n", style="green")
+                    details.append(f"  ⟳ In Progress: {summary['in_progress_tasks']}\n", style="yellow")
+                    details.append(f"  ○ Pending: {summary['pending_tasks']}\n", style="cyan")
+                else:
+                    details.append("  No tasks linked\n", style="dim")
+
+                details.append(f"\n👥 Profiles: {summary['total_profiles']}\n", style="bold")
+                if goal.profiles:
+                    for p in goal.profiles[:5]:
+                        details.append(f"  • {p.name}\n", style="cyan")
+                    if len(goal.profiles) > 5:
+                        details.append(f"  ... and {len(goal.profiles) - 5} more\n", style="dim")
+                else:
+                    details.append("  No profiles linked\n", style="dim")
+
+                details.append(f"\n🏢 Companies: {summary['total_companies']}\n", style="bold")
+                if goal.companies:
+                    for c in goal.companies[:5]:
+                        details.append(f"  • {c.name}\n", style="blue")
+                    if len(goal.companies) > 5:
+                        details.append(f"  ... and {len(goal.companies) - 5} more\n", style="dim")
+                else:
+                    details.append("  No companies linked\n", style="dim")
+
+                details.append(f"\n🏷️ Tags: {summary['total_tags']}\n", style="bold")
+                if goal.tags:
+                    tag_names = ", ".join([t.name for t in goal.tags])
+                    details.append(f"  {tag_names}\n", style="yellow")
+                else:
+                    details.append("  No tags linked\n", style="dim")
+
+                details.append(f"\n{'─' * 60}\n", style="dim")
+                details.append(f"\nCreated: {goal.created_at.strftime('%Y-%m-%d %H:%M')}\n", style="dim")
+                details.append(f"Updated: {goal.updated_at.strftime('%Y-%m-%d %H:%M')}\n", style="dim")
+                if goal.completed_at:
+                    details.append(f"Completed: {goal.completed_at.strftime('%Y-%m-%d %H:%M')}\n", style="green")
+
+                console.print(Panel(details, border_style="cyan", box=box.ROUNDED))
+                questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+
+        elif action == 'e':
+            # Edit goal
+            if not goals:
+                console.print("[yellow]No goals to edit.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to edit:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                console.print(f"\n[bold cyan]Edit Goal #{goal.id}[/]\n")
+
+                # Show current values and ask for updates
+                new_title = questionary.text(
+                    "Title:",
+                    default=goal.title
+                ).ask()
+
+                new_description = questionary.text(
+                    "Description:",
+                    default=goal.description or ""
+                ).ask()
+
+                new_status = questionary.select(
+                    "Status:",
+                    choices=["active", "completed", "on_hold", "cancelled"],
+                    default=goal.status
+                ).ask()
+
+                new_priority = questionary.select(
+                    "Priority:",
+                    choices=REMINDER_PRIORITIES,
+                    default=goal.priority
+                ).ask()
+
+                current_target = goal.target_date.strftime('%Y-%m-%d') if goal.target_date else ""
+                new_target_date_str = questionary.text(
+                    "Target Date (YYYY-MM-DD or +30d):",
+                    default=current_target
+                ).ask()
+
+                new_target_date = goal.target_date
+                if new_target_date_str and new_target_date_str != current_target:
+                    parsed = validate_date(new_target_date_str)
+                    if parsed:
+                        new_target_date = parsed
+                    else:
+                        console.print("[red]Invalid date format. Keeping current target date.[/]")
+
+                try:
+                    goal.title = new_title
+                    goal.description = new_description if new_description else None
+                    goal.status = new_status
+                    goal.priority = new_priority.lower()
+                    goal.target_date = new_target_date
+
+                    if new_status == 'completed':
+                        goal.complete()
+
+                    goal.update_progress()
+                    session.commit()
+
+                    console.print(f"\n[green]✓ Goal updated successfully![/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error updating goal: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'l':
+            # Link entity
+            if not goals:
+                console.print("[yellow]No goals available.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to link entity to:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                entity_type = questionary.select(
+                    "What type of entity do you want to link?",
+                    choices=["Profile", "Company", "Task", "Tag", "← Back"]
+                ).ask()
+
+                if entity_type == "← Back":
+                    continue
+
+                try:
+                    if entity_type == "Profile":
+                        profiles = session.query(Profile).order_by(Profile.name).all()
+                        if not profiles:
+                            console.print("[yellow]No profiles available.[/]")
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                            continue
+
+                        profile_choices = [f"#{p.id} - {p.name}" for p in profiles]
+                        selected_profile = questionary.select(
+                            "Select a profile:",
+                            choices=profile_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_profile != "← Back":
+                            profile_id = int(selected_profile.split("#")[1].split(" - ")[0])
+                            profile = session.query(Profile).filter(Profile.id == profile_id).first()
+
+                            if profile and profile not in goal.profiles:
+                                goal.profiles.append(profile)
+                                session.commit()
+                                console.print(f"[green]✓ Linked profile: {profile.name}[/]")
+                            elif profile in goal.profiles:
+                                console.print("[yellow]Profile already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Company":
+                        companies = session.query(Company).order_by(Company.name).all()
+                        if not companies:
+                            console.print("[yellow]No companies available.[/]")
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                            continue
+
+                        company_choices = [f"#{c.id} - {c.name}" for c in companies]
+                        selected_company = questionary.select(
+                            "Select a company:",
+                            choices=company_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_company != "← Back":
+                            company_id = int(selected_company.split("#")[1].split(" - ")[0])
+                            company = session.query(Company).filter(Company.id == company_id).first()
+
+                            if company and company not in goal.companies:
+                                goal.companies.append(company)
+                                session.commit()
+                                console.print(f"[green]✓ Linked company: {company.name}[/]")
+                            elif company in goal.companies:
+                                console.print("[yellow]Company already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Task":
+                        tasks = session.query(Task).order_by(Task.created_at.desc()).all()
+                        if not tasks:
+                            console.print("[yellow]No tasks available.[/]")
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                            continue
+
+                        task_choices = [f"#{t.id} - {t.title[:50]} [{t.status}]" for t in tasks]
+                        selected_task = questionary.select(
+                            "Select a task:",
+                            choices=task_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_task != "← Back":
+                            task_id = int(selected_task.split("#")[1].split(" - ")[0])
+                            task = session.query(Task).filter(Task.id == task_id).first()
+
+                            if task and task not in goal.tasks:
+                                goal.tasks.append(task)
+                                goal.update_progress()
+                                session.commit()
+                                console.print(f"[green]✓ Linked task: {task.title}[/]")
+                                console.print(f"[cyan]Progress updated: {goal.progress}%[/]")
+                            elif task in goal.tasks:
+                                console.print("[yellow]Task already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Tag":
+                        tag_name = questionary.text(
+                            "Enter tag name:",
+                            validate=lambda x: len(x) > 0 or "Tag name is required"
+                        ).ask()
+
+                        if tag_name:
+                            tag = session.query(Tag).filter(Tag.name.ilike(tag_name)).first()
+                            if not tag:
+                                tag = Tag(name=tag_name)
+                                session.add(tag)
+                                session.flush()
+                                console.print(f"[cyan]Created new tag: {tag_name}[/]")
+
+                            if tag not in goal.tags:
+                                goal.tags.append(tag)
+                                session.commit()
+                                console.print(f"[green]✓ Linked tag: {tag.name}[/]")
+                            else:
+                                console.print("[yellow]Tag already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error linking entity: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'u':
+            # Unlink entity
+            if not goals:
+                console.print("[yellow]No goals available.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to unlink entity from:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                entity_type = questionary.select(
+                    "What type of entity do you want to unlink?",
+                    choices=["Profile", "Company", "Task", "Tag", "← Back"]
+                ).ask()
+
+                if entity_type == "← Back":
+                    continue
+
+                try:
+                    if entity_type == "Profile" and goal.profiles:
+                        profile_choices = [f"#{p.id} - {p.name}" for p in goal.profiles]
+                        selected_profile = questionary.select(
+                            "Select a profile to unlink:",
+                            choices=profile_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_profile != "← Back":
+                            profile_id = int(selected_profile.split("#")[1].split(" - ")[0])
+                            profile = session.query(Profile).filter(Profile.id == profile_id).first()
+
+                            if profile in goal.profiles:
+                                goal.profiles.remove(profile)
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked profile: {profile.name}[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Company" and goal.companies:
+                        company_choices = [f"#{c.id} - {c.name}" for c in goal.companies]
+                        selected_company = questionary.select(
+                            "Select a company to unlink:",
+                            choices=company_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_company != "← Back":
+                            company_id = int(selected_company.split("#")[1].split(" - ")[0])
+                            company = session.query(Company).filter(Company.id == company_id).first()
+
+                            if company in goal.companies:
+                                goal.companies.remove(company)
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked company: {company.name}[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Task" and goal.tasks:
+                        task_choices = [f"#{t.id} - {t.title[:50]}" for t in goal.tasks]
+                        selected_task = questionary.select(
+                            "Select a task to unlink:",
+                            choices=task_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_task != "← Back":
+                            task_id = int(selected_task.split("#")[1].split(" - ")[0])
+                            task = session.query(Task).filter(Task.id == task_id).first()
+
+                            if task in goal.tasks:
+                                goal.tasks.remove(task)
+                                goal.update_progress()
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked task: {task.title}[/]")
+                                console.print(f"[cyan]Progress updated: {goal.progress}%[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Tag" and goal.tags:
+                        tag_choices = [t.name for t in goal.tags]
+                        selected_tag = questionary.select(
+                            "Select a tag to unlink:",
+                            choices=tag_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_tag != "← Back":
+                            tag = session.query(Tag).filter(Tag.name == selected_tag).first()
+
+                            if tag in goal.tags:
+                                goal.tags.remove(tag)
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked tag: {tag.name}[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                    else:
+                        console.print(f"[yellow]No {entity_type.lower()}s linked to this goal.[/]")
+                        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error unlinking entity: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'p':
+            # Update progress
+            if not goals:
+                console.print("[yellow]No goals available.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to update progress:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                try:
+                    old_progress = goal.progress
+                    goal.update_progress()
+                    session.commit()
+
+                    console.print(f"\n[green]✓ Progress updated![/]")
+                    console.print(f"[cyan]Previous: {old_progress:.0f}%[/]")
+                    console.print(f"[cyan]Current: {goal.progress:.0f}%[/]")
+
+                    if goal.status == 'completed':
+                        console.print("[green bold]🎉 Goal completed![/]")
+
+                    questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error updating progress: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'd':
+            # Delete goal
+            if not goals:
+                console.print("[yellow]No goals to delete.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to delete:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                confirm = questionary.confirm(
+                    f"Are you sure you want to delete '{goal.title}'?",
+                    default=False
+                ).ask()
+
+                if confirm:
+                    try:
+                        session.delete(goal)
+                        session.commit()
+                        console.print(f"[green]✓ Goal deleted successfully![/]")
+                        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                    except Exception as e:
+                        session.rollback()
+                        console.print(f"[red]Error deleting goal: {str(e)}[/]")
+                        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'r':
+            # Refresh - just continue the loop
+            continue
 
     session.close()
     return None
