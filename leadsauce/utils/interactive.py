@@ -4638,6 +4638,125 @@ def edit_task_interactive(task_id):
         if task.status == 'completed' and not task.completed_at:
             task.completed_at = datetime.now()
 
+        # Edit linked entities
+        edit_links = questionary.confirm(
+            "Do you want to modify linked profiles/companies/tags?",
+            default=False,
+            style=custom_style
+        ).ask()
+
+        if edit_links:
+            # Show current links
+            console.print()
+            console.print("[bold yellow]Current Links:[/]")
+            if task.profiles:
+                console.print(f"[cyan]Profiles:[/] {', '.join([p.name for p in task.profiles])}")
+            else:
+                console.print("[cyan]Profiles:[/] None")
+            if task.companies:
+                console.print(f"[green]Companies:[/] {', '.join([c.name for c in task.companies])}")
+            else:
+                console.print("[green]Companies:[/] None")
+            if task.tags:
+                console.print(f"[yellow]Tags:[/] {', '.join([t.name for t in task.tags])}")
+            else:
+                console.print("[yellow]Tags:[/] None")
+            console.print()
+
+            # Profiles
+            all_profiles = session.query(Profile).all()
+            if all_profiles:
+                console.print()
+                console.print("[bold cyan]📝 Select profiles:[/]")
+                console.print("[dim]  • Current selections are pre-marked with ●[/]")
+                console.print("[dim]  • Press SPACE to select/deselect[/]")
+                console.print("[dim]  • Press ENTER when done[/]")
+                console.print()
+
+                current_profile_ids = [p.id for p in task.profiles]
+                profile_choices = [
+                    {"name": f"{p.name} ({p.company.name if p.company else 'No company'})",
+                     "value": p.id,
+                     "checked": p.id in current_profile_ids}
+                    for p in all_profiles
+                ]
+
+                selected_profile_ids = questionary.checkbox(
+                    "Select profiles (SPACE=select, ENTER=done):",
+                    choices=profile_choices,
+                    style=custom_style
+                ).ask()
+
+                # Update profiles
+                task.profiles.clear()
+                if selected_profile_ids:
+                    for pid in selected_profile_ids:
+                        profile = session.query(Profile).get(pid)
+                        if profile:
+                            task.profiles.append(profile)
+
+            # Companies
+            all_companies = session.query(Company).all()
+            if all_companies:
+                console.print()
+                console.print("[bold cyan]📝 Select companies:[/]")
+                console.print("[dim]  • Press SPACE to select/deselect[/]")
+                console.print("[dim]  • Press ENTER when done[/]")
+                console.print()
+
+                current_company_ids = [c.id for c in task.companies]
+                company_choices = [
+                    {"name": c.name,
+                     "value": c.id,
+                     "checked": c.id in current_company_ids}
+                    for c in all_companies
+                ]
+
+                selected_company_ids = questionary.checkbox(
+                    "Select companies (SPACE=select, ENTER=done):",
+                    choices=company_choices,
+                    style=custom_style
+                ).ask()
+
+                # Update companies
+                task.companies.clear()
+                if selected_company_ids:
+                    for cid in selected_company_ids:
+                        company = session.query(Company).get(cid)
+                        if company:
+                            task.companies.append(company)
+
+            # Tags
+            all_tags = session.query(Tag).all()
+            if all_tags:
+                console.print()
+                console.print("[bold cyan]📝 Select tags:[/]")
+                console.print("[dim]  • Press SPACE to select/deselect[/]")
+                console.print("[dim]  • Press ENTER when done[/]")
+                console.print()
+
+                current_tag_ids = [t.id for t in task.tags]
+                tag_choices = [
+                    {"name": t.name,
+                     "value": t.id,
+                     "checked": t.id in current_tag_ids}
+                    for t in all_tags
+                ]
+
+                selected_tag_ids = questionary.checkbox(
+                    "Select tags (SPACE=select, ENTER=done):",
+                    choices=tag_choices,
+                    style=custom_style
+                ).ask()
+
+                # Update tags
+                task.tags.clear()
+                if selected_tag_ids:
+                    for tid in selected_tag_ids:
+                        tag = session.query(Tag).get(tid)
+                        if tag:
+                            task.tags.append(tag)
+
         session.commit()
 
         console.print()
