@@ -236,23 +236,41 @@ def show_dashboard_view():
         console.print(render_top_bar("Dashboard"))
         console.print()
 
-        # Action shortcuts top bar
-        actions_text = Text()
-        actions_text.append("[t] Add Task", style="green")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[c] Complete Task", style="blue")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[e] Edit Task", style="yellow")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[d] Delete Task", style="red")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[v] View All Tasks", style="cyan")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[r] Refresh", style="blue")
+        # Action shortcuts top bar - Tasks
+        tasks_actions = Text()
+        tasks_actions.append("[t] Add Task", style="green")
+        tasks_actions.append(" • ", style="dim")
+        tasks_actions.append("[c] Complete Task", style="blue")
+        tasks_actions.append(" • ", style="dim")
+        tasks_actions.append("[e] Edit Task", style="yellow")
+        tasks_actions.append(" • ", style="dim")
+        tasks_actions.append("[d] Delete Task", style="red")
+
+        # Action shortcuts top bar - Goals
+        goals_actions = Text()
+        goals_actions.append("[g] Add Goal", style="green")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[G] Edit Goal", style="yellow")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[l] Link to Goal", style="blue")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[p] Update Progress", style="cyan")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[x] Delete Goal", style="red")
+
+        # Combine actions
+        combined_actions = Text()
+        combined_actions.append("Tasks: ", style="bold cyan")
+        combined_actions.append_text(tasks_actions)
+        combined_actions.append("\n", style="dim")
+        combined_actions.append("Goals: ", style="bold cyan")
+        combined_actions.append_text(goals_actions)
+        combined_actions.append("\n", style="dim")
+        combined_actions.append("[r] Refresh • [v] View All • [Enter] Navigation", style="dim")
 
         console.print(Panel(
-            actions_text,
-            title="[bold yellow]📊 Dashboard[/]",
+            combined_actions,
+            title="[bold yellow]📊 Dashboard - Quick Actions[/]",
             border_style="yellow",
             box=box.SIMPLE
         ))
@@ -587,8 +605,297 @@ def show_dashboard_view():
             tasks_menu()
         elif action.lower() == 'r':
             continue
+        # Goal management actions
+        elif action == 'g':  # Add Goal
+            add_goal_from_dashboard(session)
+        elif action == 'G':  # Edit Goal
+            if goals_in_progress or total_goals > 0:
+                edit_goal_from_dashboard(session)
+        elif action.lower() == 'l':  # Link to Goal
+            if upcoming_tasks and (goals_in_progress or total_goals > 0):
+                link_task_to_goal_from_dashboard(session, upcoming_tasks)
+        elif action.lower() == 'p':  # Update Progress
+            if goals_in_progress or total_goals > 0:
+                update_goal_progress_from_dashboard(session)
+        elif action.lower() == 'x':  # Delete Goal
+            if goals_in_progress or total_goals > 0:
+                delete_goal_from_dashboard(session)
 
     session.close()
+
+
+def add_goal_from_dashboard(session):
+    """Add a new goal from dashboard"""
+    from leadsauce.utils.validators import validate_date
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+
+    console.print("\n[bold cyan]Create New Goal[/]\n")
+
+    title = questionary.text(
+        "Goal Title:",
+        validate=lambda x: len(x) > 0 or "Title is required"
+    ).ask()
+
+    if not title:
+        return
+
+    description = questionary.text(
+        "Description (optional):",
+        default=""
+    ).ask()
+
+    priority = questionary.select(
+        "Priority:",
+        choices=REMINDER_PRIORITIES
+    ).ask()
+
+    target_date_str = questionary.text(
+        "Target Date (YYYY-MM-DD or +30d, optional):",
+        default=""
+    ).ask()
+
+    target_date = None
+    if target_date_str:
+        target_date = validate_date(target_date_str)
+        if not target_date:
+            console.print("[red]Invalid date format. Goal created without target date.[/]")
+
+    try:
+        new_goal = Goal(
+            title=title,
+            description=description if description else None,
+            priority=priority.lower(),
+            target_date=target_date
+        )
+
+        session.add(new_goal)
+        session.commit()
+
+        console.print(f"\n[green]✓ Goal created successfully! ID: {new_goal.id}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error creating goal: {str(e)}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def edit_goal_from_dashboard(session):
+    """Edit an existing goal from dashboard"""
+    from leadsauce.utils.validators import validate_date
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+
+    goals = session.query(Goal).filter(Goal.status != 'completed').all()
+    if not goals:
+        console.print("[yellow]No goals to edit.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+    selected = questionary.select(
+        "Select a goal to edit:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    goal_id = int(selected.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        console.print(f"\n[bold cyan]Edit Goal #{goal.id}[/]\n")
+
+        new_title = questionary.text(
+            "Title:",
+            default=goal.title
+        ).ask()
+
+        new_description = questionary.text(
+            "Description:",
+            default=goal.description or ""
+        ).ask()
+
+        new_status = questionary.select(
+            "Status:",
+            choices=["active", "completed", "on_hold", "cancelled"],
+            default=goal.status
+        ).ask()
+
+        new_priority = questionary.select(
+            "Priority:",
+            choices=REMINDER_PRIORITIES,
+            default=goal.priority
+        ).ask()
+
+        current_target = goal.target_date.strftime('%Y-%m-%d') if goal.target_date else ""
+        new_target_date_str = questionary.text(
+            "Target Date (YYYY-MM-DD or +30d):",
+            default=current_target
+        ).ask()
+
+        new_target_date = goal.target_date
+        if new_target_date_str and new_target_date_str != current_target:
+            parsed = validate_date(new_target_date_str)
+            if parsed:
+                new_target_date = parsed
+            else:
+                console.print("[red]Invalid date format. Keeping current target date.[/]")
+
+        try:
+            goal.title = new_title
+            goal.description = new_description if new_description else None
+            goal.status = new_status
+            goal.priority = new_priority.lower()
+            goal.target_date = new_target_date
+
+            if new_status == 'completed':
+                goal.complete()
+
+            goal.update_progress()
+            session.commit()
+
+            console.print(f"\n[green]✓ Goal updated successfully![/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        except Exception as e:
+            session.rollback()
+            console.print(f"[red]Error updating goal: {str(e)}[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def link_task_to_goal_from_dashboard(session, upcoming_tasks):
+    """Link a task to a goal from dashboard"""
+
+    # Select task
+    task_choices = [f"#{t.id} - {t.title[:50]}" for t in upcoming_tasks]
+    selected_task = questionary.select(
+        "Select a task to link:",
+        choices=task_choices + ["← Cancel"]
+    ).ask()
+
+    if selected_task == "← Cancel":
+        return
+
+    task_id = int(selected_task.split("#")[1].split(" - ")[0])
+    task = session.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
+        return
+
+    # Select goal
+    goals = session.query(Goal).filter(Goal.status == 'active').all()
+    if not goals:
+        console.print("[yellow]No active goals available.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+    selected_goal = questionary.select(
+        "Select a goal to link to:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected_goal == "← Cancel":
+        return
+
+    goal_id = int(selected_goal.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        try:
+            if task not in goal.tasks:
+                goal.tasks.append(task)
+                goal.update_progress()
+                session.commit()
+                console.print(f"[green]✓ Linked task '{task.title}' to goal '{goal.title}'[/]")
+                console.print(f"[cyan]Goal progress: {goal.progress}%[/]")
+            else:
+                console.print("[yellow]Task already linked to this goal.[/]")
+
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        except Exception as e:
+            session.rollback()
+            console.print(f"[red]Error linking task: {str(e)}[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def update_goal_progress_from_dashboard(session):
+    """Update progress for a goal from dashboard"""
+
+    goals = session.query(Goal).filter(Goal.status == 'active').all()
+    if not goals:
+        console.print("[yellow]No active goals available.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]} ({g.progress}%)" for g in goals]
+    selected = questionary.select(
+        "Select a goal to update progress:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    goal_id = int(selected.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        try:
+            old_progress = goal.progress
+            goal.update_progress()
+            session.commit()
+
+            console.print(f"\n[green]✓ Progress updated![/]")
+            console.print(f"[cyan]Previous: {old_progress:.0f}%[/]")
+            console.print(f"[cyan]Current: {goal.progress:.0f}%[/]")
+
+            if goal.status == 'completed':
+                console.print("[green bold]🎉 Goal completed![/]")
+
+            questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+        except Exception as e:
+            session.rollback()
+            console.print(f"[red]Error updating progress: {str(e)}[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def delete_goal_from_dashboard(session):
+    """Delete a goal from dashboard"""
+
+    goals = session.query(Goal).all()
+    if not goals:
+        console.print("[yellow]No goals to delete.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+    selected = questionary.select(
+        "Select a goal to delete:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    goal_id = int(selected.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        confirm = questionary.confirm(
+            f"Are you sure you want to delete '{goal.title}'?",
+            default=False
+        ).ask()
+
+        if confirm:
+            try:
+                session.delete(goal)
+                session.commit()
+                console.print(f"[green]✓ Goal deleted successfully![/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            except Exception as e:
+                session.rollback()
+                console.print(f"[red]Error deleting goal: {str(e)}[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
 def profiles_menu():
