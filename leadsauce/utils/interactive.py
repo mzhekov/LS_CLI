@@ -662,6 +662,13 @@ def show_dashboard_view():
             )
 
         # Create two-column layout: Left (70%) and Right (30%)
+        # Use a table without borders to create columns
+        from rich.table import Table as LayoutTable
+
+        layout_table = LayoutTable(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False)
+        layout_table.add_column(ratio=7)  # 70% width
+        layout_table.add_column(ratio=3)  # 30% width
+
         # Left column: Overview, Goals, Tasks stacked vertically
         left_content = Group(
             overview_panel,
@@ -671,9 +678,10 @@ def show_dashboard_view():
             tasks_panel
         )
 
-        # Right column: Just Reminders (natural height, not stretched)
-        # Display in columns with 70/30 split
-        console.print(Columns([left_content, reminders_panel], padding=(0, 2), expand=False))
+        # Add both columns to the layout table
+        layout_table.add_row(left_content, reminders_panel)
+
+        console.print(layout_table)
         console.print()
 
         # Recent Profiles at full width below the split layout
