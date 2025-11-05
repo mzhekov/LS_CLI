@@ -122,19 +122,12 @@ def import_profiles_from_csv(session, csv_path, mode='bulk', skip_duplicates=Tru
                         errors.append(f"Row {row_num}: Invalid email '{email}'")
                         continue
 
-                    # Check for duplicates
-                    if skip_duplicates and email:
-                        existing = session.query(Profile).filter(Profile.email == email).first()
-                        if existing:
-                            skipped += 1
-                            continue
-
                     # Validate phone
                     if phone and not validate_phone(phone):
                         errors.append(f"Row {row_num}: Invalid phone '{phone}'")
                         continue
 
-                    # Find or create company
+                    # Find or create company (needed for duplicate check)
                     company_id = None
                     if company_name and company_name != '-':
                         company = session.query(Company).filter(
@@ -147,6 +140,25 @@ def import_profiles_from_csv(session, csv_path, mode='bulk', skip_duplicates=Tru
                             session.flush()
 
                         company_id = company.id
+
+                    # Check for duplicates
+                    if skip_duplicates:
+                        existing = None
+                        if email:
+                            # Check by email first (most reliable)
+                            existing = session.query(Profile).filter(Profile.email == email).first()
+                        else:
+                            # No email - check by name and company combination
+                            query = session.query(Profile).filter(Profile.name == name)
+                            if company_id:
+                                query = query.filter(Profile.company_id == company_id)
+                            else:
+                                query = query.filter(Profile.company_id.is_(None))
+                            existing = query.first()
+
+                        if existing:
+                            skipped += 1
+                            continue
 
                     # In separate mode, ask for confirmation
                     if mode == 'separate':
@@ -339,14 +351,7 @@ def import_all_from_csv(session, csv_path, mode='bulk', skip_duplicates=True):
                         skills = skills if skills and skills != '-' else None
                         notes = notes if notes and notes != '-' else None
 
-                        # Check duplicates
-                        if skip_duplicates and email:
-                            existing = session.query(Profile).filter(Profile.email == email).first()
-                            if existing:
-                                skipped += 1
-                                continue
-
-                        # Find/create company
+                        # Find/create company first (needed for duplicate check)
                         company_id = None
                         if company_name and company_name != '-':
                             company = session.query(Company).filter(
@@ -357,6 +362,25 @@ def import_all_from_csv(session, csv_path, mode='bulk', skip_duplicates=True):
                                 session.add(company)
                                 session.flush()
                             company_id = company.id
+
+                        # Check duplicates
+                        if skip_duplicates:
+                            existing = None
+                            if email:
+                                # Check by email first (most reliable)
+                                existing = session.query(Profile).filter(Profile.email == email).first()
+                            else:
+                                # No email - check by name and company combination
+                                query = session.query(Profile).filter(Profile.name == name)
+                                if company_id:
+                                    query = query.filter(Profile.company_id == company_id)
+                                else:
+                                    query = query.filter(Profile.company_id.is_(None))
+                                existing = query.first()
+
+                            if existing:
+                                skipped += 1
+                                continue
 
                         # In separate mode, ask confirmation
                         if mode == 'separate':
