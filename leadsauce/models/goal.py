@@ -71,6 +71,9 @@ class Goal(Base):
     tasks = relationship('Task', secondary=goal_tasks, backref='goals')
     tags = relationship('Tag', secondary=goal_tags, backref='goals')
 
+    # One-to-many relationships
+    reminders = relationship('Reminder', back_populates='goal', cascade='all, delete-orphan')
+
     def __repr__(self):
         return f"<Goal(id={self.id}, title='{self.title[:30]}...', status='{self.status}', progress={self.progress}%)>"
 

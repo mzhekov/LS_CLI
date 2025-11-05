@@ -263,6 +263,12 @@ def show_dashboard_view():
         goals_actions.append(" • ", style="dim")
         goals_actions.append("[a] Achieved Goals", style="green bold")
 
+        # Action shortcuts top bar - Reminders
+        reminders_actions = Text()
+        reminders_actions.append("[m] Add Reminder", style="green")
+        reminders_actions.append(" • ", style="dim")
+        reminders_actions.append("[n] Complete Reminder", style="blue")
+
         # Combine actions
         combined_actions = Text()
         combined_actions.append("Tasks: ", style="bold cyan")
@@ -270,6 +276,9 @@ def show_dashboard_view():
         combined_actions.append("\n", style="dim")
         combined_actions.append("Goals: ", style="bold cyan")
         combined_actions.append_text(goals_actions)
+        combined_actions.append("\n", style="dim")
+        combined_actions.append("Reminders: ", style="bold cyan")
+        combined_actions.append_text(reminders_actions)
         combined_actions.append("\n", style="dim")
         combined_actions.append("[r] Refresh • [v] View All • [Enter] Navigation", style="dim")
 
@@ -303,6 +312,96 @@ def show_dashboard_view():
 
         console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
         console.print()
+
+        # Reminders Section
+        from leadsauce.models.reminder import Reminder
+        upcoming_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date >= datetime.utcnow()
+        ).order_by(Reminder.reminder_date.asc()).limit(5).all()
+
+        overdue_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date < datetime.utcnow()
+        ).order_by(Reminder.reminder_date.desc()).limit(5).all()
+
+        all_upcoming = overdue_reminders + upcoming_reminders
+        all_upcoming = all_upcoming[:5]  # Limit to 5 total
+
+        if all_upcoming:
+            reminders_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1), border_style="magenta")
+            reminders_table.add_column("Reminder", style="magenta bold", width=25)
+            reminders_table.add_column("Due", style="yellow", width=12)
+            reminders_table.add_column("Priority", style="white", width=8)
+            reminders_table.add_column("Linked To", style="cyan", width=30)
+
+            for reminder in all_upcoming:
+                # Format due date
+                if reminder.reminder_date:
+                    days_until = (reminder.reminder_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        due_str = f"[red bold]{abs(days_until)}d ago ⚠[/]"
+                    elif days_until == 0:
+                        due_str = "[yellow bold]Today[/]"
+                    elif days_until == 1:
+                        due_str = "[yellow]Tomorrow[/]"
+                    else:
+                        due_str = f"{days_until}d"
+                else:
+                    due_str = "N/A"
+
+                # Format priority
+                priority_colors = {
+                    'low': 'blue',
+                    'medium': 'yellow',
+                    'high': 'red'
+                }
+                priority_color = priority_colors.get(reminder.priority.lower(), 'white')
+                priority_str = f"[{priority_color}]{reminder.priority.upper()}[/]"
+
+                # Get linked entity
+                entity_type, entity_name, entity_id = reminder.get_linked_entity_info()
+                if entity_type:
+                    entity_icons = {
+                        'profile': '👤',
+                        'company': '🏢',
+                        'task': '📋',
+                        'goal': '🎯'
+                    }
+                    icon = entity_icons.get(entity_type, '•')
+                    linked_str = f"{icon} {entity_name[:25]}"
+                else:
+                    linked_str = "[dim]None[/]"
+
+                # Truncate title if too long
+                title = reminder.title[:23] + "..." if len(reminder.title) > 23 else reminder.title
+
+                reminders_table.add_row(title, due_str, priority_str, linked_str)
+
+            total_reminders = session.query(Reminder).filter(Reminder.completed == False).count()
+            overdue_count = session.query(Reminder).filter(
+                Reminder.completed == False,
+                Reminder.reminder_date < datetime.utcnow()
+            ).count()
+
+            stats_text = f"[bold]Total:[/] {total_reminders} active"
+            if overdue_count > 0:
+                stats_text += f" | [red]Overdue:[/] {overdue_count}"
+
+            console.print(Panel(
+                reminders_table,
+                title="[bold magenta]⏰ Reminders[/]",
+                subtitle=stats_text,
+                border_style="magenta"
+            ))
+            console.print()
+        else:
+            console.print(Panel(
+                "[yellow]No upcoming reminders. Stay on track![/]",
+                title="[bold magenta]⏰ Reminders[/]",
+                border_style="magenta"
+            ))
+            console.print()
 
         # Goals Section
         total_goals = session.query(Goal).count()
@@ -663,6 +762,11 @@ def show_dashboard_view():
                 delete_goal_from_dashboard(session)
         elif action.lower() == 'a':  # Achieved Goals
             achieved_goals_menu()
+        elif action.lower() == 'm':  # Add Reminder
+            add_reminder_from_dashboard(session)
+        elif action.lower() == 'n':  # Complete Reminder
+            if all_upcoming:
+                complete_reminder_from_dashboard(session, all_upcoming)
 
     session.close()
 
@@ -939,6 +1043,187 @@ def delete_goal_from_dashboard(session):
                 session.rollback()
                 console.print(f"[red]Error deleting goal: {str(e)}[/]")
                 questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def add_reminder_from_dashboard(session):
+    """Add a new reminder from dashboard"""
+    from leadsauce.utils.validators import validate_date
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+    from leadsauce.models.reminder import Reminder
+
+    console.print("\n[bold magenta]Create New Reminder[/]\n")
+
+    title = questionary.text(
+        "Reminder Title:",
+        validate=lambda x: len(x) > 0 or "Title is required"
+    ).ask()
+
+    if not title:
+        return
+
+    message = questionary.text(
+        "Message (optional):",
+        default=""
+    ).ask()
+
+    # Select entity type to link
+    entity_type = questionary.select(
+        "Link reminder to:",
+        choices=["Profile", "Company", "Task", "Goal", "None"]
+    ).ask()
+
+    profile_id = None
+    company_id = None
+    task_id = None
+    goal_id = None
+
+    if entity_type == "Profile":
+        profiles = session.query(Profile).order_by(Profile.name).all()
+        if profiles:
+            profile_choices = [f"#{p.id} - {p.name}" for p in profiles]
+            selected = questionary.select(
+                "Select profile:",
+                choices=profile_choices + ["← Cancel"]
+            ).ask()
+            if selected != "← Cancel":
+                profile_id = int(selected.split("#")[1].split(" - ")[0])
+        else:
+            console.print("[yellow]No profiles available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    elif entity_type == "Company":
+        companies = session.query(Company).order_by(Company.name).all()
+        if companies:
+            company_choices = [f"#{c.id} - {c.name}" for c in companies]
+            selected = questionary.select(
+                "Select company:",
+                choices=company_choices + ["← Cancel"]
+            ).ask()
+            if selected != "← Cancel":
+                company_id = int(selected.split("#")[1].split(" - ")[0])
+        else:
+            console.print("[yellow]No companies available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    elif entity_type == "Task":
+        tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).order_by(Task.title).all()
+        if tasks:
+            task_choices = [f"#{t.id} - {t.title}" for t in tasks]
+            selected = questionary.select(
+                "Select task:",
+                choices=task_choices + ["← Cancel"]
+            ).ask()
+            if selected != "← Cancel":
+                task_id = int(selected.split("#")[1].split(" - ")[0])
+        else:
+            console.print("[yellow]No active tasks available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    elif entity_type == "Goal":
+        goals = session.query(Goal).filter(Goal.status == 'active').order_by(Goal.title).all()
+        if goals:
+            goal_choices = [f"#{g.id} - {g.title}" for g in goals]
+            selected = questionary.select(
+                "Select goal:",
+                choices=goal_choices + ["← Cancel"]
+            ).ask()
+            if selected != "← Cancel":
+                goal_id = int(selected.split("#")[1].split(" - ")[0])
+        else:
+            console.print("[yellow]No active goals available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    # Date and time
+    reminder_date_str = questionary.text(
+        "Reminder Date (YYYY-MM-DD or YYYY-MM-DD HH:MM):",
+        validate=lambda x: len(x) > 0 or "Date is required"
+    ).ask()
+
+    if not reminder_date_str:
+        return
+
+    try:
+        reminder_date = validate_date(reminder_date_str)
+    except ValueError as e:
+        console.print(f"[red]Invalid date: {e}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    priority = questionary.select(
+        "Priority:",
+        choices=REMINDER_PRIORITIES
+    ).ask()
+
+    category = questionary.select(
+        "Category:",
+        choices=["call", "email", "meeting", "follow-up", "birthday", "general"]
+    ).ask()
+
+    try:
+        reminder = Reminder(
+            title=title,
+            message=message if message else None,
+            reminder_date=reminder_date,
+            priority=priority.lower(),
+            category=category,
+            profile_id=profile_id,
+            company_id=company_id,
+            task_id=task_id,
+            goal_id=goal_id
+        )
+
+        session.add(reminder)
+        session.commit()
+
+        console.print(f"\n[green]✓ Reminder created successfully![/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error creating reminder: {str(e)}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def complete_reminder_from_dashboard(session, reminders):
+    """Complete a reminder from dashboard"""
+    from leadsauce.models.reminder import Reminder
+
+    console.print("[cyan]Select a reminder to complete:[/]")
+    reminder_choices = []
+    for idx, rem in enumerate(reminders, 1):
+        entity_type, entity_name, entity_id = rem.get_linked_entity_info()
+        linked_info = f" ({entity_name})" if entity_name else ""
+        reminder_choices.append(f"{idx}. {rem.title[:40]}{linked_info}")
+
+    selected = questionary.select(
+        "",
+        choices=reminder_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    idx = int(selected.split(".")[0]) - 1
+    reminder = reminders[idx]
+
+    note = questionary.text(
+        "Completion note (optional):",
+        default=""
+    ).ask()
+
+    try:
+        reminder.complete(note if note else None)
+        session.commit()
+
+        console.print(f"\n[green]✓ Reminder '{reminder.title}' marked as completed![/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error completing reminder: {str(e)}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
 def profiles_menu():

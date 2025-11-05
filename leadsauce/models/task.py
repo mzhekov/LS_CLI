@@ -56,6 +56,9 @@ class Task(Base):
     companies = relationship('Company', secondary=task_companies, backref='tasks')
     tags = relationship('Tag', secondary=task_tags, backref='tasks')
 
+    # One-to-many relationships
+    reminders = relationship('Reminder', back_populates='task', cascade='all, delete-orphan')
+
     def __repr__(self):
         return f"<Task(id={self.id}, title='{self.title[:30]}...', status='{self.status}')>"
 
