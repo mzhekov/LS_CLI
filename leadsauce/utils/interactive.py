@@ -112,28 +112,46 @@ def interactive_main_menu():
                 current_view = new_view
                 continue
         elif current_view == "Profiles":
-            profiles_menu()
-            current_view = "Dashboard"  # Return to dashboard after
+            new_view = profiles_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"  # Return to dashboard after
             continue
         elif current_view == "Companies":
-            companies_menu()
-            current_view = "Dashboard"
+            new_view = companies_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "Network & Relationships":
-            network_and_relationships_menu()
-            current_view = "Dashboard"
+            new_view = network_and_relationships_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "Search":
-            search_interactive()
-            current_view = "Dashboard"
+            new_view = search_interactive()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "Tags":
-            tags_menu()
-            current_view = "Dashboard"
+            new_view = tags_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "Workshop":
-            workshop_menu()
-            current_view = "Dashboard"
+            new_view = workshop_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
@@ -584,28 +602,35 @@ def profiles_menu():
             ))
 
         console.print()
-        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
-        console.print()
 
-        # Action prompt
-        action = questionary.text(
-            "Action ([a]dd/[e]dit/[s]earch/[#] view):",
-            style=custom_style
-        ).ask()
+        # Action prompt with single-key input
+        action = get_single_key()
 
-        if action is None:
-            # Ctrl+C pressed
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
+
+        # Check for navigation keys first
+        if action in nav_map:
+            session.close()
+            return nav_map[action]
+
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
             break
 
-        action = action.strip().lower()
-
-        # Empty input = back to dashboard
-        if action == '' or action == '1':
-            break
-
-        if action == 'a':
+        if action.lower() == 'a':
             add_profile_interactive()
-        elif action == 'e':
+        elif action.lower() == 'e':
             # Edit a profile - show selection menu
             if not profiles:
                 console.print("[yellow]No profiles to edit[/]")
@@ -627,9 +652,9 @@ def profiles_menu():
                 profile = session.query(Profile).filter(Profile.id == profile_id).first()
                 if profile:
                     edit_profile_interactive(profile, session)
-        elif action == 's':
+        elif action.lower() == 's':
             search_interactive()
-        elif action == 'r':
+        elif action.lower() == 'r':
             continue  # Refresh
         elif action.isdigit():
             # View profile by number
@@ -734,30 +759,37 @@ def companies_menu():
             ))
 
         console.print()
-        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
-        console.print()
 
-        # Action prompt
-        action = questionary.text(
-            "Action ([a]dd/[e]dit/[#] view company):",
-            style=custom_style
-        ).ask()
+        # Action prompt with single-key input
+        action = get_single_key()
 
-        if action is None:
-            # Ctrl+C pressed
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
+
+        # Check for navigation keys first
+        if action in nav_map:
+            session.close()
+            return nav_map[action]
+
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
             break
 
-        action = action.strip().lower()
-
-        # Empty input = back to dashboard
-        if action == '' or action == '1':
-            break
-
-        if action == 'a':
+        if action.lower() == 'a':
             add_company_interactive()
-        elif action == 'e':
+        elif action.lower() == 'e':
             edit_company_menu()
-        elif action == 'r':
+        elif action.lower() == 'r':
             continue  # Refresh
         elif action.isdigit():
             # View company by number
@@ -831,32 +863,39 @@ def tags_menu():
             ))
 
         console.print()
-        console.print("[dim]Tip: Just press Enter to go back (or type 1)[/]")
-        console.print()
 
-        # Action prompt
-        action = questionary.text(
-            "Action ([a]dd/[e]dit/[d]elete):",
-            style=custom_style
-        ).ask()
+        # Action prompt with single-key input
+        action = get_single_key()
 
-        if action is None:
-            # Ctrl+C pressed
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
+
+        # Check for navigation keys first
+        if action in nav_map:
+            session.close()
+            return nav_map[action]
+
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
             break
 
-        action = action.strip().lower()
-
-        # Empty input = back to dashboard
-        if action == '' or action == '1':
-            break
-
-        if action == 'a':
+        if action.lower() == 'a':
             add_tag_interactive()
-        elif action == 'e':
+        elif action.lower() == 'e':
             edit_tag_interactive()
-        elif action == 'd':
+        elif action.lower() == 'd':
             delete_tag_interactive()
-        elif action == 'r':
+        elif action.lower() == 'r':
             continue  # Refresh
         else:
             console.print(f"[yellow]Invalid action '{action}'[/]")
@@ -1365,13 +1404,29 @@ def network_and_relationships_menu():
 
         console.print()
 
-        # Action prompt
-        action = questionary.text(
-            "Action:",
-            style=custom_style
-        ).ask()
+        # Action prompt with single-key input
+        action = get_single_key()
 
-        if not action or action == "":
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
+
+        # Check for navigation keys first
+        if action in nav_map:
+            session.close()
+            return nav_map[action]
+
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
             break
         elif action.lower() == 'm':
             show_map = not show_map
@@ -3374,22 +3429,31 @@ def workshop_menu():
         ))
         console.print()
 
-        console.print("[dim]Tip: Just press Enter to go back[/]")
         console.print()
 
-        # Action prompt
-        action = questionary.text(
-            "Select tool (1-6):",
-            style=custom_style
-        ).ask()
+        # Action prompt with single-key input
+        action = get_single_key()
 
-        if action is None:
-            break
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
 
-        action = action.strip()
+        # Check for navigation keys first - but workshop uses 1-6 for tools, so only check for 7 and q
+        if action == '7' or action.lower() == 'q':
+            session.close()
+            return nav_map.get(action.lower(), nav_map.get(action))
 
-        # Empty input = back to dashboard
-        if action == '' or action == 'back':
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
             break
 
         if action == '1':
