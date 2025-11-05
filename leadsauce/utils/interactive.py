@@ -662,20 +662,22 @@ def show_dashboard_view():
             )
 
         # Create two-column layout: Left (70%) and Right (30%)
-        # Left column: Overview, Goals, Tasks, Recent Profiles stacked vertically
+        # Left column: Overview, Goals, Tasks stacked vertically
         left_content = Group(
             overview_panel,
             Text(),  # Empty line
             goals_panel,
             Text(),  # Empty line
-            tasks_panel,
-            Text(),  # Empty line
-            profiles_panel
+            tasks_panel
         )
 
         # Right column: Just Reminders (natural height, not stretched)
         # Display in columns with 70/30 split
         console.print(Columns([left_content, reminders_panel], padding=(0, 2), expand=False))
+        console.print()
+
+        # Recent Profiles at full width below the split layout
+        console.print(profiles_panel)
         console.print()
 
         # Get action - single key press
