@@ -247,7 +247,12 @@ def show_dashboard_view():
         console.print()
 
         # Pending/Overdue Tasks
-        upcoming_tasks = session.query(Task).filter(
+        from sqlalchemy.orm import joinedload
+        upcoming_tasks = session.query(Task).options(
+            joinedload(Task.profiles),
+            joinedload(Task.companies),
+            joinedload(Task.tags)
+        ).filter(
             Task.status.in_(['pending', 'in_progress'])
         ).order_by(Task.due_date.asc().nullsfirst()).limit(10).all()
 
@@ -298,8 +303,13 @@ def show_dashboard_view():
                 else:
                     description = "-"
 
-                # Linked entities with names (exclude profiles, only show companies and tags)
+                # Linked entities with names (show all: profiles, companies, and tags)
                 linked_parts = []
+                if task.profiles:
+                    profile_names = [p.name for p in task.profiles[:2]]
+                    if len(task.profiles) > 2:
+                        profile_names.append(f"+{len(task.profiles)-2}")
+                    linked_parts.append(f"👥 {', '.join(profile_names)}")
                 if task.companies:
                     company_names = [c.name for c in task.companies[:2]]
                     if len(task.companies) > 2:
@@ -4398,7 +4408,12 @@ def tasks_menu():
         console.print()
 
         # Get tasks based on filter
-        query = session.query(Task)
+        from sqlalchemy.orm import joinedload
+        query = session.query(Task).options(
+            joinedload(Task.profiles),
+            joinedload(Task.companies),
+            joinedload(Task.tags)
+        )
 
         if view_filter == 'pending':
             query = query.filter(Task.status == 'pending')
@@ -4454,8 +4469,10 @@ def tasks_menu():
                 else:
                     due_display = "-"
 
-                # Links summary (exclude profiles, only show companies and tags)
+                # Links summary (show all: profiles, companies, and tags)
                 link_parts = []
+                if task.profiles:
+                    link_parts.append(f"👥{len(task.profiles)}")
                 if task.companies:
                     link_parts.append(f"🏢{len(task.companies)}")
                 if task.tags:
