@@ -28,8 +28,8 @@ def export():
 
 
 def export_profiles(session, output_dir):
-    """Export profiles to CSV"""
-    profiles = session.query(Profile).all()
+    """Export profiles to CSV (matching TUI menu format)"""
+    profiles = session.query(Profile).order_by(Profile.name).all()
 
     if not profiles:
         print_info("No profiles to export")
@@ -38,45 +38,45 @@ def export_profiles(session, output_dir):
     filepath = output_dir / 'profiles.csv'
     with open(filepath, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
+        # Match the columns shown in profiles_menu()
         writer.writerow([
-            'ID', 'Name', 'Email', 'Phone', 'Seniority', 'Generation',
-            'Company', 'Company ID', 'Married', 'Has Children',
-            'IE Score', 'IS Score', 'Good At', 'Need To Work', 'Work For',
-            'Notes', 'Last Contact', 'Interaction Count',
-            'Tags', 'Created At', 'Updated At'
+            'ID', 'Name', 'Seniority', 'Email', 'Phone', 'Company',
+            'Generation', 'Married', 'Children', 'Skills', 'Tags', 'Notes'
         ])
 
         for p in profiles:
+            # Format exactly like the TUI menu
+            company = p.company.name if p.company else '-'
+            tags = ', '.join([t.name for t in p.tags]) if p.tags else '-'
+            email = p.email if p.email else '-'
+            phone = p.phone if p.phone else '-'
+            generation = p.generation if p.generation else '-'
+            married = '✓' if p.married else '-'
+            children = '✓' if p.has_children else '-'
+            skills = p.good_at if p.good_at else '-'
+            notes = p.notes if p.notes else '-'
+
             writer.writerow([
                 p.id,
                 p.name,
-                p.email or '',
-                p.phone or '',
-                p.seniority or '',
-                p.generation or '',
-                p.company.name if p.company else '',
-                p.company_id or '',
-                'Yes' if p.married else 'No',
-                'Yes' if p.has_children else 'No',
-                p.ie_score or '',
-                p.is_score or '',
-                p.good_at or '',
-                p.need_to_work or '',
-                p.work_for or '',
-                p.notes or '',
-                p.last_contact.isoformat() if p.last_contact else '',
-                p.interaction_count or 0,
-                '; '.join([t.name for t in p.tags]) if p.tags else '',
-                p.created_at.isoformat() if p.created_at else '',
-                p.updated_at.isoformat() if p.updated_at else ''
+                p.seniority.title() if p.seniority else '-',
+                email,
+                phone,
+                company,
+                generation,
+                married,
+                children,
+                skills,
+                tags,
+                notes
             ])
 
     return len(profiles)
 
 
 def export_companies(session, output_dir):
-    """Export companies to CSV"""
-    companies = session.query(Company).all()
+    """Export companies to CSV (matching TUI menu format)"""
+    companies = session.query(Company).order_by(Company.name).all()
 
     if not companies:
         print_info("No companies to export")
@@ -85,23 +85,29 @@ def export_companies(session, output_dir):
     filepath = output_dir / 'companies.csv'
     with open(filepath, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
+        # Match the columns shown in companies_menu()
         writer.writerow([
-            'ID', 'Name', 'Industry', 'Size', 'Location', 'Website',
-            'Notes', 'Profile Count', 'Created At', 'Updated At'
+            'ID', 'Name', 'Industry', 'Size', 'Location', 'Website', 'Profiles', 'Notes'
         ])
 
         for c in companies:
+            # Format exactly like the TUI menu
+            industry = c.industry if c.industry else '-'
+            size = c.size if c.size else '-'
+            location = c.location if c.location else '-'
+            website = c.website if c.website else '-'
+            profiles_count = len(c.profiles)
+            notes = c.notes if c.notes else '-'
+
             writer.writerow([
                 c.id,
                 c.name,
-                c.industry or '',
-                c.size or '',
-                c.location or '',
-                c.website or '',
-                c.notes or '',
-                len(c.profiles),
-                c.created_at.isoformat() if c.created_at else '',
-                c.updated_at.isoformat() if c.updated_at else ''
+                industry,
+                size,
+                location,
+                website,
+                profiles_count,
+                notes
             ])
 
     return len(companies)
