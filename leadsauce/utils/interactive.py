@@ -4280,19 +4280,27 @@ def add_task_interactive():
                 ]
 
                 if profile_choices:
+                    console.print(f"[dim]Showing {len(profile_choices)} profile choices[/]")
                     selected_profile_ids = questionary.checkbox(
                         "Select additional profiles:",
                         choices=profile_choices,
                         style=custom_style
                     ).ask()
 
-                    if selected_profile_ids:
+                    console.print(f"[dim]Checkbox returned: {selected_profile_ids} (type: {type(selected_profile_ids)})[/]")
+
+                    if selected_profile_ids is not None and len(selected_profile_ids) > 0:
                         console.print(f"[dim]Selected {len(selected_profile_ids)} profile(s)[/]")
                         for pid in selected_profile_ids:
+                            console.print(f"[dim]  Looking up profile ID: {pid}[/]")
                             profile = session.query(Profile).get(pid)
                             if profile:
                                 task.profiles.append(profile)
                                 console.print(f"[dim]  ✓ Added {profile.name}[/]")
+                            else:
+                                console.print(f"[dim]  ✗ Profile ID {pid} not found[/]")
+                    else:
+                        console.print(f"[dim]No profiles selected (empty or None)[/]")
 
             # Add more companies
             all_companies = session.query(Company).all()
@@ -4303,19 +4311,27 @@ def add_task_interactive():
                 ]
 
                 if company_choices:
+                    console.print(f"[dim]Showing {len(company_choices)} company choices[/]")
                     selected_company_ids = questionary.checkbox(
                         "Select additional companies:",
                         choices=company_choices,
                         style=custom_style
                     ).ask()
 
-                    if selected_company_ids:
+                    console.print(f"[dim]Checkbox returned: {selected_company_ids}[/]")
+
+                    if selected_company_ids is not None and len(selected_company_ids) > 0:
                         console.print(f"[dim]Selected {len(selected_company_ids)} company(s)[/]")
                         for cid in selected_company_ids:
+                            console.print(f"[dim]  Looking up company ID: {cid}[/]")
                             company = session.query(Company).get(cid)
                             if company:
                                 task.companies.append(company)
                                 console.print(f"[dim]  ✓ Added {company.name}[/]")
+                            else:
+                                console.print(f"[dim]  ✗ Company ID {cid} not found[/]")
+                    else:
+                        console.print(f"[dim]No companies selected[/]")
 
             # Add more tags
             all_tags = session.query(Tag).all()
@@ -4326,19 +4342,27 @@ def add_task_interactive():
                 ]
 
                 if tag_choices:
+                    console.print(f"[dim]Showing {len(tag_choices)} tag choices[/]")
                     selected_tag_ids = questionary.checkbox(
                         "Select additional tags:",
                         choices=tag_choices,
                         style=custom_style
                     ).ask()
 
-                    if selected_tag_ids:
+                    console.print(f"[dim]Checkbox returned: {selected_tag_ids}[/]")
+
+                    if selected_tag_ids is not None and len(selected_tag_ids) > 0:
                         console.print(f"[dim]Selected {len(selected_tag_ids)} tag(s)[/]")
                         for tid in selected_tag_ids:
+                            console.print(f"[dim]  Looking up tag ID: {tid}[/]")
                             tag = session.query(Tag).get(tid)
                             if tag:
                                 task.tags.append(tag)
                                 console.print(f"[dim]  ✓ Added {tag.name}[/]")
+                            else:
+                                console.print(f"[dim]  ✗ Tag ID {tid} not found[/]")
+                    else:
+                        console.print(f"[dim]No tags selected[/]")
 
         # Save task
         session.add(task)
