@@ -3,6 +3,9 @@ Interactive TUI for LeadSauce CLI with top bar navigation
 """
 
 import time
+import sys
+import tty
+import termios
 import questionary
 from questionary import Style
 from rich.console import Console
@@ -22,6 +25,27 @@ from leadsauce.utils.validators import validate_email, validate_phone, parse_tag
 from datetime import datetime, timedelta
 
 console = Console()
+
+
+def get_single_key():
+    """Capture a single keypress without requiring Enter"""
+    try:
+        # Save terminal settings
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            # Set terminal to raw mode
+            tty.setraw(fd)
+            # Read single character
+            ch = sys.stdin.read(1)
+            return ch
+        finally:
+            # Restore terminal settings
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    except:
+        # Fallback to regular input if terminal manipulation fails
+        return input()
+
 
 # Custom style for questionary
 custom_style = Style([
@@ -307,13 +331,12 @@ def show_dashboard_view():
 
         console.print()
 
-        # Get action
-        action = questionary.text(
-            "Action (or Enter to see navigation):",
-            style=custom_style
-        ).ask()
+        # Get action - single key press
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-7 for navigation, Enter to continue):[/]")
+        action = get_single_key()
 
-        if not action or action == "":
+        # Handle Enter key (returns '\r' or '\n')
+        if action in ['\r', '\n', '']:
             session.close()
             return None
 
@@ -327,7 +350,8 @@ def show_dashboard_view():
             '5': 'Search',
             '6': 'Tags',
             '7': 'Workshop',
-            'q': 'Exit'
+            'q': 'Exit',
+            'Q': 'Exit'
         }
 
         if action in nav_map:
@@ -337,40 +361,46 @@ def show_dashboard_view():
             add_task_interactive()
         elif action.lower() == 'c':
             if upcoming_tasks:
+                console.print("[cyan]Enter task number to complete (or press Enter to cancel):[/]")
                 task_num = questionary.text(
-                    "Enter task number to complete:",
+                    "",
                     style=custom_style
                 ).ask()
-                try:
-                    idx = int(task_num) - 1
-                    if 0 <= idx < len(upcoming_tasks):
-                        complete_task_interactive(upcoming_tasks[idx].id)
-                except ValueError:
-                    pass
+                if task_num:
+                    try:
+                        idx = int(task_num) - 1
+                        if 0 <= idx < len(upcoming_tasks):
+                            complete_task_interactive(upcoming_tasks[idx].id)
+                    except ValueError:
+                        pass
         elif action.lower() == 'e':
             if upcoming_tasks:
+                console.print("[cyan]Enter task number to edit (or press Enter to cancel):[/]")
                 task_num = questionary.text(
-                    "Enter task number to edit:",
+                    "",
                     style=custom_style
                 ).ask()
-                try:
-                    idx = int(task_num) - 1
-                    if 0 <= idx < len(upcoming_tasks):
-                        edit_task_interactive(upcoming_tasks[idx].id)
-                except ValueError:
-                    pass
+                if task_num:
+                    try:
+                        idx = int(task_num) - 1
+                        if 0 <= idx < len(upcoming_tasks):
+                            edit_task_interactive(upcoming_tasks[idx].id)
+                    except ValueError:
+                        pass
         elif action.lower() == 'd':
             if upcoming_tasks:
+                console.print("[cyan]Enter task number to delete (or press Enter to cancel):[/]")
                 task_num = questionary.text(
-                    "Enter task number to delete:",
+                    "",
                     style=custom_style
                 ).ask()
-                try:
-                    idx = int(task_num) - 1
-                    if 0 <= idx < len(upcoming_tasks):
-                        delete_task_interactive(upcoming_tasks[idx].id)
-                except ValueError:
-                    pass
+                if task_num:
+                    try:
+                        idx = int(task_num) - 1
+                        if 0 <= idx < len(upcoming_tasks):
+                            delete_task_interactive(upcoming_tasks[idx].id)
+                    except ValueError:
+                        pass
         elif action.lower() == 'v':
             tasks_menu()
         elif action.lower() == 'r':
