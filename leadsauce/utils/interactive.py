@@ -69,6 +69,8 @@ NAV_ITEMS = [
     ("Search", "🔍", "5"),
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
+    ("Export", "📤", "8"),
+    ("Import", "📥", "9"),
     ("Exit", "❌", "q")
 ]
 
@@ -153,6 +155,20 @@ def interactive_main_menu():
             else:
                 current_view = "Dashboard"
             continue
+        elif current_view == "Export":
+            new_view = export_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
+        elif current_view == "Import":
+            new_view = import_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
@@ -160,7 +176,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-7) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-9) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -203,7 +219,7 @@ def interactive_main_menu():
                     break
         else:
             # Invalid input
-            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-7 or q[/]")
+            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-9 or q[/]")
             import time
             time.sleep(1.5)
 
@@ -418,7 +434,7 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-7 for navigation, Enter to continue):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9 for navigation, Enter to continue):[/]")
         action = get_single_key()
 
         # Handle Enter key (returns '\r' or '\n')
@@ -426,7 +442,7 @@ def show_dashboard_view():
             session.close()
             return None
 
-        # Check if user wants to navigate to another menu (numbers 1-7 or q)
+        # Check if user wants to navigate to another menu (numbers 1-9 or q)
         # Map numbers to view names
         nav_map = {
             '1': 'Dashboard',
@@ -436,6 +452,8 @@ def show_dashboard_view():
             '5': 'Search',
             '6': 'Tags',
             '7': 'Workshop',
+            '8': 'Export',
+            '9': 'Import',
             'q': 'Exit',
             'Q': 'Exit'
         }
@@ -511,6 +529,8 @@ def profiles_menu():
         actions_text.append("[a] Add", style="green")
         actions_text.append(" • ", style="dim")
         actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
         actions_text.append(" • ", style="dim")
         actions_text.append("[s] Search", style="cyan")
         actions_text.append(" • ", style="dim")
@@ -652,6 +672,40 @@ def profiles_menu():
                 profile = session.query(Profile).filter(Profile.id == profile_id).first()
                 if profile:
                     edit_profile_interactive(profile, session)
+        elif action.lower() == 'd':
+            # Delete a profile - show selection menu
+            if not profiles:
+                console.print("[yellow]No profiles to delete[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Quick selection for delete
+            profile_choices = [{'name': f"{idx+1}. {p.name}", 'value': p.id} for idx, p in enumerate(profiles)]
+            profile_choices.append({'name': '← Cancel', 'value': None})
+
+            profile_id = questionary.select(
+                "Select profile to delete:",
+                choices=profile_choices,
+                style=custom_style
+            ).ask()
+
+            if profile_id:
+                profile = session.query(Profile).filter(Profile.id == profile_id).first()
+                if profile:
+                    if questionary.confirm(f"Are you sure you want to delete {profile.name}?", style=custom_style, default=False).ask():
+                        # Delete associated relationships first
+                        from leadsauce.models.relationship import ProfileRelationship
+                        session.query(ProfileRelationship).filter(
+                            (ProfileRelationship.from_profile_id == profile.id) |
+                            (ProfileRelationship.to_profile_id == profile.id)
+                        ).delete(synchronize_session=False)
+
+                        # Now delete the profile
+                        session.delete(profile)
+                        session.commit()
+                        console.print(f"\n[green]✓ Deleted {profile.name}[/]\n")
+                        questionary.press_any_key_to_continue().ask()
         elif action.lower() == 's':
             search_interactive()
         elif action.lower() == 'r':
@@ -688,6 +742,8 @@ def companies_menu():
         actions_text.append("[a] Add", style="green")
         actions_text.append(" • ", style="dim")
         actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
         actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="cyan")
         actions_text.append(" • ", style="dim")
@@ -789,6 +845,41 @@ def companies_menu():
             add_company_interactive()
         elif action.lower() == 'e':
             edit_company_menu()
+        elif action.lower() == 'd':
+            # Delete a company - show selection menu
+            if not companies:
+                console.print("[yellow]No companies to delete[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Quick selection for delete
+            company_choices = [{'name': f"{idx+1}. {c.name} ({len(c.profiles)} profiles)", 'value': c.id} for idx, c in enumerate(companies)]
+            company_choices.append({'name': '← Cancel', 'value': None})
+
+            company_id = questionary.select(
+                "Select company to delete:",
+                choices=company_choices,
+                style=custom_style
+            ).ask()
+
+            if company_id:
+                company = session.query(Company).filter(Company.id == company_id).first()
+                if company:
+                    profile_count = len(company.profiles)
+                    if questionary.confirm(f"Are you sure you want to delete {company.name}? (Has {profile_count} profile(s))", style=custom_style, default=False).ask():
+                        # Delete associated relationships first
+                        from leadsauce.models.relationship import CompanyRelationship
+                        session.query(CompanyRelationship).filter(
+                            (CompanyRelationship.from_company_id == company.id) |
+                            (CompanyRelationship.to_company_id == company.id)
+                        ).delete(synchronize_session=False)
+
+                        # Now delete the company
+                        session.delete(company)
+                        session.commit()
+                        console.print(f"\n[green]✓ Deleted {company.name}[/]\n")
+                        questionary.press_any_key_to_continue().ask()
         elif action.lower() == 'r':
             continue  # Refresh
         elif action.isdigit():
@@ -1876,6 +1967,14 @@ def show_profile_details(profile_id, session):
 
         elif action == "🗑️  Delete Profile":
             if questionary.confirm(f"Are you sure you want to delete {profile.name}?", style=custom_style).ask():
+                # Delete associated relationships first
+                from leadsauce.models.relationship import ProfileRelationship
+                session.query(ProfileRelationship).filter(
+                    (ProfileRelationship.from_profile_id == profile.id) |
+                    (ProfileRelationship.to_profile_id == profile.id)
+                ).delete(synchronize_session=False)
+
+                # Now delete the profile
                 session.delete(profile)
                 session.commit()
                 console.print(f"\n[green]✓ Deleted {profile.name}[/]\n")
@@ -2181,47 +2280,84 @@ def browse_companies():
 
 def show_company_details(company, session):
     """Show detailed view of a company with its profiles"""
-    console.clear()
+    while True:
+        console.clear()
 
-    # Display company info
-    table = Table(show_header=False, box=box.ROUNDED, border_style="cyan")
-    table.add_column("Field", style="cyan bold", width=20)
-    table.add_column("Value", style="white")
+        # Display company info
+        table = Table(show_header=False, box=box.ROUNDED, border_style="cyan")
+        table.add_column("Field", style="cyan bold", width=20)
+        table.add_column("Value", style="white")
 
-    table.add_row("Name", company.name)
-    table.add_row("Industry", company.industry or "-")
-    table.add_row("Size", company.size or "-")
-    table.add_row("Location", company.location or "-")
-    table.add_row("Website", company.website or "-")
-    if company.notes:
-        table.add_row("Notes", company.notes[:100] + "..." if len(company.notes) > 100 else company.notes)
+        table.add_row("Name", company.name)
+        table.add_row("Industry", company.industry or "-")
+        table.add_row("Size", company.size or "-")
+        table.add_row("Location", company.location or "-")
+        table.add_row("Website", company.website or "-")
+        if company.notes:
+            table.add_row("Notes", company.notes[:100] + "..." if len(company.notes) > 100 else company.notes)
 
-    console.print(Panel(table, title=f"[bold cyan]Company Details[/]", border_style="cyan"))
-    console.print()
+        console.print(Panel(table, title=f"[bold cyan]Company Details[/]", border_style="cyan"))
+        console.print()
 
-    # Show profiles at this company
-    if company.profiles:
-        console.print(f"[bold yellow]Profiles at {company.name}:[/]\n")
-        profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
-        profiles_table.add_column("Name", style="cyan")
-        profiles_table.add_column("Seniority", style="blue")
-        profiles_table.add_column("Email", style="green")
+        # Show profiles at this company
+        if company.profiles:
+            console.print(f"[bold yellow]Profiles at {company.name}:[/]\n")
+            profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
+            profiles_table.add_column("Name", style="cyan")
+            profiles_table.add_column("Seniority", style="blue")
+            profiles_table.add_column("Email", style="green")
 
-        for p in company.profiles[:10]:  # Show first 10
-            profiles_table.add_row(
-                p.name,
-                p.seniority.title(),
-                p.email or "-"
-            )
+            for p in company.profiles[:10]:  # Show first 10
+                profiles_table.add_row(
+                    p.name,
+                    p.seniority.title(),
+                    p.email or "-"
+                )
 
-        console.print(profiles_table)
-        if len(company.profiles) > 10:
-            console.print(f"\n[dim]... and {len(company.profiles) - 10} more[/]")
-    else:
-        console.print("[dim]No profiles associated with this company yet[/]")
+            console.print(profiles_table)
+            if len(company.profiles) > 10:
+                console.print(f"\n[dim]... and {len(company.profiles) - 10} more[/]")
+        else:
+            console.print("[dim]No profiles associated with this company yet[/]")
 
-    console.print()
-    questionary.press_any_key_to_continue("Press any key to go back...").ask()
+        console.print()
+
+        # Action menu
+        actions = [
+            "📝 Edit Company",
+            "🗑️  Delete Company",
+            "← Back to List"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=actions,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to List":
+            break
+
+        elif action == "📝 Edit Company":
+            edit_company_interactive(company, session)
+            # Refresh company data after edit
+            session.refresh(company)
+
+        elif action == "🗑️  Delete Company":
+            if questionary.confirm(f"Are you sure you want to delete {company.name}?", style=custom_style, default=False).ask():
+                # Delete associated relationships first
+                from leadsauce.models.relationship import CompanyRelationship
+                session.query(CompanyRelationship).filter(
+                    (CompanyRelationship.from_company_id == company.id) |
+                    (CompanyRelationship.to_company_id == company.id)
+                ).delete(synchronize_session=False)
+
+                # Now delete the company
+                session.delete(company)
+                session.commit()
+                console.print(f"\n[green]✓ Deleted {company.name}[/]\n")
+                questionary.press_any_key_to_continue().ask()
+                break
 
 
 def add_company_interactive():
@@ -4979,3 +5115,536 @@ def delete_task_interactive(task_id):
         time.sleep(2)
     finally:
         session.close()
+
+
+def export_menu():
+    """Export menu - Export data to CSV files"""
+    from pathlib import Path
+    from leadsauce.commands.export import (
+        export_profiles, export_companies, export_tasks, export_interactions,
+        export_profile_relationships, export_company_relationships, export_tags,
+        export_reminders, export_teams, export_documents, export_activities,
+        export_all_to_single_file
+    )
+    from leadsauce.utils.constants import APP_DIR
+
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Export"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[1] Export All Data", style="bold cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[2] Export Profiles", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[3] Export Companies", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[4] Export Tasks", style="magenta")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[5] Export Interactions", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[6] More Options", style="white")
+        console.print(Panel(actions_text, title="Export Options", border_style="cyan"))
+        console.print()
+
+        # Statistics
+        try:
+            profile_count = session.query(Profile).count()
+            company_count = session.query(Company).count()
+            task_count = session.query(Task).count()
+
+            stats_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            stats_table.add_column("Entity Type", style="cyan", width=20)
+            stats_table.add_column("Count", style="green", justify="right", width=10)
+
+            stats_table.add_row("Profiles", str(profile_count))
+            stats_table.add_row("Companies", str(company_count))
+            stats_table.add_row("Tasks", str(task_count))
+
+            console.print(stats_table)
+            console.print()
+
+            # Check if database is empty
+            total_records = profile_count + company_count + task_count
+            if total_records == 0:
+                console.print(Panel(
+                    "[yellow]⚠ Your database is empty![/]\n\n"
+                    "Add some data first using the TUI or CLI:\n"
+                    "  • Press [cyan]2[/cyan] for Profiles menu to add contacts\n"
+                    "  • Press [cyan]3[/cyan] for Companies menu to add organizations\n"
+                    "  • Or use CLI: [dim]leadsauce profile create --interactive[/dim]",
+                    title="No Data to Export",
+                    border_style="yellow"
+                ))
+                console.print()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not load statistics: {e}[/]")
+            console.print()
+
+        # Handle keyboard shortcuts
+        console.print("[dim]Press a number key or navigate with arrow keys[/]")
+        console.print()
+
+        # Create menu choices
+        choices = [
+            "📦 [1] Export All Data to CSV",
+            "👥 [2] Export Profiles",
+            "🏢 [3] Export Companies",
+            "✅ [4] Export Tasks",
+            "💬 [5] Export Interactions",
+            "🔗 [6] Export Relationships",
+            "🏷️  [7] Export Tags",
+            "⏰ [8] Export Reminders",
+            "📄 [9] Export Other Data",
+            "🔙 Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "Select export option:",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action:
+            return None  # User cancelled (Ctrl+C)
+
+        # Setup default output directory
+        from pathlib import Path
+        output_dir = Path.home() / 'Documents' / 'leadsauce' / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if "Export All Data" in action:
+                console.print()
+                output_file = output_dir / 'leadsauce_export_all.csv'
+                console.print(f"[cyan]Exporting all data to single file:[/]")
+                console.print(f"[dim]{output_file}[/]")
+                console.print()
+
+                # Export to single CSV file
+                total_exported = export_all_to_single_file(session, output_dir)
+
+                if total_exported > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Export completed![/]\n\n"
+                        f"Total records exported: {total_exported}\n"
+                        f"File: {output_file.name}\n"
+                        f"Location: {output_dir}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+                else:
+                    console.print()
+                    console.print(Panel(
+                        "[yellow]No data to export![/]\n\nAdd some profiles or companies first.",
+                        border_style="yellow",
+                        title="No Data"
+                    ))
+
+            elif "Export Profiles" in action:
+                console.print()
+                console.print(f"[cyan]Exporting profiles to: {output_dir}[/]")
+                count = export_profiles(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} profiles[/]\n\nLocation: {output_dir / 'profiles.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+                else:
+                    console.print()
+                    console.print(Panel(
+                        "[yellow]No profiles found in database.[/]\n\nAdd profiles first using the Profiles menu (press 2).",
+                        border_style="yellow",
+                        title="No Data"
+                    ))
+
+            elif "Export Companies" in action:
+                console.print()
+                console.print(f"[cyan]Exporting companies to: {output_dir}[/]")
+                count = export_companies(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} companies[/]\n\nLocation: {output_dir / 'companies.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+                else:
+                    console.print()
+                    console.print(Panel(
+                        "[yellow]No companies found in database.[/]\n\nAdd companies first using the Companies menu (press 3).",
+                        border_style="yellow",
+                        title="No Data"
+                    ))
+
+            elif "Export Tasks" in action:
+                console.print()
+                console.print(f"[cyan]Exporting tasks to: {output_dir}[/]")
+                count = export_tasks(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} tasks[/]\n\nLocation: {output_dir / 'tasks.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Interactions" in action:
+                console.print()
+                console.print(f"[cyan]Exporting interactions to: {output_dir}[/]")
+                count = export_interactions(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} interactions[/]\n\nLocation: {output_dir / 'interactions.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Relationships" in action:
+                console.print()
+                console.print(f"[cyan]Exporting relationships to: {output_dir}[/]")
+                count1 = export_profile_relationships(session, output_dir)
+                count2 = export_company_relationships(session, output_dir)
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Export completed![/]\n\nProfile relationships: {count1}\nCompany relationships: {count2}\nLocation: {output_dir}",
+                    border_style="green",
+                    title="Export Complete"
+                ))
+
+            elif "Export Tags" in action:
+                console.print()
+                console.print(f"[cyan]Exporting tags to: {output_dir}[/]")
+                count = export_tags(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} tags[/]\n\nLocation: {output_dir / 'tags.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Reminders" in action:
+                console.print()
+                console.print(f"[cyan]Exporting reminders to: {output_dir}[/]")
+                count = export_reminders(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} reminders[/]\n\nLocation: {output_dir / 'reminders.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Other Data" in action:
+                console.print()
+                console.print(f"[cyan]Exporting teams, documents, and activities to: {output_dir}[/]")
+                count1 = export_teams(session, output_dir)
+                count2 = export_documents(session, output_dir)
+                count3 = export_activities(session, output_dir)
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Export completed![/]\n\nTeams: {count1}\nDocuments: {count2}\nActivities: {count3}\nLocation: {output_dir}",
+                    border_style="green",
+                    title="Export Complete"
+                ))
+
+            elif "Back to Dashboard" in action:
+                session.close()
+                return None
+
+            # Wait for user to continue
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        except Exception as e:
+            console.print()
+            console.print(Panel(
+                f"[bold red]✗ Export failed![/]\n\n{str(e)}",
+                border_style="red",
+                title="Export Error"
+            ))
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        # Check for keyboard shortcuts to navigate
+        # (Similar pattern to other menus)
+
+    session.close()
+    return None
+
+
+def import_menu():
+    """Import menu - Import data from CSV files"""
+    from pathlib import Path
+    from leadsauce.commands.import_data import (
+        import_profiles_from_csv, import_companies_from_csv, import_all_from_csv
+    )
+    from leadsauce.utils.constants import APP_DIR
+
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Import"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[1] Import All Data", style="bold cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[2] Import Profiles", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[3] Import Companies", style="yellow")
+        console.print(Panel(actions_text, title="Import Options", border_style="cyan"))
+        console.print()
+
+        # Statistics
+        try:
+            profile_count = session.query(Profile).count()
+            company_count = session.query(Company).count()
+
+            stats_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            stats_table.add_column("Entity Type", style="cyan", width=20)
+            stats_table.add_column("Current Count", style="green", justify="right", width=15)
+
+            stats_table.add_row("Profiles", str(profile_count))
+            stats_table.add_row("Companies", str(company_count))
+
+            console.print(stats_table)
+            console.print()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not load statistics: {e}[/]")
+            console.print()
+
+        # Import instructions
+        console.print(Panel(
+            "[cyan]Import Instructions:[/]\n\n"
+            "• CSV format must match export format\n"
+            "• [bold]Bulk mode[/]: Import all records at once\n"
+            "• [bold]Separate mode[/]: Confirm each record before importing\n"
+            "• Duplicates are skipped by default (by email/name)",
+            title="ℹ️  How to Import",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Create menu choices
+        choices = [
+            "📦 [1] Import All Data from CSV (profiles + companies)",
+            "👥 [2] Import Profiles Only",
+            "🏢 [3] Import Companies Only",
+            "🔙 Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "Select import option:",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action:
+            return None  # User cancelled (Ctrl+C)
+
+        try:
+            if "Back to Dashboard" in action:
+                session.close()
+                return None
+
+            # Ask for CSV file path
+            console.print()
+            file_path = questionary.text(
+                "Enter path to CSV file:",
+                style=custom_style
+            ).ask()
+
+            if not file_path:
+                console.print("[yellow]Import cancelled[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            csv_path = Path(file_path).expanduser().resolve()
+
+            if not csv_path.exists():
+                console.print()
+                console.print(Panel(
+                    f"[bold red]File not found:[/]\n\n{csv_path}",
+                    border_style="red",
+                    title="Error"
+                ))
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            # If it's a directory, try to find CSV files
+            if csv_path.is_dir():
+                csv_files = list(csv_path.glob('*.csv'))
+
+                if not csv_files:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold red]No CSV files found in directory:[/]\n\n{csv_path}",
+                        border_style="red",
+                        title="Error"
+                    ))
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                    continue
+
+                if len(csv_files) == 1:
+                    # Only one CSV file, use it automatically
+                    csv_path = csv_files[0]
+                    console.print(f"[cyan]Found CSV file: {csv_path.name}[/]")
+                else:
+                    # Multiple CSV files, let user choose
+                    console.print()
+                    console.print(f"[cyan]Found {len(csv_files)} CSV files in directory[/]")
+
+                    file_choices = [f.name for f in csv_files]
+                    file_choices.append("Cancel")
+
+                    selected_file = questionary.select(
+                        "Select CSV file to import:",
+                        choices=file_choices,
+                        style=custom_style
+                    ).ask()
+
+                    if not selected_file or selected_file == "Cancel":
+                        continue
+
+                    csv_path = csv_path / selected_file
+
+
+            # Ask for import mode
+            mode = questionary.select(
+                "Import mode:",
+                choices=[
+                    "Bulk (import all at once)",
+                    "Separate (confirm each record)"
+                ],
+                style=custom_style
+            ).ask()
+
+            if not mode:
+                continue
+
+            import_mode = 'bulk' if 'Bulk' in mode else 'separate'
+
+            # Ask about duplicates
+            allow_duplicates = questionary.confirm(
+                "Allow duplicate records?",
+                default=False,
+                style=custom_style
+            ).ask()
+
+            console.print()
+            console.print(f"[cyan]Importing from: {csv_path.name}[/]")
+            console.print(f"[cyan]Mode: {import_mode}[/]")
+            console.print()
+
+            if "Import All Data" in action:
+                # Import all (profiles + companies from single file)
+                result = import_all_from_csv(
+                    session,
+                    csv_path,
+                    mode=import_mode,
+                    skip_duplicates=not allow_duplicates
+                )
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Import completed![/]\n\n"
+                    f"Profiles imported: {result['profiles']}\n"
+                    f"Companies imported: {result['companies']}\n"
+                    f"Skipped (duplicates): {result['skipped']}\n"
+                    f"Errors: {len(result['errors'])}",
+                    border_style="green",
+                    title="Import Complete"
+                ))
+
+                if result['errors']:
+                    console.print()
+                    console.print("[yellow]Errors:[/]")
+                    for error in result['errors'][:5]:
+                        console.print(f"  [yellow]• {error}[/]")
+                    if len(result['errors']) > 5:
+                        console.print(f"  [yellow]... and {len(result['errors']) - 5} more[/]")
+
+            elif "Import Profiles" in action:
+                # Import profiles
+                imported, skipped, errors = import_profiles_from_csv(
+                    session,
+                    csv_path,
+                    mode=import_mode,
+                    skip_duplicates=not allow_duplicates
+                )
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Import completed![/]\n\n"
+                    f"Imported: {imported}\n"
+                    f"Skipped (duplicates): {skipped}\n"
+                    f"Errors: {len(errors)}",
+                    border_style="green",
+                    title="Import Complete"
+                ))
+
+                if errors:
+                    console.print()
+                    console.print("[yellow]Errors:[/]")
+                    for error in errors[:5]:
+                        console.print(f"  [yellow]• {error}[/]")
+                    if len(errors) > 5:
+                        console.print(f"  [yellow]... and {len(errors) - 5} more[/]")
+
+            elif "Import Companies" in action:
+                # Import companies
+                imported, skipped, errors = import_companies_from_csv(
+                    session,
+                    csv_path,
+                    mode=import_mode,
+                    skip_duplicates=not allow_duplicates
+                )
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Import completed![/]\n\n"
+                    f"Imported: {imported}\n"
+                    f"Skipped (duplicates): {skipped}\n"
+                    f"Errors: {len(errors)}",
+                    border_style="green",
+                    title="Import Complete"
+                ))
+
+                if errors:
+                    console.print()
+                    console.print("[yellow]Errors:[/]")
+                    for error in errors[:5]:
+                        console.print(f"  [yellow]• {error}[/]")
+                    if len(errors) > 5:
+                        console.print(f"  [yellow]... and {len(errors) - 5} more[/]")
+
+            # Wait for user to continue
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        except Exception as e:
+            console.print()
+            console.print(Panel(
+                f"[bold red]✗ Import failed![/]\n\n{str(e)}",
+                border_style="red",
+                title="Import Error"
+            ))
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+    session.close()
+    return None
