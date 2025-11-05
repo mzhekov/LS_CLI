@@ -61,31 +61,32 @@ def migrate_reminders_table():
         if not check_column_exists(cursor, 'reminders', 'goal_id'):
             columns_to_add.append(('goal_id', 'INTEGER'))
 
-        if not columns_to_add:
-            print("✓ All columns already exist. No migration needed.")
-            return True
+        if columns_to_add:
+            print(f"\nAdding {len(columns_to_add)} new column(s) to reminders table...")
 
-        print(f"\nAdding {len(columns_to_add)} new column(s) to reminders table...")
+            # Add each column
+            for column_name, column_type in columns_to_add:
+                print(f"  - Adding column: {column_name}")
+                cursor.execute(f"ALTER TABLE reminders ADD COLUMN {column_name} {column_type}")
 
-        # Add each column
-        for column_name, column_type in columns_to_add:
-            print(f"  - Adding column: {column_name}")
-            cursor.execute(f"ALTER TABLE reminders ADD COLUMN {column_name} {column_type}")
+            # Create indexes for the new foreign key columns
+            print("\nCreating indexes...")
 
-        # Create indexes for the new foreign key columns
-        print("\nCreating indexes...")
+            if ('company_id', 'INTEGER') in columns_to_add:
+                print("  - Creating index on company_id")
+                cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_company_id ON reminders(company_id)")
 
-        if ('company_id', 'INTEGER') in columns_to_add:
-            print("  - Creating index on company_id")
-            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_company_id ON reminders(company_id)")
+            if ('task_id', 'INTEGER') in columns_to_add:
+                print("  - Creating index on task_id")
+                cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_task_id ON reminders(task_id)")
 
-        if ('task_id', 'INTEGER') in columns_to_add:
-            print("  - Creating index on task_id")
-            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_task_id ON reminders(task_id)")
+            if ('goal_id', 'INTEGER') in columns_to_add:
+                print("  - Creating index on goal_id")
+                cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_goal_id ON reminders(goal_id)")
+        else:
+            print("\n✓ All new columns already exist.")
 
-        if ('goal_id', 'INTEGER') in columns_to_add:
-            print("  - Creating index on goal_id")
-            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_goal_id ON reminders(goal_id)")
+        # ALWAYS check and fix profile_id constraint (regardless of columns_to_add)
 
         # Make profile_id nullable by recreating the table
         # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
