@@ -253,11 +253,13 @@ def show_dashboard_view():
 
         if upcoming_tasks:
             tasks_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
-            tasks_table.add_column("#", style="dim", width=4)
-            tasks_table.add_column("Task", style="cyan", no_wrap=False)
+            tasks_table.add_column("#", style="dim", width=3)
+            tasks_table.add_column("Task", style="cyan", no_wrap=False, width=25)
+            tasks_table.add_column("Description", style="dim", no_wrap=False, width=20)
+            tasks_table.add_column("Status", width=10)
             tasks_table.add_column("Priority", width=8)
             tasks_table.add_column("Due", width=12)
-            tasks_table.add_column("Links", style="dim", width=10)
+            tasks_table.add_column("Linked To", style="dim", no_wrap=False)
 
             for idx, task in enumerate(upcoming_tasks, 1):
                 # Priority color
@@ -267,6 +269,14 @@ def show_dashboard_view():
                     'high': 'magenta',
                     'urgent': 'red bold'
                 }.get(task.priority, 'white')
+
+                # Status color
+                status_color = {
+                    'pending': 'yellow',
+                    'in_progress': 'cyan',
+                    'completed': 'green',
+                    'cancelled': 'red'
+                }.get(task.status, 'white')
 
                 # Due date formatting
                 due_display = ""
@@ -281,22 +291,41 @@ def show_dashboard_view():
                 else:
                     due_display = "-"
 
-                # Links summary
-                link_parts = []
+                # Description (truncated)
+                description = ""
+                if task.description:
+                    description = task.description[:20] + "..." if len(task.description) > 20 else task.description
+                else:
+                    description = "-"
+
+                # Linked entities with names
+                linked_parts = []
                 if task.profiles:
-                    link_parts.append(f"👥{len(task.profiles)}")
+                    profile_names = [p.name for p in task.profiles[:2]]
+                    if len(task.profiles) > 2:
+                        profile_names.append(f"+{len(task.profiles)-2}")
+                    linked_parts.append(f"👥 {', '.join(profile_names)}")
                 if task.companies:
-                    link_parts.append(f"🏢{len(task.companies)}")
+                    company_names = [c.name for c in task.companies[:2]]
+                    if len(task.companies) > 2:
+                        company_names.append(f"+{len(task.companies)-2}")
+                    linked_parts.append(f"🏢 {', '.join(company_names)}")
                 if task.tags:
-                    link_parts.append(f"🏷️{len(task.tags)}")
-                links_display = " ".join(link_parts) if link_parts else "-"
+                    tag_names = [t.name for t in task.tags[:2]]
+                    if len(task.tags) > 2:
+                        tag_names.append(f"+{len(task.tags)-2}")
+                    linked_parts.append(f"🏷️ {', '.join(tag_names)}")
+
+                linked_display = "\n".join(linked_parts) if linked_parts else "-"
 
                 tasks_table.add_row(
                     str(idx),
-                    task.title[:40] + "..." if len(task.title) > 40 else task.title,
+                    task.title[:25] + "..." if len(task.title) > 25 else task.title,
+                    description,
+                    f"[{status_color}]{task.status.replace('_', ' ').title()}[/]",
                     f"[{priority_color}]{task.priority.upper()}[/]",
                     due_display,
-                    links_display
+                    linked_display
                 )
 
             console.print(Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
@@ -311,15 +340,49 @@ def show_dashboard_view():
         # Recent profiles
         if recent_profiles:
             profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
-            profiles_table.add_column("Name", style="cyan")
-            profiles_table.add_column("Seniority", style="blue")
-            profiles_table.add_column("Company", style="green")
+            profiles_table.add_column("Name", style="cyan", width=20)
+            profiles_table.add_column("Email", style="blue", width=25)
+            profiles_table.add_column("Phone", style="green", width=15)
+            profiles_table.add_column("Seniority", style="yellow", width=12)
+            profiles_table.add_column("Generation", style="magenta", width=10)
+            profiles_table.add_column("Company", style="green", width=20)
+            profiles_table.add_column("Skills", style="dim", no_wrap=False, width=20)
+            profiles_table.add_column("Tags", style="yellow", no_wrap=False)
 
             for p in recent_profiles:
+                # Email (truncated if too long)
+                email_display = p.email[:23] + "..." if p.email and len(p.email) > 23 else (p.email or "-")
+
+                # Phone
+                phone_display = p.phone or "-"
+
+                # Generation
+                generation_display = p.generation.title() if p.generation else "-"
+
+                # Company
+                company_display = p.company.name[:18] + "..." if p.company and len(p.company.name) > 18 else (p.company.name if p.company else "-")
+
+                # Skills (Good at - truncated)
+                skills_display = p.good_at[:18] + "..." if p.good_at and len(p.good_at) > 18 else (p.good_at or "-")
+
+                # Tags (show first 2)
+                if p.tags:
+                    tag_names = [t.name for t in p.tags[:2]]
+                    if len(p.tags) > 2:
+                        tag_names.append(f"+{len(p.tags)-2}")
+                    tags_display = ", ".join(tag_names)
+                else:
+                    tags_display = "-"
+
                 profiles_table.add_row(
                     p.name,
+                    email_display,
+                    phone_display,
                     p.seniority.title(),
-                    p.company.name if p.company else "-"
+                    generation_display,
+                    company_display,
+                    skills_display,
+                    tags_display
                 )
 
             console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
