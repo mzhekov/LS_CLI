@@ -661,29 +661,20 @@ def show_dashboard_view():
                 border_style="yellow"
             )
 
-        # Create split-screen layout using Layout
-        layout = Layout()
-        layout.split_row(
-            Layout(name="left", ratio=7),
-            Layout(name="right", ratio=3)
-        )
+        # Display Overview at full width
+        console.print(overview_panel)
+        console.print()
 
-        # Left column: Overview, Goals, Tasks, Recent Profiles
-        left_content = Group(
-            overview_panel,
-            Text(),  # Empty line
-            goals_panel,
-            Text(),  # Empty line
-            tasks_panel,
-            Text(),  # Empty line
-            profiles_panel
-        )
+        # Display Goals and Reminders side by side
+        console.print(Columns([goals_panel, reminders_panel], equal=False, expand=True))
+        console.print()
 
-        layout["left"].update(left_content)
-        layout["right"].update(reminders_panel)
+        # Display Tasks at full width
+        console.print(tasks_panel)
+        console.print()
 
-        # Display the split layout
-        console.print(layout)
+        # Display Recent Profiles at full width
+        console.print(profiles_panel)
         console.print()
 
         # Get action - single key press
