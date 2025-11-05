@@ -5368,6 +5368,44 @@ def import_menu():
                 questionary.press_any_key_to_continue("Press any key to continue...").ask()
                 continue
 
+            # If it's a directory, try to find CSV files
+            if csv_path.is_dir():
+                csv_files = list(csv_path.glob('*.csv'))
+
+                if not csv_files:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold red]No CSV files found in directory:[/]\n\n{csv_path}",
+                        border_style="red",
+                        title="Error"
+                    ))
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                    continue
+
+                if len(csv_files) == 1:
+                    # Only one CSV file, use it automatically
+                    csv_path = csv_files[0]
+                    console.print(f"[cyan]Found CSV file: {csv_path.name}[/]")
+                else:
+                    # Multiple CSV files, let user choose
+                    console.print()
+                    console.print(f"[cyan]Found {len(csv_files)} CSV files in directory[/]")
+
+                    file_choices = [f.name for f in csv_files]
+                    file_choices.append("Cancel")
+
+                    selected_file = questionary.select(
+                        "Select CSV file to import:",
+                        choices=file_choices,
+                        style=custom_style
+                    ).ask()
+
+                    if not selected_file or selected_file == "Cancel":
+                        continue
+
+                    csv_path = csv_path / selected_file
+
+
             # Ask for import mode
             mode = questionary.select(
                 "Import mode:",

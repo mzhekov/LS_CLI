@@ -19,6 +19,56 @@ def import_cmd():
     pass
 
 
+def resolve_csv_path(input_path):
+    """
+    Resolve a path to a CSV file, handling directories intelligently.
+
+    If path is a directory:
+    - Looks for CSV files in the directory
+    - If only one CSV found, uses it automatically
+    - If multiple CSVs found, prompts user to choose
+
+    Returns: Path to CSV file, or None if cancelled/not found
+    """
+    csv_path = Path(input_path).expanduser().resolve()
+
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Path not found: {csv_path}")
+
+    if csv_path.is_dir():
+        # Find all CSV files in the directory
+        csv_files = list(csv_path.glob('*.csv'))
+
+        if not csv_files:
+            raise FileNotFoundError(f"No CSV files found in directory: {csv_path}")
+
+        if len(csv_files) == 1:
+            # Only one CSV file, use it automatically
+            click.echo(f"Found CSV file: {csv_files[0].name}")
+            return csv_files[0]
+        else:
+            # Multiple CSV files, let user choose
+            click.echo(f"\nFound {len(csv_files)} CSV files in directory:")
+            for i, f in enumerate(csv_files, 1):
+                click.echo(f"  {i}. {f.name}")
+
+            while True:
+                choice = click.prompt("\nSelect file number (or 'q' to quit)", type=str)
+                if choice.lower() == 'q':
+                    return None
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(csv_files):
+                        return csv_files[idx]
+                    else:
+                        click.echo(f"Please enter a number between 1 and {len(csv_files)}")
+                except ValueError:
+                    click.echo("Please enter a valid number or 'q' to quit")
+    else:
+        # It's a file, return it
+        return csv_path
+
+
 def import_profiles_from_csv(session, csv_path, mode='bulk', skip_duplicates=True):
     """
     Import profiles from CSV file
@@ -427,13 +477,21 @@ def import_all(ctx, csv_file, mode, allow_duplicates):
 
     The CSV file must have a 'Type' column to distinguish profiles from companies.
 
+    You can provide either a file path or directory path. If you provide a directory,
+    the tool will automatically find CSV files and let you select one if there are multiple.
+
     Example:
         leadsauce import all data.csv
+        leadsauce import all ~/Documents/leadsauce/exports/20251105_132421
         leadsauce import all data.csv --mode separate
         leadsauce import all data.csv --allow-duplicates
     """
     try:
-        csv_path = Path(csv_file).expanduser().resolve()
+        # Resolve path (handles directories)
+        csv_path = resolve_csv_path(csv_file)
+        if csv_path is None:
+            click.echo("Import cancelled")
+            return
 
         click.echo(f"Importing data from: {csv_path}")
         click.echo(f"Mode: {mode}")
@@ -482,12 +540,20 @@ def import_profiles(ctx, csv_file, mode, allow_duplicates):
     CSV format must match the profiles export format with columns:
     ID, Name, Seniority, Email, Phone, Company, Generation, Married, Children, Skills, Tags, Notes
 
+    You can provide either a file path or directory path. If you provide a directory,
+    the tool will automatically find CSV files and let you select one if there are multiple.
+
     Example:
         leadsauce import profiles contacts.csv
+        leadsauce import profiles ~/Documents/leadsauce/exports/
         leadsauce import profiles contacts.csv --mode separate
     """
     try:
-        csv_path = Path(csv_file).expanduser().resolve()
+        # Resolve path (handles directories)
+        csv_path = resolve_csv_path(csv_file)
+        if csv_path is None:
+            click.echo("Import cancelled")
+            return
 
         click.echo(f"Importing profiles from: {csv_path}")
         click.echo(f"Mode: {mode}")
@@ -535,12 +601,20 @@ def import_companies(ctx, csv_file, mode, allow_duplicates):
     CSV format must match the companies export format with columns:
     ID, Name, Industry, Size, Location, Website, Profiles, Notes
 
+    You can provide either a file path or directory path. If you provide a directory,
+    the tool will automatically find CSV files and let you select one if there are multiple.
+
     Example:
         leadsauce import companies organizations.csv
+        leadsauce import companies ~/Documents/leadsauce/exports/
         leadsauce import companies organizations.csv --mode separate
     """
     try:
-        csv_path = Path(csv_file).expanduser().resolve()
+        # Resolve path (handles directories)
+        csv_path = resolve_csv_path(csv_file)
+        if csv_path is None:
+            click.echo("Import cancelled")
+            return
 
         click.echo(f"Importing companies from: {csv_path}")
         click.echo(f"Mode: {mode}")
