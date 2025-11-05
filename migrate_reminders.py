@@ -104,6 +104,9 @@ def migrate_reminders_table():
         if profile_id_notnull:
             print("  - Recreating reminders table with nullable profile_id...")
 
+            # Drop temporary table if it exists from a previous failed migration
+            cursor.execute("DROP TABLE IF EXISTS reminders_new")
+
             # Create new table with correct schema
             cursor.execute("""
                 CREATE TABLE reminders_new (
