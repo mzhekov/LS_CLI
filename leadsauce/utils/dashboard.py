@@ -144,7 +144,12 @@ def show_dashboard():
                     task_str = "[dim]No tasks linked[/]"
 
                 # Truncate title if too long
-                title = goal.title[:23] + "..." if len(goal.title) > 23 else goal.title
+                title = goal.title[:21] + "..." if len(goal.title) > 21 else goal.title
+
+                # Add description if available
+                if goal.description:
+                    desc_preview = goal.description[:35] + "..." if len(goal.description) > 35 else goal.description
+                    title = f"{title}\n[dim italic]{desc_preview}[/]"
 
                 goals_table.add_row(title, progress_str, task_str, target_str)
 

@@ -287,7 +287,7 @@ def show_dashboard_view():
         pending_tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).count()
 
         # Get recent profiles
-        recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(5).all()
+        recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(15).all()
 
         # Create statistics panel
         stats_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -360,11 +360,16 @@ def show_dashboard_view():
                     task_str = "[dim]No tasks linked[/]"
 
                 # Truncate title if too long
-                title = goal.title[:33] + "..." if len(goal.title) > 33 else goal.title
+                title = goal.title[:28] + "..." if len(goal.title) > 28 else goal.title
 
                 # Add overdue warning to title if needed
                 if goal.is_overdue():
                     title = f"[red]{title} ⚠[/]"
+
+                # Add description if available
+                if goal.description:
+                    desc_preview = goal.description[:45] + "..." if len(goal.description) > 45 else goal.description
+                    title = f"{title}\n[dim italic]{desc_preview}[/]"
 
                 goals_table.add_row(title, progress_str, task_str, target_str)
 
