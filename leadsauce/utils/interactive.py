@@ -4280,11 +4280,19 @@ def add_task_interactive():
                 ]
 
                 if profile_choices:
+                    console.print()
+                    console.print("[bold cyan]📝 How to select:[/]")
+                    console.print("[dim]  • Use ↑↓ arrow keys to navigate[/]")
+                    console.print("[dim]  • Press SPACE to select/deselect (● means selected)[/]")
+                    console.print("[dim]  • Press ENTER when done[/]")
+                    console.print()
                     console.print(f"[dim]Showing {len(profile_choices)} profile choices[/]")
+
                     selected_profile_ids = questionary.checkbox(
-                        "Select additional profiles:",
+                        "Select profiles (use SPACE to select, ENTER to confirm):",
                         choices=profile_choices,
-                        style=custom_style
+                        style=custom_style,
+                        instruction="(Use arrow keys to move, <space> to select, <enter> to finish)"
                     ).ask()
 
                     console.print(f"[dim]Checkbox returned: {selected_profile_ids} (type: {type(selected_profile_ids)})[/]")
@@ -4311,11 +4319,14 @@ def add_task_interactive():
                 ]
 
                 if company_choices:
+                    console.print()
                     console.print(f"[dim]Showing {len(company_choices)} company choices[/]")
+
                     selected_company_ids = questionary.checkbox(
-                        "Select additional companies:",
+                        "Select companies (SPACE to select, ENTER to confirm):",
                         choices=company_choices,
-                        style=custom_style
+                        style=custom_style,
+                        instruction="(Use arrow keys to move, <space> to select, <enter> to finish)"
                     ).ask()
 
                     console.print(f"[dim]Checkbox returned: {selected_company_ids}[/]")
@@ -4342,11 +4353,14 @@ def add_task_interactive():
                 ]
 
                 if tag_choices:
+                    console.print()
                     console.print(f"[dim]Showing {len(tag_choices)} tag choices[/]")
+
                     selected_tag_ids = questionary.checkbox(
-                        "Select additional tags:",
+                        "Select tags (SPACE to select, ENTER to confirm):",
                         choices=tag_choices,
-                        style=custom_style
+                        style=custom_style,
+                        instruction="(Use arrow keys to move, <space> to select, <enter> to finish)"
                     ).ask()
 
                     console.print(f"[dim]Checkbox returned: {selected_tag_ids}[/]")
