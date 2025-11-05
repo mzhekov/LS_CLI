@@ -512,20 +512,68 @@ def profiles_menu():
         profiles = session.query(Profile).order_by(Profile.name).all()
 
         if profiles:
-            # Display profiles list
+            # Display profiles list with all information
             table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
-            table.add_column("#", style="dim", width=4)
-            table.add_column("Name", style="cyan")
-            table.add_column("Seniority", style="blue")
-            table.add_column("Company", style="green")
-            table.add_column("Tags", style="yellow")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Name", style="cyan", no_wrap=False, width=15)
+            table.add_column("Seniority", style="blue", width=10)
+            table.add_column("Email", style="dim", no_wrap=False, width=20)
+            table.add_column("Phone", style="dim", width=13)
+            table.add_column("Company", style="green", no_wrap=False, width=15)
+            table.add_column("Gen", style="magenta", width=8)
+            table.add_column("M", style="cyan", width=3)  # Married
+            table.add_column("C", style="cyan", width=3)  # Children
+            table.add_column("Skills", style="yellow", no_wrap=False, width=20)
+            table.add_column("Tags", style="yellow", no_wrap=False, width=15)
+            table.add_column("Notes", style="dim", no_wrap=False, width=20)
 
             for idx, p in enumerate(profiles, 1):
                 company = p.company.name if p.company else "-"
+
+                # Tags (truncate if too long)
                 tags = ", ".join([t.name for t in p.tags[:2]]) if p.tags else "-"
                 if len(p.tags) > 2:
-                    tags += "..."
-                table.add_row(str(idx), p.name, p.seniority.title(), company, tags)
+                    tags += f" +{len(p.tags)-2}"
+
+                # Email (truncate if too long)
+                email = p.email if p.email else "-"
+                if email != "-" and len(email) > 20:
+                    email = email[:17] + "..."
+
+                # Phone
+                phone = p.phone if p.phone else "-"
+
+                # Generation
+                generation = p.generation if p.generation else "-"
+
+                # Married and Children status
+                married = "✓" if p.married else "-"
+                children = "✓" if p.has_children else "-"
+
+                # Skills (from good_at field, truncate if too long)
+                skills = p.good_at if p.good_at else "-"
+                if skills != "-" and len(skills) > 20:
+                    skills = skills[:17] + "..."
+
+                # Notes (truncate if too long)
+                notes = p.notes if p.notes else "-"
+                if notes != "-" and len(notes) > 20:
+                    notes = notes[:17] + "..."
+
+                table.add_row(
+                    str(idx),
+                    p.name,
+                    p.seniority.title(),
+                    email,
+                    phone,
+                    company,
+                    generation,
+                    married,
+                    children,
+                    skills,
+                    tags,
+                    notes
+                )
 
             console.print(table)
             console.print(f"\n[dim]{len(profiles)} profile(s) total[/]")
