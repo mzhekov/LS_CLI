@@ -17,6 +17,7 @@ from leadsauce.models.company import Company
 from leadsauce.models.tag import Tag
 from leadsauce.models.interaction import Interaction
 from leadsauce.models.reminder import Reminder
+from leadsauce.models.goal import Goal
 
 console = Console()
 
@@ -85,6 +86,79 @@ def show_dashboard():
         console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
         console.print()
 
+        # Goals Section
+        total_goals = session.query(Goal).count()
+        active_goals = session.query(Goal).filter(Goal.status == 'active').count()
+        completed_goals = session.query(Goal).filter(Goal.status == 'completed').count()
+
+        # Get overdue goals
+        overdue_goals = session.query(Goal).filter(
+            Goal.status == 'active',
+            Goal.target_date < datetime.utcnow()
+        ).count()
+
+        # Get goals with their progress
+        goals_in_progress = session.query(Goal).filter(
+            Goal.status == 'active'
+        ).order_by(Goal.target_date.asc()).limit(5).all()
+
+        if total_goals > 0:
+            goals_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1))
+            goals_table.add_column("Goal", style="cyan", width=30)
+            goals_table.add_column("Progress", style="green", width=12)
+            goals_table.add_column("Tasks", style="magenta", width=10)
+            goals_table.add_column("Target", style="dim", width=12)
+
+            for goal in goals_in_progress:
+                # Format target date
+                if goal.target_date:
+                    days_until = (goal.target_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        target_str = f"[red]{abs(days_until)}d ago[/]"
+                    elif days_until == 0:
+                        target_str = "[yellow]today[/]"
+                    elif days_until == 1:
+                        target_str = "[yellow]tomorrow[/]"
+                    else:
+                        target_str = f"[dim]{days_until}d[/]"
+                else:
+                    target_str = "N/A"
+
+                # Format progress bar
+                progress_bar = "█" * int(goal.progress / 10) + "░" * (10 - int(goal.progress / 10))
+                progress_str = f"{progress_bar} {goal.progress:.0f}%"
+
+                # Task summary
+                summary = goal.get_summary()
+                task_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+
+                # Truncate title if too long
+                title = goal.title[:27] + "..." if len(goal.title) > 27 else goal.title
+
+                goals_table.add_row(title, progress_str, task_str, target_str)
+
+            # Add stats row
+            stats_text = f"[bold]Total:[/] {total_goals} | [green]Completed:[/] {completed_goals} | [yellow]Active:[/] {active_goals}"
+            if overdue_goals > 0:
+                stats_text += f" | [red]Overdue:[/] {overdue_goals}"
+
+            console.print(Panel(
+                goals_table,
+                title=f"[bold yellow]🎯 Goals[/]",
+                subtitle=stats_text,
+                border_style="yellow"
+            ))
+            console.print()
+        else:
+            # Show placeholder if no goals
+            goals_placeholder = Table(show_header=False, box=None, padding=(0, 2))
+            goals_placeholder.add_column(justify="center", style="dim")
+            goals_placeholder.add_row("No goals yet. Create your first goal to get started!")
+            goals_placeholder.add_row("[cyan]leadsauce goal create --interactive[/]")
+
+            console.print(Panel(goals_placeholder, title="[bold yellow]🎯 Goals[/]", border_style="yellow"))
+            console.print()
+
         # Reminders Section
         reminders_table = Table(show_header=False, box=None, padding=(0, 2))
         reminders_table.add_column(justify="left", width=20)
@@ -142,9 +216,9 @@ def show_dashboard():
         commands_table.add_column(style="dim")
 
         commands_table.add_row("leadsauce profile create", "Create a new profile")
-        commands_table.add_row("leadsauce profile list", "List all profiles")
+        commands_table.add_row("leadsauce goal create", "Create a new goal")
+        commands_table.add_row("leadsauce goal list", "List all goals")
         commands_table.add_row("leadsauce company list", "List all companies")
-        commands_table.add_row("leadsauce reminder list", "View reminders")
         commands_table.add_row("leadsauce --help", "Show all commands")
 
         console.print(Panel(commands_table, title="[bold yellow]💡 Quick Commands[/]", border_style="yellow"))

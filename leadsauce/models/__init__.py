@@ -11,6 +11,7 @@ from leadsauce.models.team import Team, TeamMember
 from leadsauce.models.document import Document
 from leadsauce.models.activity import Activity
 from leadsauce.models.task import Task, task_profiles, task_companies, task_tags
+from leadsauce.models.goal import Goal, goal_profiles, goal_companies, goal_tasks, goal_tags
 from leadsauce.models.associations import profile_tags, relationships
 from leadsauce.models.relationship import (
     ProfileRelationship,
@@ -34,6 +35,11 @@ __all__ = [
     'task_profiles',
     'task_companies',
     'task_tags',
+    'Goal',
+    'goal_profiles',
+    'goal_companies',
+    'goal_tasks',
+    'goal_tags',
     'profile_tags',
     'relationships',
     'ProfileRelationship',
