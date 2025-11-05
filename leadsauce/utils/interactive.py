@@ -230,6 +230,11 @@ def show_dashboard_view():
     """Show the main dashboard with statistics and task management actions"""
     session = get_session()
 
+    # Profile filtering state
+    profile_filter_seniority = None
+    profile_filter_generation = None
+    profile_filter_company = None
+
     while True:
         # Expire all cached objects to ensure we load fresh data from DB
         session.expire_all()
@@ -298,8 +303,18 @@ def show_dashboard_view():
         total_tasks = session.query(Task).count()
         pending_tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).count()
 
-        # Get recent profiles
-        recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(15).all()
+        # Get recent profiles with filtering
+        profiles_query = session.query(Profile)
+
+        # Apply filters
+        if profile_filter_seniority:
+            profiles_query = profiles_query.filter(Profile.seniority == profile_filter_seniority)
+        if profile_filter_generation:
+            profiles_query = profiles_query.filter(Profile.generation == profile_filter_generation)
+        if profile_filter_company:
+            profiles_query = profiles_query.filter(Profile.company_id == profile_filter_company)
+
+        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(15).all()
 
         # Create statistics panel
         stats_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -654,7 +669,25 @@ def show_dashboard_view():
                     tags_display
                 )
 
-            profiles_panel = Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan")
+            # Build filter subtitle
+            filter_parts = []
+            if profile_filter_seniority:
+                filter_parts.append(f"Seniority: {profile_filter_seniority.title()}")
+            if profile_filter_generation:
+                filter_parts.append(f"Generation: {profile_filter_generation.title()}")
+            if profile_filter_company:
+                company = session.query(Company).get(profile_filter_company)
+                if company:
+                    filter_parts.append(f"Company: {company.name}")
+
+            filter_subtitle = " | ".join(filter_parts) if filter_parts else "[s] Seniority • [G] Generation • [C] Company • [R] Reset"
+
+            profiles_panel = Panel(
+                profiles_table,
+                title="[bold cyan]Recent Profiles[/]",
+                subtitle=filter_subtitle,
+                border_style="cyan"
+            )
         else:
             profiles_panel = Panel(
                 "[yellow]No profiles yet. Press [2] to add your first contact![/]",
@@ -786,6 +819,43 @@ def show_dashboard_view():
         elif action.lower() == 'n':  # Complete Reminder
             if all_upcoming:
                 complete_reminder_from_dashboard(session, all_upcoming)
+        # Profile filtering actions
+        elif action == 's':  # Filter by Seniority
+            seniority_choices = ['junior', 'mid-level', 'senior', 'manager', 'director', 'vp', 'c-level', '← Clear Filter']
+            selected = questionary.select(
+                "Filter by Seniority:",
+                choices=seniority_choices
+            ).ask()
+            if selected and selected != '← Clear Filter':
+                profile_filter_seniority = selected
+            elif selected == '← Clear Filter':
+                profile_filter_seniority = None
+        elif action == 'G':  # Filter by Generation (uppercase G)
+            generation_choices = ['gen-z', 'millennial', 'gen-x', 'boomer', 'silent', '← Clear Filter']
+            selected = questionary.select(
+                "Filter by Generation:",
+                choices=generation_choices
+            ).ask()
+            if selected and selected != '← Clear Filter':
+                profile_filter_generation = selected
+            elif selected == '← Clear Filter':
+                profile_filter_generation = None
+        elif action == 'C':  # Filter by Company (uppercase C)
+            companies = session.query(Company).order_by(Company.name).all()
+            if companies:
+                company_choices = [f"#{c.id} - {c.name}" for c in companies] + ['← Clear Filter']
+                selected = questionary.select(
+                    "Filter by Company:",
+                    choices=company_choices
+                ).ask()
+                if selected and selected != '← Clear Filter':
+                    profile_filter_company = int(selected.split("#")[1].split(" - ")[0])
+                elif selected == '← Clear Filter':
+                    profile_filter_company = None
+        elif action == 'R':  # Reset all filters (uppercase R)
+            profile_filter_seniority = None
+            profile_filter_generation = None
+            profile_filter_company = None
 
     session.close()
 
