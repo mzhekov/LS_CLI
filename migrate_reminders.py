@@ -134,11 +134,23 @@ def migrate_reminders_table():
                 )
             """)
 
-            # Copy data from old table
+            # Copy data from old table, handling NULL created_at/updated_at
             print("  - Copying existing data...")
             cursor.execute("""
-                INSERT INTO reminders_new
-                SELECT * FROM reminders
+                INSERT INTO reminders_new (
+                    id, profile_id, company_id, task_id, goal_id, parent_reminder_id,
+                    title, message, reminder_date, priority, category,
+                    completed, completed_at, completion_note, notification_sent,
+                    is_recurring, recurrence_pattern, created_at, updated_at
+                )
+                SELECT
+                    id, profile_id, company_id, task_id, goal_id, parent_reminder_id,
+                    title, message, reminder_date, priority, category,
+                    completed, completed_at, completion_note, notification_sent,
+                    is_recurring, recurrence_pattern,
+                    COALESCE(created_at, CURRENT_TIMESTAMP),
+                    COALESCE(updated_at, CURRENT_TIMESTAMP)
+                FROM reminders
             """)
 
             # Drop old table
