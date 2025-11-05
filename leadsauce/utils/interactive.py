@@ -250,7 +250,7 @@ def show_dashboard_view():
         goals_actions = Text()
         goals_actions.append("[g] Add Goal", style="green")
         goals_actions.append(" • ", style="dim")
-        goals_actions.append("[G] Edit Goal", style="yellow")
+        goals_actions.append("[h] Edit Goal", style="yellow")
         goals_actions.append(" • ", style="dim")
         goals_actions.append("[l] Link to Goal", style="blue")
         goals_actions.append(" • ", style="dim")
@@ -608,7 +608,7 @@ def show_dashboard_view():
         # Goal management actions
         elif action == 'g':  # Add Goal
             add_goal_from_dashboard(session)
-        elif action == 'G':  # Edit Goal
+        elif action == 'h':  # Edit Goal
             if goals_in_progress or total_goals > 0:
                 edit_goal_from_dashboard(session)
         elif action.lower() == 'l':  # Link to Goal
