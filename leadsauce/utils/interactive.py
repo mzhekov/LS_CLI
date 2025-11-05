@@ -5040,6 +5040,20 @@ def export_menu():
 
             console.print(stats_table)
             console.print()
+
+            # Check if database is empty
+            total_records = profile_count + company_count + task_count
+            if total_records == 0:
+                console.print(Panel(
+                    "[yellow]⚠ Your database is empty![/]\n\n"
+                    "Add some data first using the TUI or CLI:\n"
+                    "  • Press [cyan]2[/cyan] for Profiles menu to add contacts\n"
+                    "  • Press [cyan]3[/cyan] for Companies menu to add organizations\n"
+                    "  • Or use CLI: [dim]leadsauce profile create --interactive[/dim]",
+                    title="No Data to Export",
+                    border_style="yellow"
+                ))
+                console.print()
         except Exception as e:
             console.print(f"[yellow]Warning: Could not load statistics: {e}[/]")
             console.print()
@@ -5123,6 +5137,13 @@ def export_menu():
                         border_style="green",
                         title="Export Complete"
                     ))
+                else:
+                    console.print()
+                    console.print(Panel(
+                        "[yellow]No profiles found in database.[/]\n\nAdd profiles first using the Profiles menu (press 2).",
+                        border_style="yellow",
+                        title="No Data"
+                    ))
 
             elif "Export Companies" in action:
                 console.print()
@@ -5134,6 +5155,13 @@ def export_menu():
                         f"[bold green]✓ Exported {count} companies[/]\n\nLocation: {output_dir / 'companies.csv'}",
                         border_style="green",
                         title="Export Complete"
+                    ))
+                else:
+                    console.print()
+                    console.print(Panel(
+                        "[yellow]No companies found in database.[/]\n\nAdd companies first using the Companies menu (press 3).",
+                        border_style="yellow",
+                        title="No Data"
                     ))
 
             elif "Export Tasks" in action:
