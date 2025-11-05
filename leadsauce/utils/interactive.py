@@ -320,10 +320,12 @@ def show_dashboard_view():
 
         if total_goals > 0:
             goals_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1), border_style="yellow")
-            goals_table.add_column("Goal", style="cyan bold", width=30)
-            goals_table.add_column("Progress", style="green", width=18)
-            goals_table.add_column("Linked Tasks", style="magenta", width=35)
-            goals_table.add_column("Target", style="dim", width=12)
+            goals_table.add_column("Goal", style="cyan bold", width=28)
+            goals_table.add_column("Status", style="white", width=10)
+            goals_table.add_column("Priority", style="white", width=8)
+            goals_table.add_column("Progress", style="green", width=16)
+            goals_table.add_column("Linked Tasks", style="magenta", width=28)
+            goals_table.add_column("Target", style="dim", width=10)
 
             for goal in goals_in_progress:
                 # Format target date
@@ -368,10 +370,29 @@ def show_dashboard_view():
 
                 # Add description if available
                 if goal.description:
-                    desc_preview = goal.description[:45] + "..." if len(goal.description) > 45 else goal.description
+                    desc_preview = goal.description[:40] + "..." if len(goal.description) > 40 else goal.description
                     title = f"{title}\n[dim italic]{desc_preview}[/]"
 
-                goals_table.add_row(title, progress_str, task_str, target_str)
+                # Format status with color
+                status_colors = {
+                    'active': 'yellow',
+                    'completed': 'green',
+                    'on_hold': 'blue',
+                    'cancelled': 'red'
+                }
+                status_color = status_colors.get(goal.status, 'white')
+                status_str = f"[{status_color}]{goal.status.replace('_', ' ').title()}[/]"
+
+                # Format priority with color
+                priority_colors = {
+                    'low': 'blue',
+                    'medium': 'yellow',
+                    'high': 'red'
+                }
+                priority_color = priority_colors.get(goal.priority.lower(), 'white')
+                priority_str = f"[{priority_color}]{goal.priority.upper()}[/]"
+
+                goals_table.add_row(title, status_str, priority_str, progress_str, task_str, target_str)
 
             # Add stats subtitle
             stats_text = f"[bold]Total:[/] {total_goals} | [green]Completed:[/] {completed_goals} | [yellow]Active:[/] {active_goals}"
