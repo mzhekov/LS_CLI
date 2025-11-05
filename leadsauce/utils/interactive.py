@@ -289,6 +289,83 @@ def show_dashboard_view():
         console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
         console.print()
 
+        # Goals Section
+        total_goals = session.query(Goal).count()
+        active_goals = session.query(Goal).filter(Goal.status == 'active').count()
+        completed_goals = session.query(Goal).filter(Goal.status == 'completed').count()
+
+        # Get overdue goals
+        overdue_goals = session.query(Goal).filter(
+            Goal.status == 'active',
+            Goal.target_date < datetime.utcnow()
+        ).count()
+
+        # Get active goals with their progress
+        goals_in_progress = session.query(Goal).filter(
+            Goal.status == 'active'
+        ).order_by(Goal.target_date.asc()).limit(5).all()
+
+        if total_goals > 0:
+            goals_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1), border_style="yellow")
+            goals_table.add_column("Goal", style="cyan bold", width=35)
+            goals_table.add_column("Progress", style="green", width=18)
+            goals_table.add_column("Tasks", style="magenta", width=8)
+            goals_table.add_column("Target", style="dim", width=12)
+
+            for goal in goals_in_progress:
+                # Format target date
+                if goal.target_date:
+                    days_until = (goal.target_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        target_str = f"[red]{abs(days_until)}d ago[/]"
+                    elif days_until == 0:
+                        target_str = "[yellow]Today[/]"
+                    elif days_until == 1:
+                        target_str = "[yellow]Tomorrow[/]"
+                    else:
+                        target_str = f"{days_until}d"
+                else:
+                    target_str = "N/A"
+
+                # Format progress bar
+                progress_blocks = int(goal.progress / 10)
+                progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+                progress_str = f"{progress_bar} {goal.progress:.0f}%"
+
+                # Task summary
+                summary = goal.get_summary()
+                task_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+
+                # Truncate title if too long
+                title = goal.title[:33] + "..." if len(goal.title) > 33 else goal.title
+
+                # Add overdue warning to title if needed
+                if goal.is_overdue():
+                    title = f"[red]{title} ⚠[/]"
+
+                goals_table.add_row(title, progress_str, task_str, target_str)
+
+            # Add stats subtitle
+            stats_text = f"[bold]Total:[/] {total_goals} | [green]Completed:[/] {completed_goals} | [yellow]Active:[/] {active_goals}"
+            if overdue_goals > 0:
+                stats_text += f" | [red]Overdue:[/] {overdue_goals}"
+
+            console.print(Panel(
+                goals_table,
+                title="[bold yellow]🎯 Goals[/]",
+                subtitle=stats_text,
+                border_style="yellow"
+            ))
+            console.print()
+        else:
+            # Show placeholder if no goals
+            console.print(Panel(
+                "[yellow]No goals yet. Press [4] to manage goals![/]",
+                title="[bold yellow]🎯 Goals[/]",
+                border_style="yellow"
+            ))
+            console.print()
+
         # Pending/Overdue Tasks
         from sqlalchemy.orm import joinedload
         upcoming_tasks = session.query(Task).options(
@@ -457,12 +534,13 @@ def show_dashboard_view():
             '1': 'Dashboard',
             '2': 'Profiles',
             '3': 'Companies',
-            '4': 'Network & Relationships',
-            '5': 'Search',
-            '6': 'Tags',
-            '7': 'Workshop',
-            '8': 'Export',
-            '9': 'Import',
+            '4': 'Goals',
+            '5': 'Network & Relationships',
+            '6': 'Search',
+            '7': 'Tags',
+            '8': 'Workshop',
+            '9': 'Export',
+            '0': 'Import',
             'q': 'Exit',
             'Q': 'Exit'
         }
