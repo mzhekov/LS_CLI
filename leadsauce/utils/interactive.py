@@ -260,6 +260,8 @@ def show_dashboard_view():
         goals_actions.append("[p] Update Progress", style="cyan")
         goals_actions.append(" • ", style="dim")
         goals_actions.append("[x] Delete Goal", style="red")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[a] Achieved Goals", style="green bold")
 
         # Combine actions
         combined_actions = Text()
@@ -659,6 +661,8 @@ def show_dashboard_view():
         elif action.lower() == 'x':  # Delete Goal
             if goals_in_progress or total_goals > 0:
                 delete_goal_from_dashboard(session)
+        elif action.lower() == 'a':  # Achieved Goals
+            achieved_goals_menu()
 
     session.close()
 
@@ -6492,6 +6496,172 @@ def goals_menu():
                         session.rollback()
                         console.print(f"[red]Error deleting goal: {str(e)}[/]")
                         questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'r':
+            # Refresh - just continue the loop
+            continue
+
+    session.close()
+    return None
+
+
+def achieved_goals_menu():
+    """View all achieved (completed) goals"""
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Achieved Goals"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[v] View Details", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold green]🏆 Achieved Goals[/]",
+            border_style="green",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Get completed goals
+        achieved_goals = session.query(Goal).filter(
+            Goal.status == 'completed'
+        ).order_by(Goal.completed_at.desc()).all()
+
+        if achieved_goals:
+            # Display achieved goals list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="green")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Title", style="green bold", width=35)
+            table.add_column("Priority", style="yellow", width=8)
+            table.add_column("Tasks", style="magenta", width=8)
+            table.add_column("Profiles", style="cyan", width=8)
+            table.add_column("Companies", style="blue", width=10)
+            table.add_column("Completed", style="dim", width=12)
+
+            for idx, goal in enumerate(achieved_goals, 1):
+                summary = goal.get_summary()
+
+                # Task summary
+                tasks_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+
+                # Completed date
+                if goal.completed_at:
+                    days_ago = (datetime.utcnow() - goal.completed_at).days
+                    if days_ago == 0:
+                        completed_str = "[green]Today[/]"
+                    elif days_ago == 1:
+                        completed_str = "Yesterday"
+                    else:
+                        completed_str = f"{days_ago}d ago"
+                else:
+                    completed_str = "-"
+
+                # Truncate title if too long
+                title = goal.title[:33] + "..." if len(goal.title) > 33 else goal.title
+
+                table.add_row(
+                    str(idx),
+                    title,
+                    goal.priority.title(),
+                    tasks_str,
+                    str(summary['total_profiles']),
+                    str(summary['total_companies']),
+                    completed_str
+                )
+
+            console.print(table)
+            console.print()
+            console.print(f"[green]Total Achieved: {len(achieved_goals)} goals[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No achieved goals yet. Complete some goals to see them here![/]",
+                border_style="yellow",
+                box=box.ROUNDED
+            ))
+
+        console.print()
+
+        # Get action
+        action = questionary.text(
+            "Action:",
+            style=custom_style
+        ).ask()
+
+        if action is None or action.strip() == "":
+            session.close()
+            return None
+
+        action = action.strip().lower()
+
+        # Handle actions
+        if action == 'v':
+            # View goal details
+            if achieved_goals:
+                console.print("[cyan]Enter goal number to view details (or press Enter to cancel):[/]")
+                goal_num = questionary.text(
+                    "",
+                    style=custom_style
+                ).ask()
+
+                if goal_num:
+                    try:
+                        idx = int(goal_num) - 1
+                        if 0 <= idx < len(achieved_goals):
+                            goal = achieved_goals[idx]
+
+                            # Display goal details
+                            console.clear()
+                            console.print(f"\n[bold green]Goal Details[/]\n")
+
+                            details_table = Table(show_header=False, box=box.SIMPLE, border_style="green")
+                            details_table.add_column(style="cyan bold", width=15)
+                            details_table.add_column(style="white")
+
+                            details_table.add_row("Title:", goal.title)
+                            if goal.description:
+                                details_table.add_row("Description:", goal.description)
+                            details_table.add_row("Status:", f"[green]{goal.status.title()}[/]")
+                            details_table.add_row("Priority:", goal.priority.title())
+                            details_table.add_row("Progress:", f"{goal.progress:.0f}%")
+
+                            if goal.target_date:
+                                details_table.add_row("Target Date:", goal.target_date.strftime("%Y-%m-%d"))
+                            if goal.completed_at:
+                                details_table.add_row("Completed:", goal.completed_at.strftime("%Y-%m-%d %H:%M"))
+
+                            # Linked entities
+                            if goal.tasks:
+                                task_names = [f"• {t.title}" for t in goal.tasks[:5]]
+                                if len(goal.tasks) > 5:
+                                    task_names.append(f"... and {len(goal.tasks)-5} more")
+                                details_table.add_row("Tasks:", "\n".join(task_names))
+
+                            if goal.profiles:
+                                profile_names = [f"• {p.name}" for p in goal.profiles[:5]]
+                                if len(goal.profiles) > 5:
+                                    profile_names.append(f"... and {len(goal.profiles)-5} more")
+                                details_table.add_row("Profiles:", "\n".join(profile_names))
+
+                            if goal.companies:
+                                company_names = [f"• {c.name}" for c in goal.companies[:5]]
+                                if len(goal.companies) > 5:
+                                    company_names.append(f"... and {len(goal.companies)-5} more")
+                                details_table.add_row("Companies:", "\n".join(company_names))
+
+                            console.print(Panel(details_table, border_style="green"))
+                            questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+                    except ValueError:
+                        pass
 
         elif action == 'r':
             # Refresh - just continue the loop
