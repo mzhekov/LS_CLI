@@ -8,12 +8,13 @@ import tty
 import termios
 import questionary
 from questionary import Style
-from rich.console import Console
+from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
 from rich.layout import Layout
 from rich.text import Text
+from rich.columns import Columns
 from collections import defaultdict
 from leadsauce.utils.db import get_session
 from leadsauce.models.profile import Profile
@@ -310,10 +311,9 @@ def show_dashboard_view():
         stats_table.add_row("Tags:", str(total_tags))
         stats_table.add_row("Tasks:", f"{pending_tasks}/{total_tasks} pending")
 
-        console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
-        console.print()
+        overview_panel = Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow")
 
-        # Reminders Section
+        # Reminders Section (will be displayed on the right)
         from leadsauce.models.reminder import Reminder
         upcoming_reminders = session.query(Reminder).filter(
             Reminder.completed == False,
@@ -388,20 +388,18 @@ def show_dashboard_view():
             if overdue_count > 0:
                 stats_text += f" | [red]Overdue:[/] {overdue_count}"
 
-            console.print(Panel(
+            reminders_panel = Panel(
                 reminders_table,
                 title="[bold magenta]⏰ Reminders[/]",
                 subtitle=stats_text,
                 border_style="magenta"
-            ))
-            console.print()
+            )
         else:
-            console.print(Panel(
+            reminders_panel = Panel(
                 "[yellow]No upcoming reminders. Stay on track![/]",
                 title="[bold magenta]⏰ Reminders[/]",
                 border_style="magenta"
-            ))
-            console.print()
+            )
 
         # Goals Section
         total_goals = session.query(Goal).count()
@@ -500,21 +498,19 @@ def show_dashboard_view():
             if overdue_goals > 0:
                 stats_text += f" | [red]Overdue:[/] {overdue_goals}"
 
-            console.print(Panel(
+            goals_panel = Panel(
                 goals_table,
                 title="[bold yellow]🎯 Goals[/]",
                 subtitle=stats_text,
                 border_style="yellow"
-            ))
-            console.print()
+            )
         else:
             # Show placeholder if no goals
-            console.print(Panel(
+            goals_panel = Panel(
                 "[yellow]No goals yet. Goals show progress toward your objectives![/]",
                 title="[bold yellow]🎯 Goals[/]",
                 border_style="yellow"
-            ))
-            console.print()
+            )
 
         # Pending/Overdue Tasks
         from sqlalchemy.orm import joinedload
@@ -603,14 +599,12 @@ def show_dashboard_view():
                     linked_display
                 )
 
-            console.print(Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
+            tasks_panel = Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow")
         else:
-            console.print(Panel(
+            tasks_panel = Panel(
                 "[yellow]No pending tasks. Press [t] to add a new task![/]",
                 border_style="yellow"
-            ))
-
-        console.print()
+            )
 
         # Recent profiles
         if recent_profiles:
@@ -660,13 +654,30 @@ def show_dashboard_view():
                     tags_display
                 )
 
-            console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
+            profiles_panel = Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan")
         else:
-            console.print(Panel(
+            profiles_panel = Panel(
                 "[yellow]No profiles yet. Press [2] to add your first contact![/]",
                 border_style="yellow"
-            ))
+            )
 
+        # Create split-screen layout
+        # Left column: Overview, Goals, Tasks, Recent Profiles
+        left_column = Group(
+            overview_panel,
+            Text(),  # Empty line
+            goals_panel,
+            Text(),  # Empty line
+            tasks_panel,
+            Text(),  # Empty line
+            profiles_panel
+        )
+
+        # Right column: Reminders
+        right_column = reminders_panel
+
+        # Display columns side by side
+        console.print(Columns([left_column, right_column], equal=False, expand=True))
         console.print()
 
         # Get action - single key press
