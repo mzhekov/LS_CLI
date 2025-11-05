@@ -283,9 +283,9 @@ def show_dashboard_view():
                 if task.due_date:
                     due_str = task.due_date.strftime('%Y-%m-%d')
                     if task.is_overdue():
-                        due_display = f"[red]{due_str} ⚠️[/]"
+                        due_display = f"[red bold]{due_str} ⚠️[/]"
                     elif task.due_date.date() == datetime.now().date():
-                        due_display = f"[yellow]{due_str} 📅[/]"
+                        due_display = f"[yellow bold]{due_str}[/]"
                     else:
                         due_display = due_str
                 else:
@@ -298,13 +298,8 @@ def show_dashboard_view():
                 else:
                     description = "-"
 
-                # Linked entities with names
+                # Linked entities with names (exclude profiles, only show companies and tags)
                 linked_parts = []
-                if task.profiles:
-                    profile_names = [p.name for p in task.profiles[:2]]
-                    if len(task.profiles) > 2:
-                        profile_names.append(f"+{len(task.profiles)-2}")
-                    linked_parts.append(f"👥 {', '.join(profile_names)}")
                 if task.companies:
                     company_names = [c.name for c in task.companies[:2]]
                     if len(task.companies) > 2:
@@ -4451,18 +4446,16 @@ def tasks_menu():
                 if task.due_date:
                     due_str = task.due_date.strftime('%Y-%m-%d')
                     if task.is_overdue():
-                        due_display = f"[red]{due_str} ⚠️[/]"
+                        due_display = f"[red bold]{due_str} ⚠️[/]"
                     elif task.due_date.date() == datetime.now().date():
-                        due_display = f"[yellow]{due_str} 📅[/]"
+                        due_display = f"[yellow bold]{due_str}[/]"
                     else:
                         due_display = due_str
                 else:
                     due_display = "-"
 
-                # Links summary
+                # Links summary (exclude profiles, only show companies and tags)
                 link_parts = []
-                if task.profiles:
-                    link_parts.append(f"👥{len(task.profiles)}")
                 if task.companies:
                     link_parts.append(f"🏢{len(task.companies)}")
                 if task.tags:
