@@ -694,6 +694,14 @@ def profiles_menu():
                 profile = session.query(Profile).filter(Profile.id == profile_id).first()
                 if profile:
                     if questionary.confirm(f"Are you sure you want to delete {profile.name}?", style=custom_style, default=False).ask():
+                        # Delete associated relationships first
+                        from leadsauce.models.relationship import ProfileRelationship
+                        session.query(ProfileRelationship).filter(
+                            (ProfileRelationship.from_profile_id == profile.id) |
+                            (ProfileRelationship.to_profile_id == profile.id)
+                        ).delete(synchronize_session=False)
+
+                        # Now delete the profile
                         session.delete(profile)
                         session.commit()
                         console.print(f"\n[green]✓ Deleted {profile.name}[/]\n")
@@ -860,6 +868,14 @@ def companies_menu():
                 if company:
                     profile_count = len(company.profiles)
                     if questionary.confirm(f"Are you sure you want to delete {company.name}? (Has {profile_count} profile(s))", style=custom_style, default=False).ask():
+                        # Delete associated relationships first
+                        from leadsauce.models.relationship import CompanyRelationship
+                        session.query(CompanyRelationship).filter(
+                            (CompanyRelationship.from_company_id == company.id) |
+                            (CompanyRelationship.to_company_id == company.id)
+                        ).delete(synchronize_session=False)
+
+                        # Now delete the company
                         session.delete(company)
                         session.commit()
                         console.print(f"\n[green]✓ Deleted {company.name}[/]\n")
@@ -1951,6 +1967,14 @@ def show_profile_details(profile_id, session):
 
         elif action == "🗑️  Delete Profile":
             if questionary.confirm(f"Are you sure you want to delete {profile.name}?", style=custom_style).ask():
+                # Delete associated relationships first
+                from leadsauce.models.relationship import ProfileRelationship
+                session.query(ProfileRelationship).filter(
+                    (ProfileRelationship.from_profile_id == profile.id) |
+                    (ProfileRelationship.to_profile_id == profile.id)
+                ).delete(synchronize_session=False)
+
+                # Now delete the profile
                 session.delete(profile)
                 session.commit()
                 console.print(f"\n[green]✓ Deleted {profile.name}[/]\n")
@@ -2321,6 +2345,14 @@ def show_company_details(company, session):
 
         elif action == "🗑️  Delete Company":
             if questionary.confirm(f"Are you sure you want to delete {company.name}?", style=custom_style, default=False).ask():
+                # Delete associated relationships first
+                from leadsauce.models.relationship import CompanyRelationship
+                session.query(CompanyRelationship).filter(
+                    (CompanyRelationship.from_company_id == company.id) |
+                    (CompanyRelationship.to_company_id == company.id)
+                ).delete(synchronize_session=False)
+
+                # Now delete the company
                 session.delete(company)
                 session.commit()
                 console.print(f"\n[green]✓ Deleted {company.name}[/]\n")
