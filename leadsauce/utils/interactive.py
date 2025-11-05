@@ -41,12 +41,10 @@ NAV_ITEMS = [
     ("Dashboard", "📊", "1"),
     ("Profiles", "👥", "2"),
     ("Companies", "🏢", "3"),
-    ("Relationships", "🔗", "4"),
-    ("Network Map", "🗺️", "5"),
-    ("Tasks", "✅", "6"),
-    ("Search", "🔍", "7"),
-    ("Tags", "🏷️", "8"),
-    ("Workshop", "🔧", "9"),
+    ("Network & Relationships", "🗺️", "4"),
+    ("Search", "🔍", "5"),
+    ("Tags", "🏷️", "6"),
+    ("Workshop", "🔧", "7"),
     ("Exit", "❌", "q")
 ]
 
@@ -93,16 +91,8 @@ def interactive_main_menu():
             companies_menu()
             current_view = "Dashboard"
             continue
-        elif current_view == "Relationships":
-            relationships_menu()
-            current_view = "Dashboard"
-            continue
-        elif current_view == "Network Map":
-            show_network_map()
-            current_view = "Dashboard"
-            continue
-        elif current_view == "Tasks":
-            tasks_menu()
+        elif current_view == "Network & Relationships":
+            network_and_relationships_menu()
             current_view = "Dashboard"
             continue
         elif current_view == "Search":
@@ -124,7 +114,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-9), 't' for task, or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-7) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -147,10 +137,6 @@ def interactive_main_menu():
         if nav_input in shortcut_map:
             # Direct keyboard shortcut
             current_view = shortcut_map[nav_input]
-        elif nav_input.lower() == "t":
-            # Quick shortcut to add a task
-            add_task_interactive()
-            continue
         elif nav_input == "":
             # Empty input - show arrow key menu
             nav_choices = [f"{icon} [{key}] {name}" for name, icon, key in NAV_ITEMS]
@@ -171,109 +157,199 @@ def interactive_main_menu():
                     break
         else:
             # Invalid input
-            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-6 or q[/]")
+            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-7 or q[/]")
             import time
             time.sleep(1.5)
 
 
 def show_dashboard_view():
-    """Show the main dashboard with statistics and quick actions"""
+    """Show the main dashboard with statistics and task management actions"""
     session = get_session()
 
-    # Get statistics
-    total_profiles = session.query(Profile).count()
-    total_companies = session.query(Company).count()
-    total_tags = session.query(Tag).count()
-    total_tasks = session.query(Task).count()
-    pending_tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).count()
+    while True:
+        console.clear()
 
-    # Get recent profiles
-    recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(5).all()
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[t] Add Task", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[c] Complete Task", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit Task", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete Task", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[v] View All Tasks", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
 
-    # Create statistics panel
-    stats_table = Table(show_header=False, box=None, padding=(0, 2))
-    stats_table.add_column(style="cyan bold", justify="right")
-    stats_table.add_column(style="white")
-
-    stats_table.add_row("Profiles:", str(total_profiles))
-    stats_table.add_row("Companies:", str(total_companies))
-    stats_table.add_row("Tags:", str(total_tags))
-    stats_table.add_row("Tasks:", f"{pending_tasks}/{total_tasks} pending")
-
-    console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
-    console.print()
-
-    # Pending/Overdue Tasks
-    upcoming_tasks = session.query(Task).filter(
-        Task.status.in_(['pending', 'in_progress'])
-    ).order_by(Task.due_date.asc().nullsfirst()).limit(5).all()
-
-    if upcoming_tasks:
-        tasks_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
-        tasks_table.add_column("Task", style="cyan", no_wrap=False)
-        tasks_table.add_column("Priority", width=8)
-        tasks_table.add_column("Due", width=12)
-
-        for task in upcoming_tasks:
-            # Priority color
-            priority_color = {
-                'low': 'blue',
-                'medium': 'yellow',
-                'high': 'magenta',
-                'urgent': 'red bold'
-            }.get(task.priority, 'white')
-
-            # Due date formatting
-            due_display = ""
-            if task.due_date:
-                due_str = task.due_date.strftime('%Y-%m-%d')
-                if task.is_overdue():
-                    due_display = f"[red]{due_str} ⚠️[/]"
-                elif task.due_date.date() == datetime.now().date():
-                    due_display = f"[yellow]{due_str} 📅[/]"
-                else:
-                    due_display = due_str
-            else:
-                due_display = "-"
-
-            tasks_table.add_row(
-                task.title[:40] + "..." if len(task.title) > 40 else task.title,
-                f"[{priority_color}]{task.priority.upper()}[/]",
-                due_display
-            )
-
-        console.print(Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
+        console.print(Panel(
+            actions_text,
+            title="[bold yellow]📊 Dashboard[/]",
+            border_style="yellow",
+            box=box.SIMPLE
+        ))
         console.print()
 
-    # Recent profiles
-    if recent_profiles:
-        profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
-        profiles_table.add_column("Name", style="cyan")
-        profiles_table.add_column("Seniority", style="blue")
-        profiles_table.add_column("Company", style="green")
+        # Get statistics
+        total_profiles = session.query(Profile).count()
+        total_companies = session.query(Company).count()
+        total_tags = session.query(Tag).count()
+        total_tasks = session.query(Task).count()
+        pending_tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).count()
 
-        for p in recent_profiles:
-            profiles_table.add_row(
-                p.name,
-                p.seniority.title(),
-                p.company.name if p.company else "-"
-            )
+        # Get recent profiles
+        recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(5).all()
 
-        console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
-    else:
-        console.print(Panel(
-            "[yellow]No profiles yet. Press [2] to add your first contact![/]",
-            border_style="yellow"
-        ))
+        # Create statistics panel
+        stats_table = Table(show_header=False, box=None, padding=(0, 2))
+        stats_table.add_column(style="cyan bold", justify="right")
+        stats_table.add_column(style="white")
 
-    # Quick actions hint
-    console.print()
-    console.print(Panel(
-        "[bold cyan]Quick Actions:[/]\n"
-        "[dim]Press [t] to Add Task • [2] for Profiles • [3] for Companies • [6] for Tasks[/]",
-        border_style="cyan",
-        box=box.SIMPLE
-    ))
+        stats_table.add_row("Profiles:", str(total_profiles))
+        stats_table.add_row("Companies:", str(total_companies))
+        stats_table.add_row("Tags:", str(total_tags))
+        stats_table.add_row("Tasks:", f"{pending_tasks}/{total_tasks} pending")
+
+        console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
+        console.print()
+
+        # Pending/Overdue Tasks
+        upcoming_tasks = session.query(Task).filter(
+            Task.status.in_(['pending', 'in_progress'])
+        ).order_by(Task.due_date.asc().nullsfirst()).limit(10).all()
+
+        if upcoming_tasks:
+            tasks_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
+            tasks_table.add_column("#", style="dim", width=4)
+            tasks_table.add_column("Task", style="cyan", no_wrap=False)
+            tasks_table.add_column("Priority", width=8)
+            tasks_table.add_column("Due", width=12)
+            tasks_table.add_column("Links", style="dim", width=10)
+
+            for idx, task in enumerate(upcoming_tasks, 1):
+                # Priority color
+                priority_color = {
+                    'low': 'blue',
+                    'medium': 'yellow',
+                    'high': 'magenta',
+                    'urgent': 'red bold'
+                }.get(task.priority, 'white')
+
+                # Due date formatting
+                due_display = ""
+                if task.due_date:
+                    due_str = task.due_date.strftime('%Y-%m-%d')
+                    if task.is_overdue():
+                        due_display = f"[red]{due_str} ⚠️[/]"
+                    elif task.due_date.date() == datetime.now().date():
+                        due_display = f"[yellow]{due_str} 📅[/]"
+                    else:
+                        due_display = due_str
+                else:
+                    due_display = "-"
+
+                # Links summary
+                link_parts = []
+                if task.profiles:
+                    link_parts.append(f"👥{len(task.profiles)}")
+                if task.companies:
+                    link_parts.append(f"🏢{len(task.companies)}")
+                if task.tags:
+                    link_parts.append(f"🏷️{len(task.tags)}")
+                links_display = " ".join(link_parts) if link_parts else "-"
+
+                tasks_table.add_row(
+                    str(idx),
+                    task.title[:40] + "..." if len(task.title) > 40 else task.title,
+                    f"[{priority_color}]{task.priority.upper()}[/]",
+                    due_display,
+                    links_display
+                )
+
+            console.print(Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
+        else:
+            console.print(Panel(
+                "[yellow]No pending tasks. Press [t] to add a new task![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Recent profiles
+        if recent_profiles:
+            profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            profiles_table.add_column("Name", style="cyan")
+            profiles_table.add_column("Seniority", style="blue")
+            profiles_table.add_column("Company", style="green")
+
+            for p in recent_profiles:
+                profiles_table.add_row(
+                    p.name,
+                    p.seniority.title(),
+                    p.company.name if p.company else "-"
+                )
+
+            console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
+        else:
+            console.print(Panel(
+                "[yellow]No profiles yet. Press [2] to add your first contact![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Get action
+        action = questionary.text(
+            "Action (or Enter to see navigation):",
+            style=custom_style
+        ).ask()
+
+        if not action or action == "":
+            session.close()
+            return
+        elif action.lower() == 't':
+            add_task_interactive()
+        elif action.lower() == 'c':
+            if upcoming_tasks:
+                task_num = questionary.text(
+                    "Enter task number to complete:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx = int(task_num) - 1
+                    if 0 <= idx < len(upcoming_tasks):
+                        complete_task_interactive(upcoming_tasks[idx].id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'e':
+            if upcoming_tasks:
+                task_num = questionary.text(
+                    "Enter task number to edit:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx = int(task_num) - 1
+                    if 0 <= idx < len(upcoming_tasks):
+                        edit_task_interactive(upcoming_tasks[idx].id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'd':
+            if upcoming_tasks:
+                task_num = questionary.text(
+                    "Enter task number to delete:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx = int(task_num) - 1
+                    if 0 <= idx < len(upcoming_tasks):
+                        delete_task_interactive(upcoming_tasks[idx].id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'v':
+            tasks_menu()
+        elif action.lower() == 'r':
+            continue
 
     session.close()
 
@@ -773,6 +849,371 @@ def relationships_menu():
         else:
             console.print("[yellow]Invalid action. Try again.[/]")
             time.sleep(1)
+
+    session.close()
+
+
+def network_and_relationships_menu():
+    """Combined view showing network map on top and relationships list below"""
+    from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
+    import math
+
+    session = get_session()
+    view_filter = 'all'  # 'all', 'profile', 'company'
+    show_map = True  # Toggle to show/hide map
+
+    while True:
+        console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[m] Map: ", style="cyan")
+        actions_text.append("ON" if show_map else "OFF", style="bold green" if show_map else "bold dim")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[p] Profile Only", style="cyan" if view_filter == 'profile' else "dim")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[c] Company Only", style="cyan" if view_filter == 'company' else "dim")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+
+        filter_label = ""
+        if view_filter == 'profile':
+            filter_label = " (Profile Only)"
+        elif view_filter == 'company':
+            filter_label = " (Company Only)"
+
+        console.print(Panel(
+            actions_text,
+            title=f"[bold cyan]🗺️  Network & Relationships{filter_label}[/]",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Show network map if enabled
+        if show_map:
+            profiles = session.query(Profile).all()
+            companies = session.query(Company).all()
+            profile_relationships = session.query(ProfileRelationship).all()
+            company_relationships = session.query(CompanyRelationship).all()
+
+            if profiles or companies:
+                # Build network structure
+                nodes = []
+                node_map = {}
+                edges = []
+
+                # Add profile nodes
+                for profile in profiles:
+                    node_id = f"p_{profile.id}"
+                    node_idx = len(nodes)
+                    node_map[node_id] = node_idx
+                    nodes.append({
+                        'id': node_id,
+                        'name': profile.name[:10],  # Shorter for compact view
+                        'type': 'profile',
+                        'entity': profile
+                    })
+
+                # Add company nodes
+                for company in companies:
+                    node_id = f"c_{company.id}"
+                    node_idx = len(nodes)
+                    node_map[node_id] = node_idx
+                    nodes.append({
+                        'id': node_id,
+                        'name': company.name[:10],
+                        'type': 'company',
+                        'entity': company
+                    })
+
+                # Add edges
+                for rel in profile_relationships:
+                    from_id = f"p_{rel.from_profile_id}"
+                    to_id = f"p_{rel.to_profile_id}"
+                    if from_id in node_map and to_id in node_map:
+                        edges.append({
+                            'from': node_map[from_id],
+                            'to': node_map[to_id],
+                            'type': rel.relationship_type,
+                            'status': rel.status,
+                            'bidirectional': rel.bidirectional
+                        })
+
+                for rel in company_relationships:
+                    from_id = f"c_{rel.from_company_id}"
+                    to_id = f"c_{rel.to_company_id}"
+                    if from_id in node_map and to_id in node_map:
+                        edges.append({
+                            'from': node_map[from_id],
+                            'to': node_map[to_id],
+                            'type': rel.relationship_type,
+                            'status': rel.status,
+                            'bidirectional': rel.bidirectional
+                        })
+
+                # Add profile-company edges
+                for profile in profiles:
+                    if profile.company_id:
+                        from_id = f"p_{profile.id}"
+                        to_id = f"c_{profile.company_id}"
+                        if from_id in node_map and to_id in node_map:
+                            edges.append({
+                                'from': node_map[from_id],
+                                'to': node_map[to_id],
+                                'type': 'works_at',
+                                'status': 'Good',
+                                'bidirectional': False
+                            })
+
+                # Compact circular layout
+                width = 80
+                height = 20
+                center_x = width // 2
+                center_y = height // 2
+                radius = min(width // 2 - 12, height // 2 - 2)
+
+                # Position nodes
+                positions = []
+                angles = []
+                for i, node in enumerate(nodes):
+                    angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
+                    x = int(center_x + radius * math.cos(angle))
+                    y = int(center_y + radius * math.sin(angle))
+                    positions.append((x, y))
+                    angles.append(angle)
+
+                # Create canvas
+                canvas = [[' ' for _ in range(width)] for _ in range(height)]
+
+                # Draw edges
+                for edge in edges:
+                    from_pos = positions[edge['from']]
+                    to_pos = positions[edge['to']]
+
+                    x0, y0 = from_pos
+                    x1, y1 = to_pos
+
+                    dx = abs(x1 - x0)
+                    dy = abs(y1 - y0)
+                    sx = 1 if x0 < x1 else -1
+                    sy = 1 if y0 < y1 else -1
+                    err = dx - dy
+
+                    x, y = x0, y0
+                    steps = 0
+                    max_steps = width + height
+
+                    while steps < max_steps:
+                        if 0 <= y < height and 0 <= x < width:
+                            if edge['type'] == 'works_at':
+                                char = '·'
+                            elif edge['bidirectional']:
+                                char = '═'
+                            else:
+                                char = '─'
+
+                            if canvas[y][x] == ' ' or canvas[y][x] in ['·', '─']:
+                                canvas[y][x] = char
+
+                        if x == x1 and y == y1:
+                            break
+
+                        e2 = 2 * err
+                        if e2 > -dy:
+                            err -= dy
+                            x += sx
+                        if e2 < dx:
+                            err += dx
+                            y += sy
+
+                        steps += 1
+
+                # Draw nodes
+                for i, (pos, node) in enumerate(zip(positions, nodes)):
+                    x, y = pos
+                    if 0 <= y < height and 0 <= x < width:
+                        icon = '👥' if node['type'] == 'profile' else '🏢'
+                        # For emoji, just place the icon (it takes 2 char width)
+                        if x < width:
+                            canvas[y][x] = icon
+
+                # Render canvas
+                map_lines = []
+                for row in canvas:
+                    map_lines.append(''.join(row))
+
+                map_text = '\n'.join(map_lines)
+
+                # Add legend
+                legend = Text()
+                legend.append("👥 Profile", style="cyan")
+                legend.append("  ", style="dim")
+                legend.append("🏢 Company", style="green")
+                legend.append("  ", style="dim")
+                legend.append("─ Connection", style="dim")
+                legend.append("  ", style="dim")
+                legend.append("═ Bidirectional", style="dim")
+                legend.append("  ", style="dim")
+                legend.append("· Works at", style="dim")
+
+                console.print(Panel(
+                    map_text,
+                    title="[bold cyan]Network Map[/]",
+                    subtitle=legend,
+                    border_style="cyan",
+                    box=box.SIMPLE
+                ))
+                console.print()
+
+        # Get relationships
+        profile_rels = session.query(ProfileRelationship).all()
+        company_rels = session.query(CompanyRelationship).all()
+
+        # Apply filter
+        display_profile = view_filter in ['all', 'profile']
+        display_company = view_filter in ['all', 'company']
+
+        has_data = (display_profile and profile_rels) or (display_company and company_rels)
+
+        if has_data:
+            # Display relationships
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Type", style="magenta", width=8)
+            table.add_column("From", style="cyan", no_wrap=False)
+            table.add_column("→", style="yellow", width=3)
+            table.add_column("Relationship", style="yellow")
+            table.add_column("To", style="cyan", no_wrap=False)
+            table.add_column("Status", style="white")
+
+            idx = 1
+
+            # Add profile relationships
+            if display_profile:
+                for rel in profile_rels:
+                    arrow = "↔" if rel.bidirectional else "→"
+                    status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                    table.add_row(
+                        str(idx),
+                        "👥 Person",
+                        rel.from_profile.name,
+                        arrow,
+                        rel.relationship_type,
+                        rel.to_profile.name,
+                        f"[{status_color}]{rel.status}[/]"
+                    )
+                    idx += 1
+
+            # Add company relationships
+            if display_company:
+                for rel in company_rels:
+                    arrow = "↔" if rel.bidirectional else "→"
+                    status_color = "green" if rel.status == "Good" else "red" if rel.status == "Bad" else "dim"
+                    table.add_row(
+                        str(idx),
+                        "🏢 Company",
+                        rel.from_company.name,
+                        arrow,
+                        rel.relationship_type,
+                        rel.to_company.name,
+                        f"[{status_color}]{rel.status}[/]"
+                    )
+                    idx += 1
+
+            console.print(Panel(
+                table,
+                title="[bold cyan]Relationships[/]",
+                border_style="cyan",
+                box=box.SIMPLE
+            ))
+
+            profile_count = len(profile_rels) if display_profile else 0
+            company_count = len(company_rels) if display_company else 0
+            total = profile_count + company_count
+
+            if view_filter == 'all':
+                console.print(f"\n[dim]{total} relationship(s) total ({profile_count} profile, {company_count} company)[/]")
+            else:
+                console.print(f"\n[dim]{total} relationship(s) shown[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No relationships yet. Press 'a' to create your first relationship![/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Action prompt
+        action = questionary.text(
+            "Action:",
+            style=custom_style
+        ).ask()
+
+        if not action or action == "":
+            break
+        elif action.lower() == 'm':
+            show_map = not show_map
+        elif action.lower() == 'a':
+            create_relationship_interactive()
+        elif action.lower() == 'e':
+            # Combined list for editing
+            all_rels = []
+            if display_profile:
+                all_rels.extend([('profile', rel) for rel in profile_rels])
+            if display_company:
+                all_rels.extend([('company', rel) for rel in company_rels])
+
+            if all_rels:
+                rel_num = questionary.text(
+                    "Enter relationship number to edit:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx_val = int(rel_num) - 1
+                    if 0 <= idx_val < len(all_rels):
+                        rel_type, rel = all_rels[idx_val]
+                        if rel_type == 'profile':
+                            edit_profile_relationship_interactive(rel.id)
+                        else:
+                            edit_company_relationship_interactive(rel.id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'd':
+            # Combined list for deleting
+            all_rels = []
+            if display_profile:
+                all_rels.extend([('profile', rel) for rel in profile_rels])
+            if display_company:
+                all_rels.extend([('company', rel) for rel in company_rels])
+
+            if all_rels:
+                rel_num = questionary.text(
+                    "Enter relationship number to delete:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx_val = int(rel_num) - 1
+                    if 0 <= idx_val < len(all_rels):
+                        rel_type, rel = all_rels[idx_val]
+                        if rel_type == 'profile':
+                            delete_profile_relationship(rel.id)
+                        else:
+                            delete_company_relationship(rel.id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'p':
+            view_filter = 'profile' if view_filter != 'profile' else 'all'
+        elif action.lower() == 'c':
+            view_filter = 'company' if view_filter != 'company' else 'all'
+        elif action.lower() == 'r':
+            continue
 
     session.close()
 
