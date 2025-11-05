@@ -2186,6 +2186,7 @@ def add_company_interactive():
     size = questionary.text("Size (optional):", style=custom_style).ask()
     location = questionary.text("Location (optional):", style=custom_style).ask()
     website = questionary.text("Website (optional):", style=custom_style).ask()
+    notes = questionary.text("Notes (optional):", style=custom_style).ask()
 
     session = get_session()
     try:
@@ -2194,7 +2195,8 @@ def add_company_interactive():
             industry=industry or None,
             size=size or None,
             location=location or None,
-            website=website or None
+            website=website or None,
+            notes=notes or None
         )
 
         session.add(new_company)
