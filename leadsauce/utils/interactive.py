@@ -661,20 +661,21 @@ def show_dashboard_view():
                 border_style="yellow"
             )
 
-        # Display Overview at full width
-        console.print(overview_panel)
-        console.print()
+        # Create two-column layout: Left (70%) and Right (30%)
+        # Left column: Overview, Goals, Tasks, Recent Profiles stacked vertically
+        left_content = Group(
+            overview_panel,
+            Text(),  # Empty line
+            goals_panel,
+            Text(),  # Empty line
+            tasks_panel,
+            Text(),  # Empty line
+            profiles_panel
+        )
 
-        # Display Goals and Reminders side by side
-        console.print(Columns([goals_panel, reminders_panel], equal=False, expand=True))
-        console.print()
-
-        # Display Tasks at full width
-        console.print(tasks_panel)
-        console.print()
-
-        # Display Recent Profiles at full width
-        console.print(profiles_panel)
+        # Right column: Just Reminders (natural height, not stretched)
+        # Display in columns with 70/30 split
+        console.print(Columns([left_content, reminders_panel], padding=(0, 2), expand=False))
         console.print()
 
         # Get action - single key press
