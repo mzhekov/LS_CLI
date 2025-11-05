@@ -74,18 +74,106 @@ def get_single_key():
         return input()
 
 
-def safe_questionary_prompt(prompt_func, show_quit_message=True):
-    """Wrapper for questionary prompts that handles Ctrl+C and ESC as quit signals"""
+def create_double_backspace_bindings():
+    """Create key bindings for double backspace detection in questionary prompts"""
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
+    import time
+
+    bindings = KeyBindings()
+    last_backspace_time = {'time': 0}
+
+    @bindings.add(Keys.Backspace)
+    def handle_backspace(event):
+        """Handle backspace key - detect double press"""
+        current_time = time.time()
+
+        # Check if this is a double backspace (within 0.5 seconds)
+        if current_time - last_backspace_time['time'] < _DOUBLE_BACKSPACE_WINDOW:
+            # Double backspace detected - exit the prompt
+            event.app.exit(result='DOUBLE_BACKSPACE_QUIT')
+        else:
+            # First backspace - record time and perform normal backspace
+            last_backspace_time['time'] = current_time
+            # Perform normal backspace action
+            buffer = event.current_buffer
+            if buffer.cursor_position > 0:
+                buffer.delete_before_cursor(count=1)
+
+    return bindings
+
+
+def safe_questionary_text(message, default="", validate=None, **kwargs):
+    """Questionary text input with double backspace support"""
+    import questionary
+
+    console.print("[dim]Tip: Double backspace, ESC, or Ctrl+C to cancel[/dim]")
+
     try:
-        if show_quit_message:
-            console.print("[dim]Tip: Press ESC or Ctrl+C to cancel[/dim]")
-        result = prompt_func()
+        # Create custom bindings for double backspace
+        custom_bindings = create_double_backspace_bindings()
+
+        result = questionary.text(
+            message,
+            default=default,
+            validate=validate,
+            style=custom_style,
+            key_bindings=custom_bindings,
+            **kwargs
+        ).ask()
+
+        # Check for our special quit signal
+        if result == 'DOUBLE_BACKSPACE_QUIT':
+            console.print("\n[yellow]Cancelled (double backspace)[/yellow]")
+            return None
+
         return result
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled[/yellow]")
         return None
     except Exception as e:
-        # Handle ESC key which might raise an exception in some terminals
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+
+
+def safe_questionary_select(message, choices, **kwargs):
+    """Questionary select with double backspace support"""
+    import questionary
+
+    console.print("[dim]Tip: ESC or Ctrl+C to cancel[/dim]")
+
+    try:
+        result = questionary.select(
+            message,
+            choices=choices,
+            style=custom_style,
+            **kwargs
+        ).ask()
+        return result
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+    except Exception as e:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+
+
+def safe_questionary_confirm(message, default=True, **kwargs):
+    """Questionary confirm with Ctrl+C support"""
+    import questionary
+
+    try:
+        result = questionary.confirm(
+            message,
+            default=default,
+            style=custom_style,
+            **kwargs
+        ).ask()
+        return result
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+    except Exception as e:
         console.print("\n[yellow]Cancelled[/yellow]")
         return None
 
@@ -868,20 +956,20 @@ def show_dashboard_view():
         # Profile filtering actions
         elif action == 's':  # Filter by Seniority
             seniority_choices = ['junior', 'mid-level', 'senior', 'manager', 'director', 'vp', 'c-level', '← Clear Filter']
-            selected = questionary.select(
+            selected = safe_questionary_select(
                 "Filter by Seniority:",
                 choices=seniority_choices
-            ).ask()
+            )
             if selected and selected != '← Clear Filter':
                 profile_filter_seniority = selected
             elif selected == '← Clear Filter':
                 profile_filter_seniority = None
         elif action == 'G':  # Filter by Generation (uppercase G)
             generation_choices = ['gen-z', 'millennial', 'gen-x', 'boomer', 'silent', '← Clear Filter']
-            selected = questionary.select(
+            selected = safe_questionary_select(
                 "Filter by Generation:",
                 choices=generation_choices
-            ).ask()
+            )
             if selected and selected != '← Clear Filter':
                 profile_filter_generation = selected
             elif selected == '← Clear Filter':
@@ -890,10 +978,10 @@ def show_dashboard_view():
             companies = session.query(Company).order_by(Company.name).all()
             if companies:
                 company_choices = [f"#{c.id} - {c.name}" for c in companies] + ['← Clear Filter']
-                selected = questionary.select(
+                selected = safe_questionary_select(
                     "Filter by Company:",
                     choices=company_choices
-                ).ask()
+                )
                 if selected and selected != '← Clear Filter':
                     profile_filter_company = int(selected.split("#")[1].split(" - ")[0])
                 elif selected == '← Clear Filter':
@@ -913,28 +1001,37 @@ def add_goal_from_dashboard(session):
 
     console.print("\n[bold cyan]Create New Goal[/]\n")
 
-    title = questionary.text(
+    title = safe_questionary_text(
         "Goal Title:",
         validate=lambda x: len(x) > 0 or "Title is required"
-    ).ask()
+    )
 
     if not title:
         return
 
-    description = questionary.text(
+    description = safe_questionary_text(
         "Description (optional):",
         default=""
-    ).ask()
+    )
 
-    priority = questionary.select(
+    if description is None:  # User cancelled
+        return
+
+    priority = safe_questionary_select(
         "Priority:",
         choices=REMINDER_PRIORITIES
-    ).ask()
+    )
 
-    target_date_str = questionary.text(
+    if not priority:  # User cancelled
+        return
+
+    target_date_str = safe_questionary_text(
         "Target Date (YYYY-MM-DD or +30d, optional):",
         default=""
-    ).ask()
+    )
+
+    if target_date_str is None:  # User cancelled
+        return
 
     target_date = None
     if target_date_str:
@@ -987,33 +1084,43 @@ def edit_goal_from_dashboard(session):
     if goal:
         console.print(f"\n[bold cyan]Edit Goal #{goal.id}[/]\n")
 
-        new_title = questionary.text(
+        new_title = safe_questionary_text(
             "Title:",
             default=goal.title
-        ).ask()
+        )
+        if not new_title:
+            return
 
-        new_description = questionary.text(
+        new_description = safe_questionary_text(
             "Description:",
             default=goal.description or ""
-        ).ask()
+        )
+        if new_description is None:
+            return
 
-        new_status = questionary.select(
+        new_status = safe_questionary_select(
             "Status:",
             choices=["active", "completed", "on_hold", "cancelled"],
             default=goal.status
-        ).ask()
+        )
+        if not new_status:
+            return
 
-        new_priority = questionary.select(
+        new_priority = safe_questionary_select(
             "Priority:",
             choices=REMINDER_PRIORITIES,
             default=goal.priority
-        ).ask()
+        )
+        if not new_priority:
+            return
 
         current_target = goal.target_date.strftime('%Y-%m-%d') if goal.target_date else ""
-        new_target_date_str = questionary.text(
+        new_target_date_str = safe_questionary_text(
             "Target Date (YYYY-MM-DD or +30d):",
             default=current_target
-        ).ask()
+        )
+        if new_target_date_str is None:
+            return
 
         new_target_date = goal.target_date
         if new_target_date_str and new_target_date_str != current_target:
@@ -1188,24 +1295,30 @@ def add_reminder_from_dashboard(session):
 
     console.print("\n[bold magenta]Create New Reminder[/]\n")
 
-    title = questionary.text(
+    title = safe_questionary_text(
         "Reminder Title:",
         validate=lambda x: len(x) > 0 or "Title is required"
-    ).ask()
+    )
 
     if not title:
         return
 
-    message = questionary.text(
+    message = safe_questionary_text(
         "Message (optional):",
         default=""
-    ).ask()
+    )
+
+    if message is None:  # User cancelled
+        return
 
     # Select entity type to link
-    entity_type = questionary.select(
+    entity_type = safe_questionary_select(
         "Link reminder to:",
         choices=["Profile", "Company", "Task", "Goal", "None"]
-    ).ask()
+    )
+
+    if not entity_type:  # User cancelled
+        return
 
     profile_id = None
     company_id = None
@@ -1216,12 +1329,14 @@ def add_reminder_from_dashboard(session):
         profiles = session.query(Profile).order_by(Profile.name).all()
         if profiles:
             profile_choices = [f"#{p.id} - {p.name}" for p in profiles]
-            selected = questionary.select(
+            selected = safe_questionary_select(
                 "Select profile:",
                 choices=profile_choices + ["← Cancel"]
-            ).ask()
-            if selected != "← Cancel":
+            )
+            if selected and selected != "← Cancel":
                 profile_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
         else:
             console.print("[yellow]No profiles available.[/]")
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
@@ -1231,12 +1346,14 @@ def add_reminder_from_dashboard(session):
         companies = session.query(Company).order_by(Company.name).all()
         if companies:
             company_choices = [f"#{c.id} - {c.name}" for c in companies]
-            selected = questionary.select(
+            selected = safe_questionary_select(
                 "Select company:",
                 choices=company_choices + ["← Cancel"]
-            ).ask()
-            if selected != "← Cancel":
+            )
+            if selected and selected != "← Cancel":
                 company_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
         else:
             console.print("[yellow]No companies available.[/]")
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
@@ -1246,12 +1363,14 @@ def add_reminder_from_dashboard(session):
         tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).order_by(Task.title).all()
         if tasks:
             task_choices = [f"#{t.id} - {t.title}" for t in tasks]
-            selected = questionary.select(
+            selected = safe_questionary_select(
                 "Select task:",
                 choices=task_choices + ["← Cancel"]
-            ).ask()
-            if selected != "← Cancel":
+            )
+            if selected and selected != "← Cancel":
                 task_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
         else:
             console.print("[yellow]No active tasks available.[/]")
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
@@ -1261,22 +1380,24 @@ def add_reminder_from_dashboard(session):
         goals = session.query(Goal).filter(Goal.status == 'active').order_by(Goal.title).all()
         if goals:
             goal_choices = [f"#{g.id} - {g.title}" for g in goals]
-            selected = questionary.select(
+            selected = safe_questionary_select(
                 "Select goal:",
                 choices=goal_choices + ["← Cancel"]
-            ).ask()
-            if selected != "← Cancel":
+            )
+            if selected and selected != "← Cancel":
                 goal_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
         else:
             console.print("[yellow]No active goals available.[/]")
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
             return
 
     # Date and time
-    reminder_date_str = questionary.text(
+    reminder_date_str = safe_questionary_text(
         "Reminder Date (YYYY-MM-DD or YYYY-MM-DD HH:MM):",
         validate=lambda x: len(x) > 0 or "Date is required"
-    ).ask()
+    )
 
     if not reminder_date_str:
         return
@@ -2841,23 +2962,28 @@ def add_profile_interactive():
     console.print()
 
     # Collect information
-    name = questionary.text("Name:", style=custom_style, validate=lambda x: len(x) > 0).ask()
+    name = safe_questionary_text("Name:", validate=lambda x: len(x) > 0 or "Name is required")
     if not name:
         return
 
-    seniority = questionary.select(
+    seniority = safe_questionary_select(
         "Seniority:",
-        choices=[s.title() for s in SENIORITY_LEVELS],
-        style=custom_style
-    ).ask()
+        choices=[s.title() for s in SENIORITY_LEVELS]
+    )
+    if not seniority:
+        return
 
-    email = questionary.text(
+    email = safe_questionary_text(
         "Email (optional):",
-        style=custom_style,
-        validate=lambda x: len(x) == 0 or validate_email(x)
-    ).ask()
+        default="",
+        validate=lambda x: len(x) == 0 or validate_email(x) or "Invalid email format"
+    )
+    if email is None:
+        return
 
-    phone = questionary.text("Phone (optional):", style=custom_style).ask()
+    phone = safe_questionary_text("Phone (optional):", default="")
+    if phone is None:
+        return
 
     # Company selection
     session = get_session()
@@ -2868,41 +2994,54 @@ def add_profile_interactive():
         company_choices.insert(0, {'name': '-- No Company --', 'value': None})
         company_choices.append({'name': '+ Create New Company', 'value': 'new'})
 
-        company_id = questionary.select(
+        company_id = safe_questionary_select(
             "Company:",
-            choices=company_choices,
-            style=custom_style
-        ).ask()
+            choices=company_choices
+        )
+        if company_id is None and company_id != '':  # None from cancellation, not from "No Company" choice
+            session.close()
+            return
 
         if company_id == 'new':
-            company_name = questionary.text("New company name:", style=custom_style).ask()
-            if company_name:
-                new_company = Company(name=company_name)
-                session.add(new_company)
-                session.flush()
-                company_id = new_company.id
-        elif company_id is None:
-            company_id = None
+            company_name = safe_questionary_text("New company name:")
+            if not company_name:
+                session.close()
+                return
+            new_company = Company(name=company_name)
+            session.add(new_company)
+            session.flush()
+            company_id = new_company.id
     else:
-        create_company = questionary.confirm("No companies found. Create one?", style=custom_style).ask()
+        create_company = safe_questionary_confirm("No companies found. Create one?", default=False)
+        if create_company is None:
+            session.close()
+            return
         if create_company:
-            company_name = questionary.text("Company name:", style=custom_style).ask()
-            if company_name:
-                new_company = Company(name=company_name)
-                session.add(new_company)
-                session.flush()
-                company_id = new_company.id
+            company_name = safe_questionary_text("Company name:")
+            if not company_name:
+                session.close()
+                return
+            new_company = Company(name=company_name)
+            session.add(new_company)
+            session.flush()
+            company_id = new_company.id
         else:
             company_id = None
 
     # Tags
-    tags_input = questionary.text(
+    tags_input = safe_questionary_text(
         "Tags (comma-separated, optional):",
-        style=custom_style
-    ).ask()
+        default=""
+    )
+    if tags_input is None:
+        session.close()
+        return
 
     # Additional info
-    add_more = questionary.confirm("Add more details?", style=custom_style, default=False).ask()
+    add_more = safe_questionary_confirm("Add more details?", default=False)
+    if add_more is None:
+        session.close()
+        return
 
     generation = None
     married = False
@@ -2911,18 +3050,35 @@ def add_profile_interactive():
     notes = None
 
     if add_more:
-        generation = questionary.select(
+        generation = safe_questionary_select(
             "Generation (optional):",
-            choices=['Skip'] + [g.title() for g in GENERATION_TYPES],
-            style=custom_style
-        ).ask()
+            choices=['Skip'] + [g.title() for g in GENERATION_TYPES]
+        )
+        if generation is None:  # Cancelled
+            session.close()
+            return
         if generation == 'Skip':
             generation = None
 
-        married = questionary.confirm("Married?", style=custom_style, default=False).ask()
-        has_children = questionary.confirm("Has children?", style=custom_style, default=False).ask()
-        skills = questionary.text("Skills (optional):", style=custom_style).ask()
-        notes = questionary.text("Notes (optional):", style=custom_style).ask()
+        married = safe_questionary_confirm("Married?", default=False)
+        if married is None:
+            session.close()
+            return
+
+        has_children = safe_questionary_confirm("Has children?", default=False)
+        if has_children is None:
+            session.close()
+            return
+
+        skills = safe_questionary_text("Skills (optional):", default="")
+        if skills is None:
+            session.close()
+            return
+
+        notes = safe_questionary_text("Notes (optional):", default="")
+        if notes is None:
+            session.close()
+            return
 
     # Create profile
     try:
@@ -3006,35 +3162,35 @@ def edit_profile_interactive(profile, session):
             "← Done Editing"
         ]
 
-        field = questionary.select(
+        field = safe_questionary_select(
             "What would you like to edit?",
-            choices=fields,
-            style=custom_style
-        ).ask()
+            choices=fields
+        )
 
         if not field or field == "← Done Editing":
             break
 
         if field == "Name":
-            new_value = questionary.text("Name:", default=profile.name, style=custom_style).ask()
+            new_value = safe_questionary_text("Name:", default=profile.name)
             if new_value:
                 profile.name = new_value
 
         elif field == "Email":
-            new_value = questionary.text("Email:", default=profile.email or "", style=custom_style).ask()
-            profile.email = new_value or None
+            new_value = safe_questionary_text("Email:", default=profile.email or "")
+            if new_value is not None:
+                profile.email = new_value or None
 
         elif field == "Phone":
-            new_value = questionary.text("Phone:", default=profile.phone or "", style=custom_style).ask()
-            profile.phone = new_value or None
+            new_value = safe_questionary_text("Phone:", default=profile.phone or "")
+            if new_value is not None:
+                profile.phone = new_value or None
 
         elif field == "Seniority":
-            new_value = questionary.select(
+            new_value = safe_questionary_select(
                 "Seniority:",
                 choices=[s.title() for s in SENIORITY_LEVELS],
-                default=profile.seniority.title(),
-                style=custom_style
-            ).ask()
+                default=profile.seniority.title()
+            )
             if new_value:
                 profile.seniority = new_value.lower()
 
@@ -3044,25 +3200,24 @@ def edit_profile_interactive(profile, session):
             company_choices.extend([{'name': c.name, 'value': c.id} for c in companies])
             company_choices.append({'name': '+ Create New', 'value': 'new'})
 
-            company_id = questionary.select(
+            company_id = safe_questionary_select(
                 "Company:",
-                choices=company_choices,
-                style=custom_style
-            ).ask()
+                choices=company_choices
+            )
 
             if company_id == 'new':
-                company_name = questionary.text("New company name:", style=custom_style).ask()
+                company_name = safe_questionary_text("New company name:")
                 if company_name:
                     new_company = Company(name=company_name)
                     session.add(new_company)
                     session.flush()
                     profile.company_id = new_company.id
-            else:
+            elif company_id is not None:
                 profile.company_id = company_id
 
         elif field == "Tags":
             current_tags = ", ".join([t.name for t in profile.tags])
-            new_value = questionary.text("Tags (comma-separated):", default=current_tags, style=custom_style).ask()
+            new_value = safe_questionary_text("Tags (comma-separated):", default=current_tags)
             if new_value is not None:
                 # Clear existing tags
                 profile.tags = []
@@ -3077,12 +3232,14 @@ def edit_profile_interactive(profile, session):
                     profile.tags.append(tag)
 
         elif field == "Skills":
-            new_value = questionary.text("Skills:", default=profile.good_at or "", style=custom_style).ask()
-            profile.good_at = new_value or None
+            new_value = safe_questionary_text("Skills:", default=profile.good_at or "")
+            if new_value is not None:
+                profile.good_at = new_value or None
 
         elif field == "Notes":
-            new_value = questionary.text("Notes:", default=profile.notes or "", style=custom_style).ask()
-            profile.notes = new_value or None
+            new_value = safe_questionary_text("Notes:", default=profile.notes or "")
+            if new_value is not None:
+                profile.notes = new_value or None
 
         # Commit after each field change
         session.commit()
@@ -3217,15 +3374,29 @@ def add_company_interactive():
     ))
     console.print()
 
-    name = questionary.text("Company name:", style=custom_style).ask()
+    name = safe_questionary_text("Company name:", validate=lambda x: len(x) > 0 or "Name is required")
     if not name:
         return
 
-    industry = questionary.text("Industry (optional):", style=custom_style).ask()
-    size = questionary.text("Size (optional):", style=custom_style).ask()
-    location = questionary.text("Location (optional):", style=custom_style).ask()
-    website = questionary.text("Website (optional):", style=custom_style).ask()
-    notes = questionary.text("Notes (optional):", style=custom_style).ask()
+    industry = safe_questionary_text("Industry (optional):", default="")
+    if industry is None:
+        return
+
+    size = safe_questionary_text("Size (optional):", default="")
+    if size is None:
+        return
+
+    location = safe_questionary_text("Location (optional):", default="")
+    if location is None:
+        return
+
+    website = safe_questionary_text("Website (optional):", default="")
+    if website is None:
+        return
+
+    notes = safe_questionary_text("Notes (optional):", default="")
+    if notes is None:
+        return
 
     session = get_session()
     try:
@@ -3373,34 +3544,38 @@ def edit_company_interactive(company, session):
             "← Done Editing"
         ]
 
-        field = questionary.select(
+        field = safe_questionary_select(
             "What would you like to edit?",
-            choices=fields,
-            style=custom_style
-        ).ask()
+            choices=fields
+        )
 
         if not field or field == "← Done Editing":
             break
 
         if field == "Name":
-            new_value = questionary.text("Company name:", default=company.name, style=custom_style).ask()
+            new_value = safe_questionary_text("Company name:", default=company.name)
             if new_value:
                 company.name = new_value
         elif field == "Industry":
-            new_value = questionary.text("Industry:", default=company.industry or "", style=custom_style).ask()
-            company.industry = new_value or None
+            new_value = safe_questionary_text("Industry:", default=company.industry or "")
+            if new_value is not None:
+                company.industry = new_value or None
         elif field == "Size":
-            new_value = questionary.text("Size:", default=company.size or "", style=custom_style).ask()
-            company.size = new_value or None
+            new_value = safe_questionary_text("Size:", default=company.size or "")
+            if new_value is not None:
+                company.size = new_value or None
         elif field == "Location":
-            new_value = questionary.text("Location:", default=company.location or "", style=custom_style).ask()
-            company.location = new_value or None
+            new_value = safe_questionary_text("Location:", default=company.location or "")
+            if new_value is not None:
+                company.location = new_value or None
         elif field == "Website":
-            new_value = questionary.text("Website:", default=company.website or "", style=custom_style).ask()
-            company.website = new_value or None
+            new_value = safe_questionary_text("Website:", default=company.website or "")
+            if new_value is not None:
+                company.website = new_value or None
         elif field == "Notes":
-            new_value = questionary.text("Notes:", default=company.notes or "", style=custom_style).ask()
-            company.notes = new_value or None
+            new_value = safe_questionary_text("Notes:", default=company.notes or "")
+            if new_value is not None:
+                company.notes = new_value or None
 
         # Commit after each field change
         session.commit()
@@ -5288,10 +5463,10 @@ def add_task_interactive():
         console.print()
 
         # Get task title
-        title = questionary.text(
+        title = safe_questionary_text(
             "Task title:",
-            style=custom_style
-        ).ask()
+            validate=lambda x: len(x) > 0 or "Title is required"
+        )
 
         if not title:
             console.print("[yellow]Task creation cancelled[/]")
@@ -5299,10 +5474,15 @@ def add_task_interactive():
             return
 
         # Get task description
-        description = questionary.text(
+        description = safe_questionary_text(
             "Description (optional):",
-            style=custom_style
-        ).ask()
+            default=""
+        )
+
+        if description is None:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         # Combine title and description for entity detection
         full_text = f"{title} {description or ''}"
@@ -5325,23 +5505,29 @@ def add_task_interactive():
             console.print()
 
         # Get priority
-        priority = questionary.select(
+        priority = safe_questionary_select(
             "Priority:",
             choices=["Low", "Medium", "High", "Urgent"],
-            default="Medium",
-            style=custom_style
-        ).ask()
+            default="Medium"
+        )
+        if not priority:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         # Get status
-        status = questionary.select(
+        status = safe_questionary_select(
             "Status:",
             choices=["Pending", "In Progress", "Completed", "Cancelled"],
-            default="Pending",
-            style=custom_style
-        ).ask()
+            default="Pending"
+        )
+        if not status:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         # Get due date
-        due_date_option = questionary.select(
+        due_date_option = safe_questionary_select(
             "Due date:",
             choices=[
                 "No due date",
@@ -5351,9 +5537,12 @@ def add_task_interactive():
                 "In 1 week",
                 "In 1 month",
                 "Custom"
-            ],
-            style=custom_style
-        ).ask()
+            ]
+        )
+        if not due_date_option:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         due_date = None
         if due_date_option == "Today":
@@ -5367,10 +5556,14 @@ def add_task_interactive():
         elif due_date_option == "In 1 month":
             due_date = (datetime.now() + timedelta(days=30)).replace(hour=23, minute=59, second=59)
         elif due_date_option == "Custom":
-            date_str = questionary.text(
+            date_str = safe_questionary_text(
                 "Enter date (YYYY-MM-DD):",
-                style=custom_style
-            ).ask()
+                default=""
+            )
+            if date_str is None:
+                console.print("[yellow]Task creation cancelled[/]")
+                time.sleep(1)
+                return
             try:
                 due_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             except:
@@ -5391,11 +5584,17 @@ def add_task_interactive():
         task.tags.extend(detected_tags)
 
         # Ask if user wants to add more entities
-        if questionary.confirm(
+        add_more = safe_questionary_confirm(
             "Add more profiles/companies/tags?",
-            default=False,
-            style=custom_style
-        ).ask():
+            default=False
+        )
+
+        if add_more is None:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
+
+        if add_more:
 
             # Add more profiles
             all_profiles = session.query(Profile).all()
