@@ -4281,18 +4281,18 @@ def add_task_interactive():
 
                 if profile_choices:
                     console.print()
-                    console.print("[bold cyan]📝 How to select:[/]")
+                    console.print("[bold cyan]📝 How to select profiles:[/]")
                     console.print("[dim]  • Use ↑↓ arrow keys to navigate[/]")
                     console.print("[dim]  • Press SPACE to select/deselect (● means selected)[/]")
-                    console.print("[dim]  • Press ENTER when done[/]")
+                    console.print("[dim]  • Press ENTER when done (or press ENTER now to skip)[/]")
                     console.print()
-                    console.print(f"[dim]Showing {len(profile_choices)} profile choices[/]")
+                    console.print(f"[dim]Showing {len(profile_choices)} profile choices. Select none to skip.[/]")
 
                     selected_profile_ids = questionary.checkbox(
-                        "Select profiles (use SPACE to select, ENTER to confirm):",
+                        "Select profiles (SPACE=select, ENTER=done/skip):",
                         choices=profile_choices,
                         style=custom_style,
-                        instruction="(Use arrow keys to move, <space> to select, <enter> to finish)"
+                        instruction="(↑↓ navigate, space to select, enter to finish or skip)"
                     ).ask()
 
                     console.print(f"[dim]Checkbox returned: {selected_profile_ids} (type: {type(selected_profile_ids)})[/]")
@@ -4320,13 +4320,17 @@ def add_task_interactive():
 
                 if company_choices:
                     console.print()
-                    console.print(f"[dim]Showing {len(company_choices)} company choices[/]")
+                    console.print("[bold cyan]📝 How to select companies:[/]")
+                    console.print("[dim]  • Press SPACE to select/deselect (● means selected)[/]")
+                    console.print("[dim]  • Press ENTER when done (or press ENTER now to skip)[/]")
+                    console.print()
+                    console.print(f"[dim]Showing {len(company_choices)} company choices. Select none to skip.[/]")
 
                     selected_company_ids = questionary.checkbox(
-                        "Select companies (SPACE to select, ENTER to confirm):",
+                        "Select companies (SPACE=select, ENTER=done/skip):",
                         choices=company_choices,
                         style=custom_style,
-                        instruction="(Use arrow keys to move, <space> to select, <enter> to finish)"
+                        instruction="(↑↓ navigate, space to select, enter to finish or skip)"
                     ).ask()
 
                     console.print(f"[dim]Checkbox returned: {selected_company_ids}[/]")
@@ -4354,13 +4358,17 @@ def add_task_interactive():
 
                 if tag_choices:
                     console.print()
-                    console.print(f"[dim]Showing {len(tag_choices)} tag choices[/]")
+                    console.print("[bold cyan]📝 How to select tags:[/]")
+                    console.print("[dim]  • Press SPACE to select/deselect (● means selected)[/]")
+                    console.print("[dim]  • Press ENTER when done (or press ENTER now to skip)[/]")
+                    console.print()
+                    console.print(f"[dim]Showing {len(tag_choices)} tag choices. Select none to skip.[/]")
 
                     selected_tag_ids = questionary.checkbox(
-                        "Select tags (SPACE to select, ENTER to confirm):",
+                        "Select tags (SPACE=select, ENTER=done/skip):",
                         choices=tag_choices,
                         style=custom_style,
-                        instruction="(Use arrow keys to move, <space> to select, <enter> to finish)"
+                        instruction="(↑↓ navigate, space to select, enter to finish or skip)"
                     ).ask()
 
                     console.print(f"[dim]Checkbox returned: {selected_tag_ids}[/]")
