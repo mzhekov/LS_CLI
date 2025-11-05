@@ -82,7 +82,11 @@ def interactive_main_menu():
 
         # Show current view content
         if current_view == "Dashboard":
-            show_dashboard_view()
+            new_view = show_dashboard_view()
+            # If dashboard returns a view (user pressed number key), navigate to it
+            if new_view:
+                current_view = new_view
+                continue
         elif current_view == "Profiles":
             profiles_menu()
             current_view = "Dashboard"  # Return to dashboard after
@@ -311,7 +315,24 @@ def show_dashboard_view():
 
         if not action or action == "":
             session.close()
-            return
+            return None
+
+        # Check if user wants to navigate to another menu (numbers 1-7 or q)
+        # Map numbers to view names
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            'q': 'Exit'
+        }
+
+        if action in nav_map:
+            session.close()
+            return nav_map[action]
         elif action.lower() == 't':
             add_task_interactive()
         elif action.lower() == 'c':
