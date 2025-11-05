@@ -66,13 +66,12 @@ NAV_ITEMS = [
     ("Dashboard", "📊", "1"),
     ("Profiles", "👥", "2"),
     ("Companies", "🏢", "3"),
-    ("Goals", "🎯", "4"),
-    ("Network & Relationships", "🗺️", "5"),
-    ("Search", "🔍", "6"),
-    ("Tags", "🏷️", "7"),
-    ("Workshop", "🔧", "8"),
-    ("Export", "📤", "9"),
-    ("Import", "📥", "0"),
+    ("Network & Relationships", "🗺️", "4"),
+    ("Search", "🔍", "5"),
+    ("Tags", "🏷️", "6"),
+    ("Workshop", "🔧", "7"),
+    ("Export", "📤", "8"),
+    ("Import", "📥", "9"),
     ("Exit", "❌", "q")
 ]
 
@@ -124,13 +123,6 @@ def interactive_main_menu():
             continue
         elif current_view == "Companies":
             new_view = companies_menu()
-            if new_view:
-                current_view = new_view
-            else:
-                current_view = "Dashboard"
-            continue
-        elif current_view == "Goals":
-            new_view = goals_menu()
             if new_view:
                 current_view = new_view
             else:
@@ -360,7 +352,7 @@ def show_dashboard_view():
         else:
             # Show placeholder if no goals
             console.print(Panel(
-                "[yellow]No goals yet. Press [4] to manage goals![/]",
+                "[yellow]No goals yet. Goals show progress toward your objectives![/]",
                 title="[bold yellow]🎯 Goals[/]",
                 border_style="yellow"
             ))
@@ -534,13 +526,12 @@ def show_dashboard_view():
             '1': 'Dashboard',
             '2': 'Profiles',
             '3': 'Companies',
-            '4': 'Goals',
-            '5': 'Network & Relationships',
-            '6': 'Search',
-            '7': 'Tags',
-            '8': 'Workshop',
-            '9': 'Export',
-            '0': 'Import',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            '8': 'Export',
+            '9': 'Import',
             'q': 'Exit',
             'Q': 'Exit'
         }
