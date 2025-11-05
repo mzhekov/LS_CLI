@@ -16,8 +16,10 @@ from leadsauce.utils.db import get_session
 from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
 from leadsauce.models.tag import Tag
+from leadsauce.models.task import Task
 from leadsauce.utils.constants import SENIORITY_LEVELS, GENERATION_TYPES
 from leadsauce.utils.validators import validate_email, validate_phone, parse_tags
+from datetime import datetime, timedelta
 
 console = Console()
 
@@ -41,9 +43,10 @@ NAV_ITEMS = [
     ("Companies", "🏢", "3"),
     ("Relationships", "🔗", "4"),
     ("Network Map", "🗺️", "5"),
-    ("Search", "🔍", "6"),
-    ("Tags", "🏷️", "7"),
-    ("Workshop", "🔧", "8"),
+    ("Tasks", "✅", "6"),
+    ("Search", "🔍", "7"),
+    ("Tags", "🏷️", "8"),
+    ("Workshop", "🔧", "9"),
     ("Exit", "❌", "q")
 ]
 
@@ -98,6 +101,10 @@ def interactive_main_menu():
             show_network_map()
             current_view = "Dashboard"
             continue
+        elif current_view == "Tasks":
+            tasks_menu()
+            current_view = "Dashboard"
+            continue
         elif current_view == "Search":
             search_interactive()
             current_view = "Dashboard"
@@ -117,7 +124,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-8) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-9), 't' for task, or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -140,6 +147,10 @@ def interactive_main_menu():
         if nav_input in shortcut_map:
             # Direct keyboard shortcut
             current_view = shortcut_map[nav_input]
+        elif nav_input.lower() == "t":
+            # Quick shortcut to add a task
+            add_task_interactive()
+            continue
         elif nav_input == "":
             # Empty input - show arrow key menu
             nav_choices = [f"{icon} [{key}] {name}" for name, icon, key in NAV_ITEMS]
@@ -173,6 +184,8 @@ def show_dashboard_view():
     total_profiles = session.query(Profile).count()
     total_companies = session.query(Company).count()
     total_tags = session.query(Tag).count()
+    total_tasks = session.query(Task).count()
+    pending_tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).count()
 
     # Get recent profiles
     recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(5).all()
@@ -185,9 +198,52 @@ def show_dashboard_view():
     stats_table.add_row("Profiles:", str(total_profiles))
     stats_table.add_row("Companies:", str(total_companies))
     stats_table.add_row("Tags:", str(total_tags))
+    stats_table.add_row("Tasks:", f"{pending_tasks}/{total_tasks} pending")
 
     console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
     console.print()
+
+    # Pending/Overdue Tasks
+    upcoming_tasks = session.query(Task).filter(
+        Task.status.in_(['pending', 'in_progress'])
+    ).order_by(Task.due_date.asc().nullsfirst()).limit(5).all()
+
+    if upcoming_tasks:
+        tasks_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
+        tasks_table.add_column("Task", style="cyan", no_wrap=False)
+        tasks_table.add_column("Priority", width=8)
+        tasks_table.add_column("Due", width=12)
+
+        for task in upcoming_tasks:
+            # Priority color
+            priority_color = {
+                'low': 'blue',
+                'medium': 'yellow',
+                'high': 'magenta',
+                'urgent': 'red bold'
+            }.get(task.priority, 'white')
+
+            # Due date formatting
+            due_display = ""
+            if task.due_date:
+                due_str = task.due_date.strftime('%Y-%m-%d')
+                if task.is_overdue():
+                    due_display = f"[red]{due_str} ⚠️[/]"
+                elif task.due_date.date() == datetime.now().date():
+                    due_display = f"[yellow]{due_str} 📅[/]"
+                else:
+                    due_display = due_str
+            else:
+                due_display = "-"
+
+            tasks_table.add_row(
+                task.title[:40] + "..." if len(task.title) > 40 else task.title,
+                f"[{priority_color}]{task.priority.upper()}[/]",
+                due_display
+            )
+
+        console.print(Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
+        console.print()
 
     # Recent profiles
     if recent_profiles:
@@ -214,7 +270,7 @@ def show_dashboard_view():
     console.print()
     console.print(Panel(
         "[bold cyan]Quick Actions:[/]\n"
-        "[dim]Press [2] for Profiles • [3] for Companies • [4] for Network Map[/]",
+        "[dim]Press [t] to Add Task • [2] for Profiles • [3] for Companies • [6] for Tasks[/]",
         border_style="cyan",
         box=box.SIMPLE
     ))
@@ -3466,3 +3522,575 @@ def get_recommendations(session):
 
     console.print()
     questionary.press_any_key_to_continue().ask()
+
+
+# ============================================================================
+# TASK MANAGEMENT
+# ============================================================================
+
+def detect_entities_in_text(text, session):
+    """Detect mentions of profiles, companies, and tags in text"""
+    if not text:
+        return [], [], []
+
+    text_lower = text.lower()
+
+    # Detect profiles
+    detected_profiles = []
+    all_profiles = session.query(Profile).all()
+    for profile in all_profiles:
+        if profile.name.lower() in text_lower:
+            detected_profiles.append(profile)
+
+    # Detect companies
+    detected_companies = []
+    all_companies = session.query(Company).all()
+    for company in all_companies:
+        if company.name.lower() in text_lower:
+            detected_companies.append(company)
+
+    # Detect tags
+    detected_tags = []
+    all_tags = session.query(Tag).all()
+    for tag in all_tags:
+        if tag.name.lower() in text_lower:
+            detected_tags.append(tag)
+
+    return detected_profiles, detected_companies, detected_tags
+
+
+def add_task_interactive():
+    """Add a new task with smart entity detection"""
+    session = get_session()
+
+    try:
+        console.clear()
+        console.print(Panel(
+            "[bold cyan]➕ Add New Task[/]",
+            border_style="cyan",
+            box=box.DOUBLE
+        ))
+        console.print()
+
+        # Get task title
+        title = questionary.text(
+            "Task title:",
+            style=custom_style
+        ).ask()
+
+        if not title:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
+
+        # Get task description
+        description = questionary.text(
+            "Description (optional):",
+            style=custom_style
+        ).ask()
+
+        # Combine title and description for entity detection
+        full_text = f"{title} {description or ''}"
+
+        # Smart entity detection
+        detected_profiles, detected_companies, detected_tags = detect_entities_in_text(full_text, session)
+
+        # Show detected entities
+        if detected_profiles or detected_companies or detected_tags:
+            console.print()
+            console.print("[bold green]🔍 Detected entities:[/]")
+
+            if detected_profiles:
+                console.print(f"[cyan]Profiles:[/] {', '.join([p.name for p in detected_profiles])}")
+            if detected_companies:
+                console.print(f"[green]Companies:[/] {', '.join([c.name for c in detected_companies])}")
+            if detected_tags:
+                console.print(f"[yellow]Tags:[/] {', '.join([t.name for t in detected_tags])}")
+
+            console.print()
+
+        # Get priority
+        priority = questionary.select(
+            "Priority:",
+            choices=["Low", "Medium", "High", "Urgent"],
+            default="Medium",
+            style=custom_style
+        ).ask()
+
+        # Get status
+        status = questionary.select(
+            "Status:",
+            choices=["Pending", "In Progress", "Completed", "Cancelled"],
+            default="Pending",
+            style=custom_style
+        ).ask()
+
+        # Get due date
+        due_date_option = questionary.select(
+            "Due date:",
+            choices=[
+                "No due date",
+                "Today",
+                "Tomorrow",
+                "In 3 days",
+                "In 1 week",
+                "In 1 month",
+                "Custom"
+            ],
+            style=custom_style
+        ).ask()
+
+        due_date = None
+        if due_date_option == "Today":
+            due_date = datetime.now().replace(hour=23, minute=59, second=59)
+        elif due_date_option == "Tomorrow":
+            due_date = (datetime.now() + timedelta(days=1)).replace(hour=23, minute=59, second=59)
+        elif due_date_option == "In 3 days":
+            due_date = (datetime.now() + timedelta(days=3)).replace(hour=23, minute=59, second=59)
+        elif due_date_option == "In 1 week":
+            due_date = (datetime.now() + timedelta(weeks=1)).replace(hour=23, minute=59, second=59)
+        elif due_date_option == "In 1 month":
+            due_date = (datetime.now() + timedelta(days=30)).replace(hour=23, minute=59, second=59)
+        elif due_date_option == "Custom":
+            date_str = questionary.text(
+                "Enter date (YYYY-MM-DD):",
+                style=custom_style
+            ).ask()
+            try:
+                due_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            except:
+                console.print("[yellow]Invalid date format, no due date set[/]")
+
+        # Create task
+        task = Task(
+            title=title,
+            description=description,
+            priority=priority.lower(),
+            status=status.lower().replace(" ", "_"),
+            due_date=due_date
+        )
+
+        # Add detected entities
+        task.profiles.extend(detected_profiles)
+        task.companies.extend(detected_companies)
+        task.tags.extend(detected_tags)
+
+        # Ask if user wants to add more entities
+        if questionary.confirm(
+            "Add more profiles/companies/tags?",
+            default=False,
+            style=custom_style
+        ).ask():
+
+            # Add more profiles
+            all_profiles = session.query(Profile).all()
+            if all_profiles:
+                profile_choices = [
+                    {"name": f"{p.name} ({p.company.name if p.company else 'No company'})", "value": p.id}
+                    for p in all_profiles if p not in detected_profiles
+                ]
+
+                if profile_choices:
+                    selected_profile_ids = questionary.checkbox(
+                        "Select additional profiles:",
+                        choices=profile_choices,
+                        style=custom_style
+                    ).ask()
+
+                    if selected_profile_ids:
+                        for pid in selected_profile_ids:
+                            profile = session.query(Profile).get(pid)
+                            if profile:
+                                task.profiles.append(profile)
+
+            # Add more companies
+            all_companies = session.query(Company).all()
+            if all_companies:
+                company_choices = [
+                    {"name": c.name, "value": c.id}
+                    for c in all_companies if c not in detected_companies
+                ]
+
+                if company_choices:
+                    selected_company_ids = questionary.checkbox(
+                        "Select additional companies:",
+                        choices=company_choices,
+                        style=custom_style
+                    ).ask()
+
+                    if selected_company_ids:
+                        for cid in selected_company_ids:
+                            company = session.query(Company).get(cid)
+                            if company:
+                                task.companies.append(company)
+
+            # Add more tags
+            all_tags = session.query(Tag).all()
+            if all_tags:
+                tag_choices = [
+                    {"name": t.name, "value": t.id}
+                    for t in all_tags if t not in detected_tags
+                ]
+
+                if tag_choices:
+                    selected_tag_ids = questionary.checkbox(
+                        "Select additional tags:",
+                        choices=tag_choices,
+                        style=custom_style
+                    ).ask()
+
+                    if selected_tag_ids:
+                        for tid in selected_tag_ids:
+                            tag = session.query(Tag).get(tid)
+                            if tag:
+                                task.tags.append(tag)
+
+        # Save task
+        session.add(task)
+        session.commit()
+
+        console.print()
+        console.print(Panel(
+            f"[bold green]✓ Task '{task.title}' created successfully![/]",
+            border_style="green"
+        ))
+
+        # Show summary
+        console.print()
+        console.print("[bold]Task Summary:[/]")
+        console.print(f"[cyan]Title:[/] {task.title}")
+        console.print(f"[cyan]Priority:[/] {task.priority.upper()}")
+        console.print(f"[cyan]Status:[/] {task.status.replace('_', ' ').title()}")
+        if task.due_date:
+            console.print(f"[cyan]Due:[/] {task.due_date.strftime('%Y-%m-%d')}")
+        if task.profiles:
+            console.print(f"[cyan]Linked Profiles:[/] {', '.join([p.name for p in task.profiles])}")
+        if task.companies:
+            console.print(f"[cyan]Linked Companies:[/] {', '.join([c.name for c in task.companies])}")
+        if task.tags:
+            console.print(f"[cyan]Tags:[/] {', '.join([t.name for t in task.tags])}")
+
+        console.print()
+        time.sleep(2)
+
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error creating task: {e}[/]")
+        time.sleep(2)
+    finally:
+        session.close()
+
+
+def tasks_menu():
+    """Show tasks list with action shortcuts"""
+    session = get_session()
+    view_filter = 'all'  # 'all', 'pending', 'in_progress', 'completed', 'overdue'
+
+    while True:
+        console.clear()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[c] Complete", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[f] Filter: ", style="cyan")
+        actions_text.append(view_filter.replace('_', ' ').title(), style="bold cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold cyan]✅ Tasks[/]",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Get tasks based on filter
+        query = session.query(Task)
+
+        if view_filter == 'pending':
+            query = query.filter(Task.status == 'pending')
+        elif view_filter == 'in_progress':
+            query = query.filter(Task.status == 'in_progress')
+        elif view_filter == 'completed':
+            query = query.filter(Task.status == 'completed')
+        elif view_filter == 'overdue':
+            query = query.filter(
+                Task.status.in_(['pending', 'in_progress']),
+                Task.due_date < datetime.now()
+            )
+
+        tasks = query.order_by(Task.due_date.asc().nullsfirst(), Task.priority.desc()).all()
+
+        if tasks:
+            # Display tasks table
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Title", style="cyan", no_wrap=False)
+            table.add_column("Priority", width=8)
+            table.add_column("Status", width=12)
+            table.add_column("Due Date", width=12)
+            table.add_column("Links", style="dim", width=10)
+
+            for idx, task in enumerate(tasks, 1):
+                # Priority color
+                priority_color = {
+                    'low': 'blue',
+                    'medium': 'yellow',
+                    'high': 'magenta',
+                    'urgent': 'red bold'
+                }.get(task.priority, 'white')
+
+                # Status color
+                status_color = {
+                    'pending': 'yellow',
+                    'in_progress': 'cyan',
+                    'completed': 'green',
+                    'cancelled': 'red'
+                }.get(task.status, 'white')
+
+                # Due date formatting
+                due_display = ""
+                if task.due_date:
+                    due_str = task.due_date.strftime('%Y-%m-%d')
+                    if task.is_overdue():
+                        due_display = f"[red]{due_str} ⚠️[/]"
+                    elif task.due_date.date() == datetime.now().date():
+                        due_display = f"[yellow]{due_str} 📅[/]"
+                    else:
+                        due_display = due_str
+                else:
+                    due_display = "-"
+
+                # Links summary
+                link_parts = []
+                if task.profiles:
+                    link_parts.append(f"👥{len(task.profiles)}")
+                if task.companies:
+                    link_parts.append(f"🏢{len(task.companies)}")
+                if task.tags:
+                    link_parts.append(f"🏷️{len(task.tags)}")
+                links_display = " ".join(link_parts) if link_parts else "-"
+
+                table.add_row(
+                    str(idx),
+                    task.title[:50] + "..." if len(task.title) > 50 else task.title,
+                    f"[{priority_color}]{task.priority.upper()}[/]",
+                    f"[{status_color}]{task.status.replace('_', ' ').title()}[/]",
+                    due_display,
+                    links_display
+                )
+
+            console.print(table)
+        else:
+            console.print(Panel(
+                f"[yellow]No {view_filter.replace('_', ' ')} tasks found[/]",
+                border_style="yellow"
+            ))
+
+        console.print()
+
+        # Get action
+        action = questionary.text(
+            "Action:",
+            style=custom_style
+        ).ask()
+
+        if not action or action == "":
+            break
+        elif action.lower() == 'a':
+            add_task_interactive()
+        elif action.lower() == 'e':
+            if tasks:
+                task_num = questionary.text(
+                    "Enter task number to edit:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx = int(task_num) - 1
+                    if 0 <= idx < len(tasks):
+                        edit_task_interactive(tasks[idx].id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'c':
+            if tasks:
+                task_num = questionary.text(
+                    "Enter task number to complete:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx = int(task_num) - 1
+                    if 0 <= idx < len(tasks):
+                        complete_task_interactive(tasks[idx].id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'd':
+            if tasks:
+                task_num = questionary.text(
+                    "Enter task number to delete:",
+                    style=custom_style
+                ).ask()
+                try:
+                    idx = int(task_num) - 1
+                    if 0 <= idx < len(tasks):
+                        delete_task_interactive(tasks[idx].id)
+                except ValueError:
+                    pass
+        elif action.lower() == 'f':
+            view_filter = questionary.select(
+                "Filter tasks by:",
+                choices=['all', 'pending', 'in_progress', 'completed', 'overdue'],
+                style=custom_style
+            ).ask()
+        elif action.lower() == 'r':
+            continue
+
+    session.close()
+
+
+def edit_task_interactive(task_id):
+    """Edit an existing task"""
+    session = get_session()
+
+    try:
+        task = session.query(Task).get(task_id)
+        if not task:
+            console.print("[red]Task not found[/]")
+            time.sleep(1)
+            return
+
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]✏️ Edit Task: {task.title}[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Edit title
+        new_title = questionary.text(
+            "Title:",
+            default=task.title,
+            style=custom_style
+        ).ask()
+
+        if new_title:
+            task.title = new_title
+
+        # Edit description
+        new_description = questionary.text(
+            "Description:",
+            default=task.description or "",
+            style=custom_style
+        ).ask()
+
+        task.description = new_description if new_description else None
+
+        # Edit priority
+        task.priority = questionary.select(
+            "Priority:",
+            choices=["low", "medium", "high", "urgent"],
+            default=task.priority,
+            style=custom_style
+        ).ask()
+
+        # Edit status
+        task.status = questionary.select(
+            "Status:",
+            choices=["pending", "in_progress", "completed", "cancelled"],
+            default=task.status,
+            style=custom_style
+        ).ask()
+
+        # If status changed to completed, set completed_at
+        if task.status == 'completed' and not task.completed_at:
+            task.completed_at = datetime.now()
+
+        session.commit()
+
+        console.print()
+        console.print(Panel(
+            "[bold green]✓ Task updated successfully![/]",
+            border_style="green"
+        ))
+        time.sleep(1)
+
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error updating task: {e}[/]")
+        time.sleep(2)
+    finally:
+        session.close()
+
+
+def complete_task_interactive(task_id):
+    """Mark a task as completed"""
+    session = get_session()
+
+    try:
+        task = session.query(Task).get(task_id)
+        if not task:
+            console.print("[red]Task not found[/]")
+            time.sleep(1)
+            return
+
+        task.complete()
+        session.commit()
+
+        console.print()
+        console.print(Panel(
+            f"[bold green]✓ Task '{task.title}' marked as completed![/]",
+            border_style="green"
+        ))
+        time.sleep(1)
+
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error completing task: {e}[/]")
+        time.sleep(2)
+    finally:
+        session.close()
+
+
+def delete_task_interactive(task_id):
+    """Delete a task"""
+    session = get_session()
+
+    try:
+        task = session.query(Task).get(task_id)
+        if not task:
+            console.print("[red]Task not found[/]")
+            time.sleep(1)
+            return
+
+        confirm = questionary.confirm(
+            f"Are you sure you want to delete task '{task.title}'?",
+            default=False,
+            style=custom_style
+        ).ask()
+
+        if confirm:
+            session.delete(task)
+            session.commit()
+
+            console.print()
+            console.print(Panel(
+                "[bold green]✓ Task deleted successfully![/]",
+                border_style="green"
+            ))
+            time.sleep(1)
+
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error deleting task: {e}[/]")
+        time.sleep(2)
+    finally:
+        session.close()
