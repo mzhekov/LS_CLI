@@ -87,9 +87,81 @@ def migrate_reminders_table():
             print("  - Creating index on goal_id")
             cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_goal_id ON reminders(goal_id)")
 
-        # Make profile_id nullable (it was previously NOT NULL)
-        # Note: SQLite doesn't support ALTER COLUMN, so we'll just note that new rows can have NULL
-        print("\nNote: profile_id is now optional (nullable). Existing rows are unchanged.")
+        # Make profile_id nullable by recreating the table
+        # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+        print("\nMaking profile_id nullable (this requires recreating the table)...")
+
+        # Check if profile_id has NOT NULL constraint
+        cursor.execute("PRAGMA table_info(reminders)")
+        columns_info = cursor.fetchall()
+        profile_id_notnull = False
+        for col in columns_info:
+            if col[1] == 'profile_id' and col[3] == 1:  # col[3] is notnull flag
+                profile_id_notnull = True
+                break
+
+        if profile_id_notnull:
+            print("  - Recreating reminders table with nullable profile_id...")
+
+            # Create new table with correct schema
+            cursor.execute("""
+                CREATE TABLE reminders_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_id INTEGER,
+                    company_id INTEGER,
+                    task_id INTEGER,
+                    goal_id INTEGER,
+                    parent_reminder_id INTEGER,
+                    title VARCHAR(255) NOT NULL,
+                    message TEXT,
+                    reminder_date DATETIME NOT NULL,
+                    priority VARCHAR(50) DEFAULT 'medium',
+                    category VARCHAR(50) DEFAULT 'general',
+                    completed BOOLEAN DEFAULT 0,
+                    completed_at DATETIME,
+                    completion_note TEXT,
+                    notification_sent BOOLEAN DEFAULT 0,
+                    is_recurring BOOLEAN DEFAULT 0,
+                    recurrence_pattern VARCHAR(50),
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+                    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+                    FOREIGN KEY (parent_reminder_id) REFERENCES reminders(id) ON DELETE SET NULL
+                )
+            """)
+
+            # Copy data from old table
+            print("  - Copying existing data...")
+            cursor.execute("""
+                INSERT INTO reminders_new
+                SELECT * FROM reminders
+            """)
+
+            # Drop old table
+            print("  - Dropping old table...")
+            cursor.execute("DROP TABLE reminders")
+
+            # Rename new table
+            print("  - Renaming new table...")
+            cursor.execute("ALTER TABLE reminders_new RENAME TO reminders")
+
+            # Recreate indexes
+            print("  - Recreating indexes...")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_profile_id ON reminders(profile_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_company_id ON reminders(company_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_task_id ON reminders(task_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_goal_id ON reminders(goal_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_reminder_date ON reminders(reminder_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_priority ON reminders(priority)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_category ON reminders(category)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS ix_reminders_completed ON reminders(completed)")
+
+            print("  - ✓ profile_id is now nullable")
+        else:
+            print("  - profile_id is already nullable")
 
         conn.commit()
         print("\n✓ Migration completed successfully!")
