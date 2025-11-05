@@ -509,9 +509,8 @@ def export_all(ctx, output):
             output_dir = output_path.parent
             output_dir.mkdir(parents=True, exist_ok=True)
         else:
-            # Use ~/.leadsauce/exports/ as default
-            from leadsauce.utils.constants import APP_DIR
-            output_dir = APP_DIR / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
+            # Use ~/Documents/leadsauce/exports/ as default
+            output_dir = Path.home() / 'Documents' / 'leadsauce' / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / 'leadsauce_export_all.csv'
 
@@ -549,8 +548,7 @@ def export_profiles_only(ctx, output):
             output_dir = output_path.parent
             output_dir.mkdir(parents=True, exist_ok=True)
         else:
-            from leadsauce.utils.constants import APP_DIR
-            output_dir = APP_DIR / 'exports'
+            output_dir = Path.home() / 'Documents' / 'leadsauce' / 'exports'
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f'profiles_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
 
@@ -590,8 +588,7 @@ def export_companies_only(ctx, output):
             output_dir = output_path.parent
             output_dir.mkdir(parents=True, exist_ok=True)
         else:
-            from leadsauce.utils.constants import APP_DIR
-            output_dir = APP_DIR / 'exports'
+            output_dir = Path.home() / 'Documents' / 'leadsauce' / 'exports'
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f'companies_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
 
@@ -629,8 +626,7 @@ def export_tasks_only(ctx, output):
             output_dir = output_path.parent
             output_dir.mkdir(parents=True, exist_ok=True)
         else:
-            from leadsauce.utils.constants import APP_DIR
-            output_dir = APP_DIR / 'exports'
+            output_dir = Path.home() / 'Documents' / 'leadsauce' / 'exports'
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f'tasks_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
 

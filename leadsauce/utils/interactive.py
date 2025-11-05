@@ -5097,7 +5097,8 @@ def export_menu():
             return None  # User cancelled (Ctrl+C)
 
         # Setup default output directory
-        output_dir = APP_DIR / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
+        from pathlib import Path
+        output_dir = Path.home() / 'Documents' / 'leadsauce' / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
