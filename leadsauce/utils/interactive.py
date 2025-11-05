@@ -530,6 +530,8 @@ def profiles_menu():
         actions_text.append(" • ", style="dim")
         actions_text.append("[e] Edit", style="yellow")
         actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
         actions_text.append("[s] Search", style="cyan")
         actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="blue")
@@ -670,6 +672,32 @@ def profiles_menu():
                 profile = session.query(Profile).filter(Profile.id == profile_id).first()
                 if profile:
                     edit_profile_interactive(profile, session)
+        elif action.lower() == 'd':
+            # Delete a profile - show selection menu
+            if not profiles:
+                console.print("[yellow]No profiles to delete[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Quick selection for delete
+            profile_choices = [{'name': f"{idx+1}. {p.name}", 'value': p.id} for idx, p in enumerate(profiles)]
+            profile_choices.append({'name': '← Cancel', 'value': None})
+
+            profile_id = questionary.select(
+                "Select profile to delete:",
+                choices=profile_choices,
+                style=custom_style
+            ).ask()
+
+            if profile_id:
+                profile = session.query(Profile).filter(Profile.id == profile_id).first()
+                if profile:
+                    if questionary.confirm(f"Are you sure you want to delete {profile.name}?", style=custom_style, default=False).ask():
+                        session.delete(profile)
+                        session.commit()
+                        console.print(f"\n[green]✓ Deleted {profile.name}[/]\n")
+                        questionary.press_any_key_to_continue().ask()
         elif action.lower() == 's':
             search_interactive()
         elif action.lower() == 'r':
@@ -706,6 +734,8 @@ def companies_menu():
         actions_text.append("[a] Add", style="green")
         actions_text.append(" • ", style="dim")
         actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
         actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="cyan")
         actions_text.append(" • ", style="dim")
@@ -807,6 +837,33 @@ def companies_menu():
             add_company_interactive()
         elif action.lower() == 'e':
             edit_company_menu()
+        elif action.lower() == 'd':
+            # Delete a company - show selection menu
+            if not companies:
+                console.print("[yellow]No companies to delete[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Quick selection for delete
+            company_choices = [{'name': f"{idx+1}. {c.name} ({len(c.profiles)} profiles)", 'value': c.id} for idx, c in enumerate(companies)]
+            company_choices.append({'name': '← Cancel', 'value': None})
+
+            company_id = questionary.select(
+                "Select company to delete:",
+                choices=company_choices,
+                style=custom_style
+            ).ask()
+
+            if company_id:
+                company = session.query(Company).filter(Company.id == company_id).first()
+                if company:
+                    profile_count = len(company.profiles)
+                    if questionary.confirm(f"Are you sure you want to delete {company.name}? (Has {profile_count} profile(s))", style=custom_style, default=False).ask():
+                        session.delete(company)
+                        session.commit()
+                        console.print(f"\n[green]✓ Deleted {company.name}[/]\n")
+                        questionary.press_any_key_to_continue().ask()
         elif action.lower() == 'r':
             continue  # Refresh
         elif action.isdigit():
@@ -2199,47 +2256,76 @@ def browse_companies():
 
 def show_company_details(company, session):
     """Show detailed view of a company with its profiles"""
-    console.clear()
+    while True:
+        console.clear()
 
-    # Display company info
-    table = Table(show_header=False, box=box.ROUNDED, border_style="cyan")
-    table.add_column("Field", style="cyan bold", width=20)
-    table.add_column("Value", style="white")
+        # Display company info
+        table = Table(show_header=False, box=box.ROUNDED, border_style="cyan")
+        table.add_column("Field", style="cyan bold", width=20)
+        table.add_column("Value", style="white")
 
-    table.add_row("Name", company.name)
-    table.add_row("Industry", company.industry or "-")
-    table.add_row("Size", company.size or "-")
-    table.add_row("Location", company.location or "-")
-    table.add_row("Website", company.website or "-")
-    if company.notes:
-        table.add_row("Notes", company.notes[:100] + "..." if len(company.notes) > 100 else company.notes)
+        table.add_row("Name", company.name)
+        table.add_row("Industry", company.industry or "-")
+        table.add_row("Size", company.size or "-")
+        table.add_row("Location", company.location or "-")
+        table.add_row("Website", company.website or "-")
+        if company.notes:
+            table.add_row("Notes", company.notes[:100] + "..." if len(company.notes) > 100 else company.notes)
 
-    console.print(Panel(table, title=f"[bold cyan]Company Details[/]", border_style="cyan"))
-    console.print()
+        console.print(Panel(table, title=f"[bold cyan]Company Details[/]", border_style="cyan"))
+        console.print()
 
-    # Show profiles at this company
-    if company.profiles:
-        console.print(f"[bold yellow]Profiles at {company.name}:[/]\n")
-        profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
-        profiles_table.add_column("Name", style="cyan")
-        profiles_table.add_column("Seniority", style="blue")
-        profiles_table.add_column("Email", style="green")
+        # Show profiles at this company
+        if company.profiles:
+            console.print(f"[bold yellow]Profiles at {company.name}:[/]\n")
+            profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
+            profiles_table.add_column("Name", style="cyan")
+            profiles_table.add_column("Seniority", style="blue")
+            profiles_table.add_column("Email", style="green")
 
-        for p in company.profiles[:10]:  # Show first 10
-            profiles_table.add_row(
-                p.name,
-                p.seniority.title(),
-                p.email or "-"
-            )
+            for p in company.profiles[:10]:  # Show first 10
+                profiles_table.add_row(
+                    p.name,
+                    p.seniority.title(),
+                    p.email or "-"
+                )
 
-        console.print(profiles_table)
-        if len(company.profiles) > 10:
-            console.print(f"\n[dim]... and {len(company.profiles) - 10} more[/]")
-    else:
-        console.print("[dim]No profiles associated with this company yet[/]")
+            console.print(profiles_table)
+            if len(company.profiles) > 10:
+                console.print(f"\n[dim]... and {len(company.profiles) - 10} more[/]")
+        else:
+            console.print("[dim]No profiles associated with this company yet[/]")
 
-    console.print()
-    questionary.press_any_key_to_continue("Press any key to go back...").ask()
+        console.print()
+
+        # Action menu
+        actions = [
+            "📝 Edit Company",
+            "🗑️  Delete Company",
+            "← Back to List"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=actions,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to List":
+            break
+
+        elif action == "📝 Edit Company":
+            edit_company_interactive(company, session)
+            # Refresh company data after edit
+            session.refresh(company)
+
+        elif action == "🗑️  Delete Company":
+            if questionary.confirm(f"Are you sure you want to delete {company.name}?", style=custom_style, default=False).ask():
+                session.delete(company)
+                session.commit()
+                console.print(f"\n[green]✓ Deleted {company.name}[/]\n")
+                questionary.press_any_key_to_continue().ask()
+                break
 
 
 def add_company_interactive():
