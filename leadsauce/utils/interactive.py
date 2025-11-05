@@ -4287,10 +4287,12 @@ def add_task_interactive():
                     ).ask()
 
                     if selected_profile_ids:
+                        console.print(f"[dim]Selected {len(selected_profile_ids)} profile(s)[/]")
                         for pid in selected_profile_ids:
                             profile = session.query(Profile).get(pid)
                             if profile:
                                 task.profiles.append(profile)
+                                console.print(f"[dim]  ✓ Added {profile.name}[/]")
 
             # Add more companies
             all_companies = session.query(Company).all()
@@ -4308,10 +4310,12 @@ def add_task_interactive():
                     ).ask()
 
                     if selected_company_ids:
+                        console.print(f"[dim]Selected {len(selected_company_ids)} company(s)[/]")
                         for cid in selected_company_ids:
                             company = session.query(Company).get(cid)
                             if company:
                                 task.companies.append(company)
+                                console.print(f"[dim]  ✓ Added {company.name}[/]")
 
             # Add more tags
             all_tags = session.query(Tag).all()
@@ -4329,14 +4333,20 @@ def add_task_interactive():
                     ).ask()
 
                     if selected_tag_ids:
+                        console.print(f"[dim]Selected {len(selected_tag_ids)} tag(s)[/]")
                         for tid in selected_tag_ids:
                             tag = session.query(Tag).get(tid)
                             if tag:
                                 task.tags.append(tag)
+                                console.print(f"[dim]  ✓ Added {tag.name}[/]")
 
         # Save task
         session.add(task)
+        session.flush()  # Ensure relationships are persisted
         session.commit()
+
+        # Refresh task to ensure all relationships are loaded
+        session.refresh(task)
 
         console.print()
         console.print(Panel(
@@ -4352,6 +4362,10 @@ def add_task_interactive():
         console.print(f"[cyan]Status:[/] {task.status.replace('_', ' ').title()}")
         if task.due_date:
             console.print(f"[cyan]Due:[/] {task.due_date.strftime('%Y-%m-%d')}")
+
+        # Debug: show actual count
+        console.print(f"[dim]Task has {len(task.profiles)} profile(s), {len(task.companies)} company(s), {len(task.tags)} tag(s)[/]")
+
         if task.profiles:
             console.print(f"[cyan]Linked Profiles:[/] {', '.join([p.name for p in task.profiles])}")
         if task.companies:
