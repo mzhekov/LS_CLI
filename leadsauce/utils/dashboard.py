@@ -18,6 +18,7 @@ from leadsauce.models.tag import Tag
 from leadsauce.models.interaction import Interaction
 from leadsauce.models.reminder import Reminder
 from leadsauce.models.goal import Goal
+from leadsauce.models.task import Task
 
 console = Console()
 
@@ -157,6 +158,96 @@ def show_dashboard():
             goals_placeholder.add_row("[cyan]leadsauce goal create --interactive[/]")
 
             console.print(Panel(goals_placeholder, title="[bold yellow]🎯 Goals[/]", border_style="yellow"))
+            console.print()
+
+        # Upcoming Tasks Section
+        from sqlalchemy import and_, or_
+
+        # Get upcoming/pending tasks (not completed or cancelled)
+        upcoming_tasks = session.query(Task).filter(
+            Task.status.in_(['pending', 'in_progress'])
+        ).order_by(
+            Task.due_date.asc().nullslast(),
+            Task.priority.desc(),
+            Task.created_at.asc()
+        ).limit(5).all()
+
+        total_tasks = session.query(Task).count()
+        pending_tasks = session.query(Task).filter(Task.status == 'pending').count()
+        in_progress_tasks = session.query(Task).filter(Task.status == 'in_progress').count()
+        completed_tasks = session.query(Task).filter(Task.status == 'completed').count()
+
+        # Get overdue tasks
+        overdue_tasks_count = session.query(Task).filter(
+            Task.status.in_(['pending', 'in_progress']),
+            Task.due_date < datetime.utcnow()
+        ).count()
+
+        if total_tasks > 0:
+            tasks_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1))
+            tasks_table.add_column("Task", style="cyan", width=35)
+            tasks_table.add_column("Status", style="blue", width=12)
+            tasks_table.add_column("Priority", style="yellow", width=8)
+            tasks_table.add_column("Due", style="dim", width=12)
+            tasks_table.add_column("Goals", style="green", width=6)
+
+            for task in upcoming_tasks:
+                # Format status
+                status_str = task.status.replace('_', ' ').title()
+                if task.is_overdue():
+                    status_str = f"[red]{status_str} ⚠[/]"
+
+                # Format due date
+                if task.due_date:
+                    days_until = (task.due_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        due_str = f"[red]{abs(days_until)}d ago[/]"
+                    elif days_until == 0:
+                        due_str = "[yellow]Today[/]"
+                    elif days_until == 1:
+                        due_str = "[yellow]Tomorrow[/]"
+                    elif days_until <= 7:
+                        due_str = f"[yellow]{days_until}d[/]"
+                    else:
+                        due_str = f"[dim]{days_until}d[/]"
+                else:
+                    due_str = "-"
+
+                # Count linked goals
+                goals_count = len(task.goals) if hasattr(task, 'goals') else 0
+                goals_str = str(goals_count) if goals_count > 0 else "-"
+
+                # Truncate title
+                title = task.title[:33] + "..." if len(task.title) > 33 else task.title
+
+                tasks_table.add_row(
+                    title,
+                    status_str,
+                    task.priority.title(),
+                    due_str,
+                    goals_str
+                )
+
+            # Add stats
+            stats_text = f"[bold]Total:[/] {total_tasks} | [cyan]Pending:[/] {pending_tasks} | [yellow]In Progress:[/] {in_progress_tasks} | [green]Completed:[/] {completed_tasks}"
+            if overdue_tasks_count > 0:
+                stats_text += f" | [red]Overdue:[/] {overdue_tasks_count}"
+
+            console.print(Panel(
+                tasks_table,
+                title="[bold yellow]📋 Upcoming Tasks[/]",
+                subtitle=stats_text,
+                border_style="yellow"
+            ))
+            console.print()
+        else:
+            # Show placeholder if no tasks
+            tasks_placeholder = Table(show_header=False, box=None, padding=(0, 2))
+            tasks_placeholder.add_column(justify="center", style="dim")
+            tasks_placeholder.add_row("No tasks yet. Tasks can be linked to goals for progress tracking!")
+            tasks_placeholder.add_row("[cyan]Create tasks in the TUI Workshop menu[/]")
+
+            console.print(Panel(tasks_placeholder, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
             console.print()
 
         # Reminders Section

@@ -81,9 +81,28 @@ class Task(Base):
         return data
 
     def complete(self):
-        """Mark task as completed"""
+        """Mark task as completed and update all related goals' progress"""
         self.status = 'completed'
         self.completed_at = datetime.utcnow()
+        self._update_related_goals()
+
+    def update_status(self, new_status: str):
+        """Update task status and refresh related goals' progress"""
+        old_status = self.status
+        self.status = new_status
+
+        if new_status == 'completed' and old_status != 'completed':
+            self.completed_at = datetime.utcnow()
+
+        # Update goals if status changed to/from completed
+        if (old_status == 'completed' or new_status == 'completed') and old_status != new_status:
+            self._update_related_goals()
+
+    def _update_related_goals(self):
+        """Update progress for all goals linked to this task"""
+        if hasattr(self, 'goals') and self.goals:
+            for goal in self.goals:
+                goal.update_progress()
 
     def is_overdue(self) -> bool:
         """Check if task is overdue"""
