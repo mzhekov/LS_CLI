@@ -398,74 +398,135 @@ def export_activities(session, output_dir):
     return len(activities)
 
 
-@export.command('all')
-@click.option('--output-dir', '-o', type=click.Path(), help='Output directory for CSV files')
-@click.pass_context
-def export_all(ctx, output_dir):
-    """Export all data to CSV files
+def export_all_to_single_file(session, output_dir):
+    """Export all profiles and companies to a single comprehensive CSV file"""
+    profiles = session.query(Profile).order_by(Profile.name).all()
+    companies = session.query(Company).order_by(Company.name).all()
 
-    This will create separate CSV files for each data type:
-    - profiles.csv
-    - companies.csv
-    - tasks.csv
-    - interactions.csv
-    - profile_relationships.csv
-    - company_relationships.csv
-    - tags.csv
-    - reminders.csv
-    - teams.csv
-    - documents.csv
-    - activities.csv
+    if not profiles and not companies:
+        print_info("No data to export")
+        return 0
+
+    filepath = output_dir / 'leadsauce_export_all.csv'
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+
+        # Write header
+        writer.writerow([
+            'Type', 'ID', 'Name', 'Email', 'Phone', 'Seniority', 'Company/Industry',
+            'Generation', 'Married', 'Children', 'Skills', 'Size', 'Location',
+            'Website', 'Profiles Count', 'Tags', 'Notes'
+        ])
+
+        total_exported = 0
+
+        # Export all profiles
+        for p in profiles:
+            company = p.company.name if p.company else '-'
+            tags = ', '.join([t.name for t in p.tags]) if p.tags else '-'
+            email = p.email if p.email else '-'
+            phone = p.phone if p.phone else '-'
+            generation = p.generation if p.generation else '-'
+            married = '✓' if p.married else '-'
+            children = '✓' if p.has_children else '-'
+            skills = p.good_at if p.good_at else '-'
+            notes = p.notes if p.notes else '-'
+
+            writer.writerow([
+                'Profile',
+                p.id,
+                p.name,
+                email,
+                phone,
+                p.seniority.title() if p.seniority else '-',
+                company,
+                generation,
+                married,
+                children,
+                skills,
+                '-',  # Size (company field)
+                '-',  # Location (company field)
+                '-',  # Website (company field)
+                '-',  # Profiles Count (company field)
+                tags,
+                notes
+            ])
+            total_exported += 1
+
+        # Export all companies
+        for c in companies:
+            industry = c.industry if c.industry else '-'
+            size = c.size if c.size else '-'
+            location = c.location if c.location else '-'
+            website = c.website if c.website else '-'
+            profiles_count = len(c.profiles)
+            notes = c.notes if c.notes else '-'
+
+            writer.writerow([
+                'Company',
+                c.id,
+                c.name,
+                '-',  # Email (profile field)
+                '-',  # Phone (profile field)
+                '-',  # Seniority (profile field)
+                industry,
+                '-',  # Generation (profile field)
+                '-',  # Married (profile field)
+                '-',  # Children (profile field)
+                '-',  # Skills (profile field)
+                size,
+                location,
+                website,
+                profiles_count,
+                '-',  # Tags (profile field)
+                notes
+            ])
+            total_exported += 1
+
+    return total_exported
+
+
+@export.command('all')
+@click.option('--output', '-o', type=click.Path(), help='Output file path for the combined CSV')
+@click.pass_context
+def export_all(ctx, output):
+    """Export all profiles and companies to a single CSV file
+
+    This creates one comprehensive CSV file containing all profiles and companies,
+    with a 'Type' column to distinguish between them.
 
     Example:
         leadsauce export all
-        leadsauce export all --output-dir ~/exports
+        leadsauce export all --output ~/my_data.csv
     """
 
     try:
-        # Set up output directory
-        if output_dir:
-            output_path = Path(output_dir).expanduser().resolve()
+        session = get_session()
+
+        # Set up output file path
+        if output:
+            output_path = Path(output).expanduser().resolve()
+            output_dir = output_path.parent
+            output_dir.mkdir(parents=True, exist_ok=True)
         else:
             # Use ~/.leadsauce/exports/ as default
             from leadsauce.utils.constants import APP_DIR
-            output_path = APP_DIR / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        output_path.mkdir(parents=True, exist_ok=True)
+            output_dir = APP_DIR / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / 'leadsauce_export_all.csv'
 
         click.echo(f"Exporting all data to: {output_path}")
         click.echo()
 
-        session = get_session()
+        # Export to single file
+        count = export_all_to_single_file(session, output_dir if not output else output_path.parent)
 
-        # Export each entity type
-        exporters = [
-            ('Profiles', export_profiles),
-            ('Companies', export_companies),
-            ('Tasks', export_tasks),
-            ('Interactions', export_interactions),
-            ('Profile Relationships', export_profile_relationships),
-            ('Company Relationships', export_company_relationships),
-            ('Tags', export_tags),
-            ('Reminders', export_reminders),
-            ('Teams', export_teams),
-            ('Documents', export_documents),
-            ('Activities', export_activities)
-        ]
-
-        total_exported = 0
-        for name, exporter_func in exporters:
-            try:
-                count = exporter_func(session, output_path)
-                if count > 0:
-                    click.secho(f"✓ Exported {count} {name}", fg='green')
-                    total_exported += count
-            except Exception as e:
-                click.secho(f"✗ Failed to export {name}: {str(e)}", fg='yellow')
-
-        click.echo()
-        print_success(f"Export completed! Total records exported: {total_exported}")
-        click.echo(f"Files saved to: {output_path}")
+        if count > 0:
+            click.echo()
+            print_success(f"Export completed! Total records exported: {count}")
+            click.echo(f"File saved to: {output_path}")
+        else:
+            print_info("No data to export")
 
     except Exception as e:
         print_error(f"Export failed: {str(e)}")

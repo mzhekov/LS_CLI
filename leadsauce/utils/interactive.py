@@ -4995,7 +4995,8 @@ def export_menu():
     from leadsauce.commands.export import (
         export_profiles, export_companies, export_tasks, export_interactions,
         export_profile_relationships, export_company_relationships, export_tags,
-        export_reminders, export_teams, export_documents, export_activities
+        export_reminders, export_teams, export_documents, export_activities,
+        export_all_to_single_file
     )
     from leadsauce.utils.constants import APP_DIR
 
@@ -5092,39 +5093,31 @@ def export_menu():
         try:
             if "Export All Data" in action:
                 console.print()
-                console.print(f"[cyan]Exporting all data to: {output_dir}[/]")
+                output_file = output_dir / 'leadsauce_export_all.csv'
+                console.print(f"[cyan]Exporting all data to single file:[/]")
+                console.print(f"[dim]{output_file}[/]")
                 console.print()
 
-                exporters = [
-                    ('Profiles', export_profiles),
-                    ('Companies', export_companies),
-                    ('Tasks', export_tasks),
-                    ('Interactions', export_interactions),
-                    ('Profile Relationships', export_profile_relationships),
-                    ('Company Relationships', export_company_relationships),
-                    ('Tags', export_tags),
-                    ('Reminders', export_reminders),
-                    ('Teams', export_teams),
-                    ('Documents', export_documents),
-                    ('Activities', export_activities)
-                ]
+                # Export to single CSV file
+                total_exported = export_all_to_single_file(session, output_dir)
 
-                total_exported = 0
-                for name, exporter_func in exporters:
-                    try:
-                        count = exporter_func(session, output_dir)
-                        if count > 0:
-                            console.print(f"[green]✓[/] Exported {count} {name}")
-                            total_exported += count
-                    except Exception as e:
-                        console.print(f"[yellow]✗[/] Failed to export {name}: {str(e)}")
-
-                console.print()
-                console.print(Panel(
-                    f"[bold green]✓ Export completed![/]\n\nTotal records exported: {total_exported}\nLocation: {output_dir}",
-                    border_style="green",
-                    title="Export Complete"
-                ))
+                if total_exported > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Export completed![/]\n\n"
+                        f"Total records exported: {total_exported}\n"
+                        f"File: {output_file.name}\n"
+                        f"Location: {output_dir}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+                else:
+                    console.print()
+                    console.print(Panel(
+                        "[yellow]No data to export![/]\n\nAdd some profiles or companies first.",
+                        border_style="yellow",
+                        title="No Data"
+                    ))
 
             elif "Export Profiles" in action:
                 console.print()
