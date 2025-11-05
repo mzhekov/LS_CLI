@@ -169,6 +169,10 @@ def show_dashboard_view():
     while True:
         console.clear()
 
+        # Show top navigation bar
+        console.print(render_top_bar("Dashboard"))
+        console.print()
+
         # Action shortcuts top bar
         actions_text = Text()
         actions_text.append("[t] Add Task", style="green")
@@ -361,6 +365,10 @@ def profiles_menu():
     while True:
         console.clear()
 
+        # Show top navigation bar
+        console.print(render_top_bar("Profiles"))
+        console.print()
+
         # Action shortcuts top bar
         actions_text = Text()
         actions_text.append("[a] Add", style="green")
@@ -479,6 +487,10 @@ def companies_menu():
     while True:
         console.clear()
 
+        # Show top navigation bar
+        console.print(render_top_bar("Companies"))
+        console.print()
+
         # Action shortcuts top bar
         actions_text = Text()
         actions_text.append("[a] Add", style="green")
@@ -574,6 +586,10 @@ def tags_menu():
 
     while True:
         console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Tags"))
+        console.print()
 
         # Action shortcuts top bar
         actions_text = Text()
@@ -864,6 +880,10 @@ def network_and_relationships_menu():
 
     while True:
         console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Network & Relationships"))
+        console.print()
 
         # Action shortcuts top bar
         actions_text = Text()
@@ -1999,6 +2019,11 @@ def add_company_interactive():
 def search_interactive():
     """Interactive search"""
     console.clear()
+
+    # Show top navigation bar
+    console.print(render_top_bar("Search"))
+    console.print()
+
     console.print(Panel(
         "[bold cyan]Search Profiles[/]",
         border_style="cyan"
@@ -3116,6 +3141,10 @@ def workshop_menu():
     while True:
         console.clear()
 
+        # Show top navigation bar
+        console.print(render_top_bar("Workshop"))
+        console.print()
+
         # Action shortcuts top bar
         actions_text = Text()
         actions_text.append("[1] Network Health", style="green")
@@ -4229,6 +4258,10 @@ def tasks_menu():
 
     while True:
         console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Dashboard"))
+        console.print()
 
         # Action shortcuts top bar
         actions_text = Text()
