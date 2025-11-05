@@ -211,7 +211,7 @@ def interactive_main_menu():
                     break
         else:
             # Invalid input
-            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-7 or q[/]")
+            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-8 or q[/]")
             import time
             time.sleep(1.5)
 
@@ -426,7 +426,7 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-7 for navigation, Enter to continue):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-8 for navigation, Enter to continue):[/]")
         action = get_single_key()
 
         # Handle Enter key (returns '\r' or '\n')
@@ -434,7 +434,7 @@ def show_dashboard_view():
             session.close()
             return None
 
-        # Check if user wants to navigate to another menu (numbers 1-7 or q)
+        # Check if user wants to navigate to another menu (numbers 1-8 or q)
         # Map numbers to view names
         nav_map = {
             '1': 'Dashboard',
@@ -444,6 +444,7 @@ def show_dashboard_view():
             '5': 'Search',
             '6': 'Tags',
             '7': 'Workshop',
+            '8': 'Export',
             'q': 'Exit',
             'Q': 'Exit'
         }
