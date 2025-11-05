@@ -28,9 +28,15 @@ from datetime import datetime, timedelta
 
 console = Console()
 
+# Global state for double backspace detection
+_last_key_press = {'key': None, 'time': 0}
+_DOUBLE_BACKSPACE_WINDOW = 0.5  # seconds
+
 
 def get_single_key():
-    """Capture a single keypress without requiring Enter"""
+    """Capture a single keypress without requiring Enter, with double backspace to quit"""
+    import time
+
     try:
         # Save terminal settings
         fd = sys.stdin.fileno()
@@ -40,6 +46,25 @@ def get_single_key():
             tty.setraw(fd)
             # Read single character
             ch = sys.stdin.read(1)
+
+            # Check for double backspace (backspace is '\x7f' or '\x08')
+            current_time = time.time()
+            if ch in ['\x7f', '\x08']:  # Backspace pressed
+                if (_last_key_press['key'] in ['\x7f', '\x08'] and
+                    current_time - _last_key_press['time'] < _DOUBLE_BACKSPACE_WINDOW):
+                    # Double backspace detected - return special quit signal
+                    _last_key_press['key'] = None
+                    _last_key_press['time'] = 0
+                    return 'DOUBLE_BACKSPACE_QUIT'
+                else:
+                    # First backspace - record it
+                    _last_key_press['key'] = ch
+                    _last_key_press['time'] = current_time
+            else:
+                # Reset on any other key
+                _last_key_press['key'] = ch
+                _last_key_press['time'] = current_time
+
             return ch
         finally:
             # Restore terminal settings
@@ -47,6 +72,22 @@ def get_single_key():
     except:
         # Fallback to regular input if terminal manipulation fails
         return input()
+
+
+def safe_questionary_prompt(prompt_func, show_quit_message=True):
+    """Wrapper for questionary prompts that handles Ctrl+C and ESC as quit signals"""
+    try:
+        if show_quit_message:
+            console.print("[dim]Tip: Press ESC or Ctrl+C to cancel[/dim]")
+        result = prompt_func()
+        return result
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+    except Exception as e:
+        # Handle ESC key which might raise an exception in some terminals
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
 
 
 # Custom style for questionary
@@ -722,8 +763,13 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9 for navigation, Enter to continue):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9 for navigation) | Double backspace or 'q' to quit:[/]")
         action = get_single_key()
+
+        # Handle double backspace quit
+        if action == 'DOUBLE_BACKSPACE_QUIT':
+            session.close()
+            return 'Exit'
 
         # Handle Enter key (returns '\r' or '\n')
         if action in ['\r', '\n', '']:
