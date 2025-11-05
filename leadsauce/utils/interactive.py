@@ -230,6 +230,9 @@ def show_dashboard_view():
     session = get_session()
 
     while True:
+        # Expire all cached objects to ensure we load fresh data from DB
+        session.expire_all()
+
         console.clear()
 
         # Show top navigation bar
