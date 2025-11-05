@@ -680,21 +680,49 @@ def companies_menu():
         companies = session.query(Company).order_by(Company.name).all()
 
         if companies:
-            # Display companies list
+            # Display companies list with all information
             table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
-            table.add_column("#", style="dim", width=4)
-            table.add_column("Name", style="cyan")
-            table.add_column("Industry", style="blue")
-            table.add_column("Profiles", justify="right", style="green")
-            table.add_column("Location", style="yellow")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Name", style="cyan", no_wrap=False, width=20)
+            table.add_column("Industry", style="blue", no_wrap=False, width=15)
+            table.add_column("Size", style="magenta", width=12)
+            table.add_column("Location", style="yellow", no_wrap=False, width=18)
+            table.add_column("Website", style="dim", no_wrap=False, width=25)
+            table.add_column("Profiles", justify="right", style="green", width=8)
+            table.add_column("Notes", style="dim", no_wrap=False, width=25)
 
             for idx, c in enumerate(companies, 1):
+                # Industry
+                industry = c.industry if c.industry else "-"
+
+                # Size
+                size = c.size if c.size else "-"
+
+                # Location
+                location = c.location if c.location else "-"
+
+                # Website (truncate if too long)
+                website = c.website if c.website else "-"
+                if website != "-" and len(website) > 25:
+                    website = website[:22] + "..."
+
+                # Profiles count
+                profiles_count = str(len(c.profiles))
+
+                # Notes (truncate if too long)
+                notes = c.notes if c.notes else "-"
+                if notes != "-" and len(notes) > 25:
+                    notes = notes[:22] + "..."
+
                 table.add_row(
                     str(idx),
                     c.name,
-                    c.industry or "-",
-                    str(len(c.profiles)),
-                    c.location or "-"
+                    industry,
+                    size,
+                    location,
+                    website,
+                    profiles_count,
+                    notes
                 )
 
             console.print(table)
