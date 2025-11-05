@@ -70,6 +70,7 @@ NAV_ITEMS = [
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
     ("Export", "📤", "8"),
+    ("Import", "📥", "9"),
     ("Exit", "❌", "q")
 ]
 
@@ -161,6 +162,13 @@ def interactive_main_menu():
             else:
                 current_view = "Dashboard"
             continue
+        elif current_view == "Import":
+            new_view = import_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
@@ -168,7 +176,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-8) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-9) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -211,7 +219,7 @@ def interactive_main_menu():
                     break
         else:
             # Invalid input
-            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-8 or q[/]")
+            console.print(f"[yellow]Invalid option '{nav_input}'. Use 1-9 or q[/]")
             import time
             time.sleep(1.5)
 
@@ -426,7 +434,7 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-8 for navigation, Enter to continue):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9 for navigation, Enter to continue):[/]")
         action = get_single_key()
 
         # Handle Enter key (returns '\r' or '\n')
@@ -434,7 +442,7 @@ def show_dashboard_view():
             session.close()
             return None
 
-        # Check if user wants to navigate to another menu (numbers 1-8 or q)
+        # Check if user wants to navigate to another menu (numbers 1-9 or q)
         # Map numbers to view names
         nav_map = {
             '1': 'Dashboard',
@@ -445,6 +453,7 @@ def show_dashboard_view():
             '6': 'Tags',
             '7': 'Workshop',
             '8': 'Export',
+            '9': 'Import',
             'q': 'Exit',
             'Q': 'Exit'
         }
@@ -5250,6 +5259,235 @@ def export_menu():
 
         # Check for keyboard shortcuts to navigate
         # (Similar pattern to other menus)
+
+    session.close()
+    return None
+
+
+def import_menu():
+    """Import menu - Import data from CSV files"""
+    from pathlib import Path
+    from leadsauce.commands.import_data import (
+        import_profiles_from_csv, import_companies_from_csv, import_all_from_csv
+    )
+    from leadsauce.utils.constants import APP_DIR
+
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Import"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[1] Import All Data", style="bold cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[2] Import Profiles", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[3] Import Companies", style="yellow")
+        console.print(Panel(actions_text, title="Import Options", border_style="cyan"))
+        console.print()
+
+        # Statistics
+        try:
+            profile_count = session.query(Profile).count()
+            company_count = session.query(Company).count()
+
+            stats_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            stats_table.add_column("Entity Type", style="cyan", width=20)
+            stats_table.add_column("Current Count", style="green", justify="right", width=15)
+
+            stats_table.add_row("Profiles", str(profile_count))
+            stats_table.add_row("Companies", str(company_count))
+
+            console.print(stats_table)
+            console.print()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not load statistics: {e}[/]")
+            console.print()
+
+        # Import instructions
+        console.print(Panel(
+            "[cyan]Import Instructions:[/]\n\n"
+            "• CSV format must match export format\n"
+            "• [bold]Bulk mode[/]: Import all records at once\n"
+            "• [bold]Separate mode[/]: Confirm each record before importing\n"
+            "• Duplicates are skipped by default (by email/name)",
+            title="ℹ️  How to Import",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Create menu choices
+        choices = [
+            "📦 [1] Import All Data from CSV (profiles + companies)",
+            "👥 [2] Import Profiles Only",
+            "🏢 [3] Import Companies Only",
+            "🔙 Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "Select import option:",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action:
+            return None  # User cancelled (Ctrl+C)
+
+        try:
+            if "Back to Dashboard" in action:
+                session.close()
+                return None
+
+            # Ask for CSV file path
+            console.print()
+            file_path = questionary.text(
+                "Enter path to CSV file:",
+                style=custom_style
+            ).ask()
+
+            if not file_path:
+                console.print("[yellow]Import cancelled[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            csv_path = Path(file_path).expanduser().resolve()
+
+            if not csv_path.exists():
+                console.print()
+                console.print(Panel(
+                    f"[bold red]File not found:[/]\n\n{csv_path}",
+                    border_style="red",
+                    title="Error"
+                ))
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            # Ask for import mode
+            mode = questionary.select(
+                "Import mode:",
+                choices=[
+                    "Bulk (import all at once)",
+                    "Separate (confirm each record)"
+                ],
+                style=custom_style
+            ).ask()
+
+            if not mode:
+                continue
+
+            import_mode = 'bulk' if 'Bulk' in mode else 'separate'
+
+            # Ask about duplicates
+            allow_duplicates = questionary.confirm(
+                "Allow duplicate records?",
+                default=False,
+                style=custom_style
+            ).ask()
+
+            console.print()
+            console.print(f"[cyan]Importing from: {csv_path.name}[/]")
+            console.print(f"[cyan]Mode: {import_mode}[/]")
+            console.print()
+
+            if "Import All Data" in action:
+                # Import all (profiles + companies from single file)
+                result = import_all_from_csv(
+                    session,
+                    csv_path,
+                    mode=import_mode,
+                    skip_duplicates=not allow_duplicates
+                )
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Import completed![/]\n\n"
+                    f"Profiles imported: {result['profiles']}\n"
+                    f"Companies imported: {result['companies']}\n"
+                    f"Skipped (duplicates): {result['skipped']}\n"
+                    f"Errors: {len(result['errors'])}",
+                    border_style="green",
+                    title="Import Complete"
+                ))
+
+                if result['errors']:
+                    console.print()
+                    console.print("[yellow]Errors:[/]")
+                    for error in result['errors'][:5]:
+                        console.print(f"  [yellow]• {error}[/]")
+                    if len(result['errors']) > 5:
+                        console.print(f"  [yellow]... and {len(result['errors']) - 5} more[/]")
+
+            elif "Import Profiles" in action:
+                # Import profiles
+                imported, skipped, errors = import_profiles_from_csv(
+                    session,
+                    csv_path,
+                    mode=import_mode,
+                    skip_duplicates=not allow_duplicates
+                )
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Import completed![/]\n\n"
+                    f"Imported: {imported}\n"
+                    f"Skipped (duplicates): {skipped}\n"
+                    f"Errors: {len(errors)}",
+                    border_style="green",
+                    title="Import Complete"
+                ))
+
+                if errors:
+                    console.print()
+                    console.print("[yellow]Errors:[/]")
+                    for error in errors[:5]:
+                        console.print(f"  [yellow]• {error}[/]")
+                    if len(errors) > 5:
+                        console.print(f"  [yellow]... and {len(errors) - 5} more[/]")
+
+            elif "Import Companies" in action:
+                # Import companies
+                imported, skipped, errors = import_companies_from_csv(
+                    session,
+                    csv_path,
+                    mode=import_mode,
+                    skip_duplicates=not allow_duplicates
+                )
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Import completed![/]\n\n"
+                    f"Imported: {imported}\n"
+                    f"Skipped (duplicates): {skipped}\n"
+                    f"Errors: {len(errors)}",
+                    border_style="green",
+                    title="Import Complete"
+                ))
+
+                if errors:
+                    console.print()
+                    console.print("[yellow]Errors:[/]")
+                    for error in errors[:5]:
+                        console.print(f"  [yellow]• {error}[/]")
+                    if len(errors) > 5:
+                        console.print(f"  [yellow]... and {len(errors) - 5} more[/]")
+
+            # Wait for user to continue
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        except Exception as e:
+            console.print()
+            console.print(Panel(
+                f"[bold red]✗ Import failed![/]\n\n{str(e)}",
+                border_style="red",
+                title="Import Error"
+            ))
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
     session.close()
     return None
