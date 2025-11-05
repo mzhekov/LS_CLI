@@ -266,9 +266,10 @@ def migrate(backup):
 
 
 # Import and register command groups
-from leadsauce.commands import profile, company
+from leadsauce.commands import profile, company, export
 cli.add_command(profile.profile)
 cli.add_command(company.company)
+cli.add_command(export.export)
 
 # Note: Additional command groups will be added as they are implemented:
 # from leadsauce.commands import interaction, reminder, tag, team, etc.

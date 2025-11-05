@@ -69,6 +69,7 @@ NAV_ITEMS = [
     ("Search", "🔍", "5"),
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
+    ("Export", "📤", "8"),
     ("Exit", "❌", "q")
 ]
 
@@ -153,6 +154,13 @@ def interactive_main_menu():
             else:
                 current_view = "Dashboard"
             continue
+        elif current_view == "Export":
+            new_view = export_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
@@ -160,7 +168,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-7) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-8) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -4979,3 +4987,247 @@ def delete_task_interactive(task_id):
         time.sleep(2)
     finally:
         session.close()
+
+
+def export_menu():
+    """Export menu - Export data to CSV files"""
+    from pathlib import Path
+    from leadsauce.commands.export import (
+        export_profiles, export_companies, export_tasks, export_interactions,
+        export_profile_relationships, export_company_relationships, export_tags,
+        export_reminders, export_teams, export_documents, export_activities
+    )
+    from leadsauce.utils.constants import APP_DIR
+
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Export"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[1] Export All Data", style="bold cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[2] Export Profiles", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[3] Export Companies", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[4] Export Tasks", style="magenta")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[5] Export Interactions", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[6] More Options", style="white")
+        console.print(Panel(actions_text, title="Export Options", border_style="cyan"))
+        console.print()
+
+        # Statistics
+        try:
+            profile_count = session.query(Profile).count()
+            company_count = session.query(Company).count()
+            task_count = session.query(Task).count()
+
+            stats_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            stats_table.add_column("Entity Type", style="cyan", width=20)
+            stats_table.add_column("Count", style="green", justify="right", width=10)
+
+            stats_table.add_row("Profiles", str(profile_count))
+            stats_table.add_row("Companies", str(company_count))
+            stats_table.add_row("Tasks", str(task_count))
+
+            console.print(stats_table)
+            console.print()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not load statistics: {e}[/]")
+            console.print()
+
+        # Handle keyboard shortcuts
+        console.print("[dim]Press a number key or navigate with arrow keys[/]")
+        console.print()
+
+        # Create menu choices
+        choices = [
+            "📦 [1] Export All Data to CSV",
+            "👥 [2] Export Profiles",
+            "🏢 [3] Export Companies",
+            "✅ [4] Export Tasks",
+            "💬 [5] Export Interactions",
+            "🔗 [6] Export Relationships",
+            "🏷️  [7] Export Tags",
+            "⏰ [8] Export Reminders",
+            "📄 [9] Export Other Data",
+            "🔙 Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "Select export option:",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action:
+            return None  # User cancelled (Ctrl+C)
+
+        # Setup default output directory
+        output_dir = APP_DIR / 'exports' / datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if "Export All Data" in action:
+                console.print()
+                console.print(f"[cyan]Exporting all data to: {output_dir}[/]")
+                console.print()
+
+                exporters = [
+                    ('Profiles', export_profiles),
+                    ('Companies', export_companies),
+                    ('Tasks', export_tasks),
+                    ('Interactions', export_interactions),
+                    ('Profile Relationships', export_profile_relationships),
+                    ('Company Relationships', export_company_relationships),
+                    ('Tags', export_tags),
+                    ('Reminders', export_reminders),
+                    ('Teams', export_teams),
+                    ('Documents', export_documents),
+                    ('Activities', export_activities)
+                ]
+
+                total_exported = 0
+                for name, exporter_func in exporters:
+                    try:
+                        count = exporter_func(session, output_dir)
+                        if count > 0:
+                            console.print(f"[green]✓[/] Exported {count} {name}")
+                            total_exported += count
+                    except Exception as e:
+                        console.print(f"[yellow]✗[/] Failed to export {name}: {str(e)}")
+
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Export completed![/]\n\nTotal records exported: {total_exported}\nLocation: {output_dir}",
+                    border_style="green",
+                    title="Export Complete"
+                ))
+
+            elif "Export Profiles" in action:
+                console.print()
+                console.print(f"[cyan]Exporting profiles to: {output_dir}[/]")
+                count = export_profiles(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} profiles[/]\n\nLocation: {output_dir / 'profiles.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Companies" in action:
+                console.print()
+                console.print(f"[cyan]Exporting companies to: {output_dir}[/]")
+                count = export_companies(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} companies[/]\n\nLocation: {output_dir / 'companies.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Tasks" in action:
+                console.print()
+                console.print(f"[cyan]Exporting tasks to: {output_dir}[/]")
+                count = export_tasks(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} tasks[/]\n\nLocation: {output_dir / 'tasks.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Interactions" in action:
+                console.print()
+                console.print(f"[cyan]Exporting interactions to: {output_dir}[/]")
+                count = export_interactions(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} interactions[/]\n\nLocation: {output_dir / 'interactions.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Relationships" in action:
+                console.print()
+                console.print(f"[cyan]Exporting relationships to: {output_dir}[/]")
+                count1 = export_profile_relationships(session, output_dir)
+                count2 = export_company_relationships(session, output_dir)
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Export completed![/]\n\nProfile relationships: {count1}\nCompany relationships: {count2}\nLocation: {output_dir}",
+                    border_style="green",
+                    title="Export Complete"
+                ))
+
+            elif "Export Tags" in action:
+                console.print()
+                console.print(f"[cyan]Exporting tags to: {output_dir}[/]")
+                count = export_tags(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} tags[/]\n\nLocation: {output_dir / 'tags.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Reminders" in action:
+                console.print()
+                console.print(f"[cyan]Exporting reminders to: {output_dir}[/]")
+                count = export_reminders(session, output_dir)
+                if count > 0:
+                    console.print()
+                    console.print(Panel(
+                        f"[bold green]✓ Exported {count} reminders[/]\n\nLocation: {output_dir / 'reminders.csv'}",
+                        border_style="green",
+                        title="Export Complete"
+                    ))
+
+            elif "Export Other Data" in action:
+                console.print()
+                console.print(f"[cyan]Exporting teams, documents, and activities to: {output_dir}[/]")
+                count1 = export_teams(session, output_dir)
+                count2 = export_documents(session, output_dir)
+                count3 = export_activities(session, output_dir)
+                console.print()
+                console.print(Panel(
+                    f"[bold green]✓ Export completed![/]\n\nTeams: {count1}\nDocuments: {count2}\nActivities: {count3}\nLocation: {output_dir}",
+                    border_style="green",
+                    title="Export Complete"
+                ))
+
+            elif "Back to Dashboard" in action:
+                session.close()
+                return None
+
+            # Wait for user to continue
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        except Exception as e:
+            console.print()
+            console.print(Panel(
+                f"[bold red]✗ Export failed![/]\n\n{str(e)}",
+                border_style="red",
+                title="Export Error"
+            ))
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        # Check for keyboard shortcuts to navigate
+        # (Similar pattern to other menus)
+
+    session.close()
+    return None
