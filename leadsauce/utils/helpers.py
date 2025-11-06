@@ -388,7 +388,7 @@ def switch_to_tmux_window(window_name: str) -> bool:
 
 
 def fetch_webpage_as_text(url: str) -> Optional[str]:
-    """Fetch a webpage and convert to readable text
+    """Fetch a webpage and convert to readable text with link shortcuts embedded
 
     Args:
         url: URL to fetch
@@ -398,54 +398,10 @@ def fetch_webpage_as_text(url: str) -> Optional[str]:
     """
     import subprocess
     import shutil
+    import tempfile
+    import os
 
-    # Try different methods in order of preference
-    # 1. Try w3m -dump (best formatting)
-    if shutil.which('w3m'):
-        try:
-            result = subprocess.run(
-                ['w3m', '-dump', url],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False
-            )
-            if result.returncode == 0 and result.stdout:
-                return result.stdout
-        except Exception:
-            pass
-
-    # 2. Try lynx -dump
-    if shutil.which('lynx'):
-        try:
-            result = subprocess.run(
-                ['lynx', '-dump', '-nolist', url],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False
-            )
-            if result.returncode == 0 and result.stdout:
-                return result.stdout
-        except Exception:
-            pass
-
-    # 3. Try links -dump
-    if shutil.which('links'):
-        try:
-            result = subprocess.run(
-                ['links', '-dump', url],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False
-            )
-            if result.returncode == 0 and result.stdout:
-                return result.stdout
-        except Exception:
-            pass
-
-    # 4. Fallback to basic requests + BeautifulSoup if available
+    # First, fetch HTML and inject link shortcuts
     try:
         import requests
         from bs4 import BeautifulSoup
@@ -457,21 +413,105 @@ def fetch_webpage_as_text(url: str) -> Optional[str]:
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
-            script.decompose()
+        # Find all links and add letter shortcuts
+        link_tags = soup.find_all('a', href=True)
+        for idx, a_tag in enumerate(link_tags):
+            # Generate letter label
+            if idx < 26:
+                letter = chr(ord('a') + idx)
+            else:
+                first = chr(ord('a') + (idx // 26) - 1)
+                second = chr(ord('a') + (idx % 26))
+                letter = first + second
 
-        # Get text
-        text = soup.get_text()
+            # Only label first 52 links
+            if idx >= 52:
+                break
 
-        # Break into lines and remove leading/trailing space
-        lines = (line.strip() for line in text.splitlines())
-        # Break multi-headlines into a line each
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        # Drop blank lines
-        text = '\n'.join(chunk for chunk in chunks if chunk)
+            # Add shortcut after link text in HTML
+            # Create a text node with the shortcut
+            from bs4 import NavigableString
+            shortcut_text = NavigableString(f" [{letter}]")
+            a_tag.insert_after(shortcut_text)
 
-        return text
+        # Save modified HTML to temp file
+        modified_html = str(soup)
+
+        # Try to convert using w3m/lynx/links with the modified HTML
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+            f.write(modified_html)
+            temp_file = f.name
+
+        try:
+            # Try different methods in order of preference
+            # 1. Try w3m -dump (best formatting)
+            if shutil.which('w3m'):
+                try:
+                    result = subprocess.run(
+                        ['w3m', '-dump', temp_file],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        return result.stdout
+                except Exception:
+                    pass
+
+            # 2. Try lynx -dump
+            if shutil.which('lynx'):
+                try:
+                    result = subprocess.run(
+                        ['lynx', '-dump', '-nolist', temp_file],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        return result.stdout
+                except Exception:
+                    pass
+
+            # 3. Try links -dump
+            if shutil.which('links'):
+                try:
+                    result = subprocess.run(
+                        ['links', '-dump', temp_file],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        return result.stdout
+                except Exception:
+                    pass
+
+            # 4. Fallback to BeautifulSoup text extraction
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.decompose()
+
+            # Get text
+            text = soup.get_text()
+
+            # Break into lines and remove leading/trailing space
+            lines = (line.strip() for line in text.splitlines())
+            # Break multi-headlines into a line each
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            # Drop blank lines
+            text = '\n'.join(chunk for chunk in chunks if chunk)
+
+            return text
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+
     except Exception:
         pass
 

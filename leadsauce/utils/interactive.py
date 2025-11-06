@@ -5858,33 +5858,9 @@ def integrated_web_viewer():
                 else:
                     return
 
-            # Fetch links from the page HTML and label them inline
-            from leadsauce.utils.helpers import fetch_webpage_links
-            extracted_links = fetch_webpage_links(current_url)
-
-            # Add letter shortcuts inline in the content where link text appears
-            if extracted_links:
-                for idx, (link_text, link_url) in enumerate(extracted_links):
-                    # Generate letter label (a, b, c, ..., z, aa, ab, ...)
-                    if idx < 26:
-                        letter = chr(ord('a') + idx)
-                    else:
-                        first = chr(ord('a') + (idx // 26) - 1)
-                        second = chr(ord('a') + (idx % 26))
-                        letter = first + second
-
-                    # Only label first 52 links
-                    if idx >= 52:
-                        break
-
-                    # Find and replace link text with labeled version in content
-                    # Add label after the link text
-                    if link_text and link_text != '[No text]' and link_text in page_content:
-                        labeled_text = f"{link_text} [{letter}]"
-                        # Replace only the first occurrence to avoid duplicates
-                        page_content = page_content.replace(link_text, labeled_text, 1)
-
         # Display page content in scrollable area with pagination
+        # Note: Link shortcuts [a], [b], [c] are already embedded in the page content
+        # by fetch_webpage_as_text() function
         if page_content:
             # Save current state
             browser_session.save_viewer_state(current_url, page_content, scroll_position)
