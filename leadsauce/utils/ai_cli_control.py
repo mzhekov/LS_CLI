@@ -82,7 +82,8 @@ The AI has **direct control** over your LeadSauce system:
 
 **Commands:**
 - Natural language: "Create 5 test contacts for TechCorp"
-- Type `/help` for more commands
+- Type `/help` for all commands
+- Type `/menu` to switch to another section
 - Type `/mode` to toggle auto-execute
 - Type `/log` to view command history
 - Type `/exit` to leave control mode
@@ -94,8 +95,12 @@ The AI has **direct control** over your LeadSauce system:
             border_style="cyan" if not self.auto_execute else "yellow"
         ))
 
-    def run(self):
-        """Run the AI CLI Control session"""
+    def run(self) -> Optional[str]:
+        """Run the AI CLI Control session
+
+        Returns:
+            Menu name to navigate to, or None to return to previous menu
+        """
         try:
             # Check if tool is installed
             if not self.service.is_installed(self.tool):
@@ -108,7 +113,7 @@ The AI has **direct control** over your LeadSauce system:
                     border_style="red"
                 ))
                 self.console.input("\nPress Enter to continue...")
-                return
+                return None
 
             self.console.clear()
             self.show_control_panel()
@@ -130,10 +135,17 @@ The AI has **direct control** over your LeadSauce system:
                     # Handle control commands
                     if user_input.lower() in ['/exit', '/quit', '/q']:
                         self._show_session_summary()
-                        break
+                        return None
 
                     elif user_input.lower() == '/help':
                         self._show_control_help()
+                        continue
+
+                    elif user_input.lower() == '/menu':
+                        menu_choice = self._show_menu_navigation()
+                        if menu_choice:
+                            self.console.print(f"[dim]Switching to {menu_choice}...[/dim]")
+                            return menu_choice
                         continue
 
                     elif user_input.lower() == '/mode':
@@ -160,7 +172,27 @@ The AI has **direct control** over your LeadSauce system:
                     self._process_command(full_prompt)
 
                 except KeyboardInterrupt:
-                    self.console.print("\n[dim]Use /exit to quit[/dim]")
+                    self.console.print()
+                    action = questionary.select(
+                        "What would you like to do?",
+                        choices=[
+                            "Continue in AI CLI Control",
+                            "Switch to another menu",
+                            "Exit to Dashboard"
+                        ],
+                        style=questionary.Style([
+                            ('selected', 'fg:cyan bold'),
+                            ('pointer', 'fg:cyan bold'),
+                        ])
+                    ).ask()
+
+                    if action == "Switch to another menu":
+                        menu_choice = self._show_menu_navigation()
+                        if menu_choice:
+                            return menu_choice
+                    elif action == "Exit to Dashboard":
+                        return None
+                    # Otherwise continue in AI CLI Control
                     continue
 
                 except Exception as e:
@@ -170,6 +202,7 @@ The AI has **direct control** over your LeadSauce system:
         except Exception as e:
             self.console.print(f"[bold red]Fatal error: {str(e)}[/bold red]")
             self.console.input("\nPress Enter to continue...")
+            return None
 
     def _build_control_prompt(self) -> str:
         """Build the control prompt for AI
@@ -263,34 +296,39 @@ You respond with:
         Args:
             prompt: Full prompt with context and user command
         """
-        with self.console.status(
-            f"[bold cyan]{self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
-            spinner="dots"
-        ):
-            try:
+        try:
+            # Query AI with status display
+            with self.console.status(
+                f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
+                spinner="dots"
+            ):
                 response = self.service.query(
                     prompt=prompt,
                     tool=self.tool,
                     working_dir=self.working_dir
                 )
 
-                # Display AI response
-                self.console.print()
-                self.console.print(Panel(
-                    Markdown(response) if '```' in response else Text(response),
-                    title=f"[bold cyan]🤖 AI Response[/bold cyan]",
-                    border_style="cyan"
-                ))
+            # Display AI response (outside status context)
+            self.console.print()
+            self.console.print(Panel(
+                Markdown(response) if '```' in response else Text(response),
+                title=f"[bold cyan]🤖 AI Response[/bold cyan]",
+                border_style="cyan"
+            ))
 
-                # Extract and execute commands
-                self._execute_commands_from_response(response)
+            # Extract and execute commands (outside status context)
+            self._execute_commands_from_response(response)
 
-            except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
-                self.console.print(Panel(
-                    f"[red]{str(e)}[/red]",
-                    title="Error",
-                    border_style="red"
-                ))
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
+            raise  # Re-raise to be caught by outer handler
+
+        except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
+            self.console.print(Panel(
+                f"[red]{str(e)}[/red]",
+                title="Error",
+                border_style="red"
+            ))
 
     def _execute_commands_from_response(self, response: str):
         """Extract and execute commands from AI response
@@ -391,6 +429,7 @@ You respond with:
             ("/log", "View command execution log"),
             ("/stats", "Show system statistics"),
             ("/clear", "Clear screen and refresh"),
+            ("/menu", "Switch to another main menu"),
             ("/exit, /quit, /q", "Exit AI CLI Control"),
             ("Natural language", "Give AI commands to execute"),
         ]
@@ -399,6 +438,41 @@ You respond with:
             help_table.add_row(cmd, desc)
 
         self.console.print(help_table)
+
+    def _show_menu_navigation(self) -> Optional[str]:
+        """Show menu navigation options and return selected menu
+
+        Returns:
+            Selected menu name or None if cancelled
+        """
+        menu_options = [
+            "Dashboard",
+            "Profiles",
+            "Companies",
+            "Network & Relationships",
+            "Tags",
+            "Search",
+            "Workshop",
+            "Tasks",
+            "Goals",
+            "Import/Export",
+            "Browser",
+            "← Stay in AI CLI Control",
+        ]
+
+        choice = questionary.select(
+            "Switch to which menu?",
+            choices=menu_options,
+            style=questionary.Style([
+                ('selected', 'fg:cyan bold'),
+                ('pointer', 'fg:cyan bold'),
+                ('question', 'fg:cyan bold'),
+            ])
+        ).ask()
+
+        if choice and choice != "← Stay in AI CLI Control":
+            return choice
+        return None
 
     def _show_command_log(self):
         """Display command execution log"""
@@ -472,8 +546,12 @@ class AICLIControlMenu:
         self.console = Console()
         self.service = AICLIService()
 
-    def show(self):
-        """Show AI CLI Control menu"""
+    def show(self) -> Optional[str]:
+        """Show AI CLI Control menu
+
+        Returns:
+            Menu name to navigate to, or None to return to previous menu
+        """
         while True:
             self.console.clear()
 
@@ -483,12 +561,11 @@ class AICLIControlMenu:
 
             # Header
             self.console.print(Panel(
-                "[bold cyan]🎮 AI CLI Control[/bold cyan]\n\n"
-                "Give AI **direct control** over your LeadSauce system.\n"
-                "AI can autonomously execute operations to fulfill your requests.\n\n"
-                "[yellow]⚠️  This is different from AI Assistant:[/yellow]\n"
-                "• AI Assistant (0): Conversational help and advice\n"
-                "• AI CLI Control (9): Direct system control and automation",
+                "[bold cyan]🎮 AI Features[/bold cyan]\n\n"
+                "Access AI capabilities for your LeadSauce system:\n\n"
+                "• [bold]AI CLI Control:[/bold] Direct system control and automation\n"
+                "• [bold]AI Assistant:[/bold] Conversational help and advice\n"
+                "• [bold]Native Claude Code:[/bold] Full development features",
                 border_style="cyan"
             ))
             self.console.print()
@@ -504,10 +581,16 @@ class AICLIControlMenu:
                     border_style="red"
                 ))
                 self.console.input("\nPress Enter to continue...")
-                return
+                return None
 
             # Build menu choices
             choices = []
+
+            # Check if Claude Code is installed
+            has_claude = any(t['id'] == 'claude' and t['installed'] for t in installed_tools)
+
+            if has_claude:
+                choices.append("🚀 Native Claude Code (Full Features)")
 
             if len(installed) == 1:
                 tool = installed[0]
@@ -517,6 +600,7 @@ class AICLIControlMenu:
                     choices.append(f"🤖 Start Control Session with {tool['name']}")
 
             choices.extend([
+                "💬 AI Assistant (Conversational Mode)",
                 "📊 View AI Tools Status",
                 "ℹ️  About AI CLI Control",
                 "← Back to Main Menu"
@@ -532,7 +616,12 @@ class AICLIControlMenu:
             ).ask()
 
             if not choice or "Back to Main Menu" in choice:
-                return
+                return None
+
+            elif choice == "🚀 Native Claude Code (Full Features)":
+                menu_choice = self._launch_native_claude_code()
+                if menu_choice:
+                    return menu_choice
 
             elif "Start Control Session" in choice:
                 # Extract tool name
@@ -556,13 +645,186 @@ class AICLIControlMenu:
 
                     # Start session
                     session = AICLIControlSession(tool=tool, auto_execute=auto_execute)
-                    session.run()
+                    menu_choice = session.run()
+                    if menu_choice:
+                        return menu_choice
+
+            elif "AI Assistant" in choice:
+                from leadsauce.utils.ai_interactive import AIAssistantMenu
+                ai_menu = AIAssistantMenu()
+                menu_choice = ai_menu.show()
+                if menu_choice:
+                    return menu_choice
 
             elif "View AI Tools Status" in choice:
                 self._show_status()
 
             elif "About AI CLI Control" in choice:
                 self._show_about()
+
+    def _launch_native_claude_code(self) -> Optional[str]:
+        """Launch native Claude Code CLI with full features
+
+        Returns:
+            Menu name to navigate to, or None to stay
+        """
+        import os
+        import tempfile
+        import time
+        from pathlib import Path
+
+        self.console.clear()
+        self.console.print(Panel(
+            "[bold cyan]🚀 Native Claude Code Integration[/bold cyan]\n\n"
+            "This will launch the full Claude Code CLI with all its native features:\n"
+            "• File editing and code generation\n"
+            "• Multi-step reasoning and planning\n"
+            "• Full codebase analysis\n"
+            "• Native tool usage\n"
+            "• All Claude Code commands\n\n"
+            "[yellow]You'll have full access to Claude Code's capabilities.[/yellow]",
+            border_style="cyan"
+        ))
+        self.console.print()
+
+        # Ask about LeadSauce context
+        include_context = questionary.confirm(
+            "Include LeadSauce system context? (Provides info about the CRM)",
+            default=True
+        ).ask()
+
+        if include_context is None:
+            return None
+
+        # Prepare launch
+        self.console.print("\n[bold cyan]Launching Claude Code...[/bold cyan]")
+        self.console.print("[dim]Press Ctrl+D or type 'exit' in Claude Code to return to LeadSauce[/dim]\n")
+
+        # Build command
+        cmd_parts = ["claude"]
+
+        # If context requested, create a context file
+        context_file = None
+        if include_context:
+            try:
+                from leadsauce.services.system_context import SystemContextProvider
+
+                # Create temporary context file
+                context_file = tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, prefix='leadsauce_context_')
+                context_file.write(f"""# LeadSauce System Context
+
+You are working with LeadSauce CLI, a professional network management system.
+
+## System Information
+
+{SystemContextProvider.get_contextualized_prompt()}
+
+## Working Directory
+{Path.cwd()}
+
+## Note
+You have full access to all Claude Code features. You can:
+- Edit files in the LeadSauce codebase
+- Search and analyze code
+- Create new features
+- Debug issues
+- Use all native Claude Code commands
+
+When you're done, press Ctrl+D or type 'exit' to return to the LeadSauce menu.
+""")
+                context_file.close()
+
+                # Add context file to command
+                cmd_parts.extend(["--file", context_file.name])
+
+            except Exception as e:
+                self.console.print(f"[yellow]Warning: Could not create context file: {e}[/yellow]")
+
+        # Launch Claude Code
+        cmd = " ".join(cmd_parts)
+
+        try:
+            # Use os.system for full interactive experience
+            self.console.print(f"[dim]Running: {cmd}[/dim]\n")
+            time.sleep(1)  # Brief pause before launch
+
+            exit_code = os.system(cmd)
+
+            # Clean up context file
+            if context_file:
+                try:
+                    os.unlink(context_file.name)
+                except:
+                    pass
+
+            # Show return message
+            self.console.print("\n[green]✓ Returned from Claude Code[/green]")
+            self.console.print()
+
+            # Ask what to do next
+            action = questionary.select(
+                "What would you like to do?",
+                choices=[
+                    "Return to AI CLI Control menu",
+                    "Switch to another menu",
+                    "Launch Claude Code again"
+                ],
+                style=questionary.Style([
+                    ('selected', 'fg:cyan bold'),
+                    ('pointer', 'fg:cyan bold'),
+                ])
+            ).ask()
+
+            if action == "Switch to another menu":
+                return self._show_menu_navigation_from_menu()
+            elif action == "Launch Claude Code again":
+                return self._launch_native_claude_code()
+
+            return None
+
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]⚠️  Interrupted[/yellow]")
+            return None
+        except Exception as e:
+            self.console.print(f"\n[red]Error launching Claude Code: {e}[/red]")
+            self.console.print("[yellow]Make sure Claude Code is installed: npm install -g @anthropic-ai/claude-code[/yellow]")
+            self.console.input("\nPress Enter to continue...")
+            return None
+
+    def _show_menu_navigation_from_menu(self) -> Optional[str]:
+        """Show menu navigation options and return selected menu
+
+        Returns:
+            Selected menu name or None if cancelled
+        """
+        menu_options = [
+            "Dashboard",
+            "Profiles",
+            "Companies",
+            "Network & Relationships",
+            "Tags",
+            "Search",
+            "Workshop",
+            "Tasks",
+            "Goals",
+            "Import/Export",
+            "Browser",
+            "← Stay in AI CLI Control",
+        ]
+
+        choice = questionary.select(
+            "Switch to which menu?",
+            choices=menu_options,
+            style=questionary.Style([
+                ('selected', 'fg:cyan bold'),
+                ('pointer', 'fg:cyan bold'),
+                ('question', 'fg:cyan bold'),
+            ])
+        ).ask()
+
+        if choice and choice != "← Stay in AI CLI Control":
+            return choice
+        return None
 
     def _show_status(self):
         """Show AI tools status"""

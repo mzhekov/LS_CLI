@@ -16,7 +16,6 @@ from leadsauce.models.company import Company
 from leadsauce.models.interaction import Interaction
 from leadsauce.models.reminder import Reminder
 from leadsauce.models.tag import Tag
-from leadsauce.models.relationship import Relationship
 from leadsauce.utils.constants import (
     SENIORITY_LEVELS,
     GENERATION_TYPES,
