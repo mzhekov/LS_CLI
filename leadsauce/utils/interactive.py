@@ -5805,10 +5805,10 @@ def integrated_web_viewer():
         # Compact shortcuts guide - always visible
         shortcuts_compact = (
             "[cyan]n/p[/] Next/Prev │ "
-            "[cyan]g[/] Go to URL │ "
+            "[cyan]o[/] Open Link [a-z] │ "
+            "[cyan]g[/] Go URL │ "
             "[cyan]r[/] Reload │ "
             "[cyan]s[/] Search │ "
-            "[cyan]l[/] Links │ "
             "[cyan]h[/] History │ "
             "[cyan]1-9[/] Menus │ "
             "[cyan]b[/] Back │ "
@@ -5870,8 +5870,40 @@ def integrated_web_viewer():
             # Account for panel borders and padding in content width
             content_width = max(40, term_width - 6)
 
+            # Extract and label links inline in content
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            found_urls = re.findall(url_pattern, page_content)
+
+            # Create mapping of link letters to URLs (remove duplicates)
+            seen_urls = set()
+            page_links = []
+            for url in found_urls:
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    page_links.append(url)
+
+            # Replace URLs in content with lettered versions (a-z, then aa-az, ba-bz, etc.)
+            content_with_links = page_content
+            for idx, url in enumerate(page_links):
+                # Generate letter label (a, b, c, ..., z, aa, ab, ...)
+                if idx < 26:
+                    letter = chr(ord('a') + idx)
+                else:
+                    # For more than 26 links, use aa, ab, ac, etc.
+                    first = chr(ord('a') + (idx // 26) - 1)
+                    second = chr(ord('a') + (idx % 26))
+                    letter = first + second
+
+                # Only label first 52 links (a-z + aa-az) to keep it manageable
+                if idx >= 52:
+                    break
+
+                # Add cyan colored link letter after the URL
+                labeled_url = f"{url} [cyan][{letter}][/cyan]"
+                content_with_links = content_with_links.replace(url, labeled_url, 1)
+
             # Split content into lines and wrap long lines to fit terminal width
-            lines = page_content.split('\n')
+            lines = content_with_links.split('\n')
             wrapped_lines = []
             for line in lines:
                 if len(line) <= content_width:
@@ -5891,7 +5923,9 @@ def integrated_web_viewer():
 
             content_text = '\n'.join(display_lines) if display_lines else '[dim]No content to display[/]'
 
-            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(wrapped_lines)}"
+            # Add link count to page info
+            link_info = f" | {len(page_links)} links" if page_links else ""
+            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(wrapped_lines)}{link_info}"
             if current_page < total_pages:
                 page_info += " | [yellow]Press [n] for next page[/]"
 
@@ -5923,9 +5957,10 @@ def integrated_web_viewer():
   [cyan]r[/]         Reload current page
   [cyan]b[/] or [cyan]q[/]   Back to menu
 
-[bold yellow]Content & Links:[/]
+[bold yellow]Links & Content:[/]
+  [cyan]o[/]         Open link by letter (links shown as [a], [b], [c]...)
   [cyan]s[/]         Search in current page
-  [cyan]l[/]         View and open links on page (extracts all URLs)
+  [cyan]l[/]         View all links list
   [cyan]h[/]         View browsing history (last 10 URLs)
 
 [bold yellow]Quick Menu Navigation:[/]
@@ -5943,8 +5978,11 @@ def integrated_web_viewer():
   [cyan]?[/]         Show this shortcuts guide
   [cyan]Enter[/]     Show full action menu
 
-[bold green]✨ Tip:[/] Your browser state (URL, content, scroll position) is automatically
-saved when you switch to other menus. Press [cyan]0[/] from any menu to return to the browser!"""
+[bold green]✨ Tips:[/]
+• Links are automatically labeled in content: [cyan][a][/cyan], [cyan][b][/cyan], [cyan][c][/cyan], etc.
+• Press [cyan]o[/] then the letter to open a link instantly
+• Your browser state is saved when you switch menus
+• Press [cyan]0[/] from any menu to return to the browser!"""
 
             console.print(Panel(
                 shortcuts_guide,
@@ -6101,6 +6139,40 @@ saved when you switch to other menus. Press [cyan]0[/] from any menu to return t
                 time.sleep(1)
             continue
 
+        elif key == 'o' and page_content and page_links:
+            # Open link by letter (from inline labeling)
+            console.print(f"\n[cyan]Found {len(page_links)} labeled links on this page[/]")
+            console.print("[dim]Links are labeled: a, b, c, ..., z, aa, ab, ...[/]\n")
+
+            link_letter = questionary.text(
+                "Enter link letter to open (or Enter to cancel):",
+                style=custom_style
+            ).ask()
+
+            if link_letter:
+                link_letter = link_letter.lower().strip()
+
+                # Convert letter to index
+                if len(link_letter) == 1 and 'a' <= link_letter <= 'z':
+                    # Single letter: a-z
+                    idx = ord(link_letter) - ord('a')
+                elif len(link_letter) == 2 and 'a' <= link_letter[0] <= 'z' and 'a' <= link_letter[1] <= 'z':
+                    # Double letter: aa-zz
+                    first = ord(link_letter[0]) - ord('a') + 1
+                    second = ord(link_letter[1]) - ord('a')
+                    idx = first * 26 + second
+                else:
+                    idx = -1
+
+                if 0 <= idx < len(page_links):
+                    current_url = page_links[idx]
+                    page_content = None
+                    scroll_position = 0
+                else:
+                    console.print(f"[yellow]Invalid link letter. Please enter a valid letter (a-z, aa, ab, etc.)[/]")
+                    time.sleep(1)
+            continue
+
         elif key == 'g':
             # Go to URL
             new_url = questionary.text(
@@ -6129,18 +6201,27 @@ saved when you switch to other menus. Press [cyan]0[/] from any menu to return t
 
         # If Enter pressed, show full menu
         elif key in ['\r', '\n', '']:
+            # Build menu choices based on whether links are available
+            menu_choices = [
+                "🔗 Go to new URL",
+                "🔄 Reload page",
+                "🔍 Search in page",
+            ]
+
+            if page_links:
+                menu_choices.append("🔵 Open link by letter [a-z]")
+
+            menu_choices.extend([
+                "🌐 View all links list",
+                "📜 View history",
+                "⬇️  Next page",
+                "⬆️  Previous page",
+                "← Back to Browser Menu"
+            ])
+
             action = questionary.select(
                 "Choose an action:",
-                choices=[
-                    "🔗 Go to new URL",
-                    "🔄 Reload page",
-                    "🔍 Search in page",
-                    "🌐 View links on page",
-                    "📜 View history",
-                    "⬇️  Next page",
-                    "⬆️  Previous page",
-                    "← Back to Browser Menu"
-                ],
+                choices=menu_choices,
                 style=custom_style
             ).ask()
 
@@ -6190,6 +6271,37 @@ saved when you switch to other menus. Press [cyan]0[/] from any menu to return t
                         time.sleep(1)
                     else:
                         console.print("[yellow]No matches found[/]")
+                        time.sleep(1)
+
+            elif action.startswith("🔵"):
+                # Open link by letter
+                console.print(f"\n[cyan]Found {len(page_links)} labeled links on this page[/]")
+                console.print("[dim]Links are labeled: a, b, c, ..., z, aa, ab, ...[/]\n")
+
+                link_letter = questionary.text(
+                    "Enter link letter to open (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if link_letter:
+                    link_letter = link_letter.lower().strip()
+
+                    # Convert letter to index
+                    if len(link_letter) == 1 and 'a' <= link_letter <= 'z':
+                        idx = ord(link_letter) - ord('a')
+                    elif len(link_letter) == 2 and 'a' <= link_letter[0] <= 'z' and 'a' <= link_letter[1] <= 'z':
+                        first = ord(link_letter[0]) - ord('a') + 1
+                        second = ord(link_letter[1]) - ord('a')
+                        idx = first * 26 + second
+                    else:
+                        idx = -1
+
+                    if 0 <= idx < len(page_links):
+                        current_url = page_links[idx]
+                        page_content = None
+                        scroll_position = 0
+                    else:
+                        console.print(f"[yellow]Invalid link letter[/]")
                         time.sleep(1)
 
             elif action.startswith("🌐"):
