@@ -9,6 +9,7 @@ import subprocess
 import threading
 import queue
 import time
+from datetime import datetime
 from typing import Optional, List, Dict
 from pathlib import Path
 
@@ -25,6 +26,7 @@ import questionary
 from leadsauce.services.ai_cli import AICLIService, ToolNotInstalledError, ToolTimeoutError, AICLIError
 from leadsauce.services.system_context import SystemContextProvider
 from leadsauce.services.system_executor import SystemExecutor
+from leadsauce.utils.background_tasks import task_manager, TaskStatus
 
 
 class InteractiveAISession:
@@ -158,6 +160,14 @@ Welcome to the LeadSauce AI Assistant! You can:
                         self._show_status()
                         continue
 
+                    elif user_input.lower() == '/tasks':
+                        self._show_background_tasks()
+                        continue
+
+                    elif user_input.lower() == '/results':
+                        self._show_results()
+                        continue
+
                     # Send query to AI
                     self._send_query(user_input, context_files)
 
@@ -208,72 +218,77 @@ Welcome to the LeadSauce AI Assistant! You can:
             full_prompt = f"{system_context}\n\n---\n\nUser: {prompt}"
             self.system_context_sent = True
 
-        # Show loading indicator
+        # Create background task
+        def query_task():
+            return self.service.query(
+                prompt=full_prompt,
+                tool=self.tool,
+                files=context_files,
+                working_dir=self.working_dir
+            )
+
+        # Start background task
+        task_id = task_manager.create_task(
+            description=f"AI query: {prompt[:50]}...",
+            func=query_task
+        )
+
+        # Wait for completion with ability to detach
         try:
-            with self.console.status(
-                f"[bold cyan]🤔 Asking {self.service.get_tool_info(self.tool)['name']}...[/bold cyan]",
-                spinner="dots"
-            ):
-                response = self.service.query(
-                    prompt=full_prompt,
-                    tool=self.tool,
-                    files=context_files,
-                    working_dir=self.working_dir
-                )
+            self.console.print(f"\n[bold cyan]🤔 {self.service.get_tool_info(self.tool)['name']} is thinking...[/bold cyan]")
+            self.console.print("[dim]Press Ctrl+C to continue working (task runs in background)[/dim]\n")
 
-            # Store in history (store original prompt, not full with context)
-            self.conversation_history.append({
-                'role': 'user',
-                'content': prompt,
-                'timestamp': time.time()
-            })
-            self.conversation_history.append({
-                'role': 'assistant',
-                'content': response,
-                'timestamp': time.time()
-            })
+            # Poll for completion
+            with self.console.status("", spinner="dots"):
+                while True:
+                    task = task_manager.get_task(task_id)
+                    if task and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+                        break
+                    time.sleep(0.5)
 
-            # Display response (outside status context)
-            self.console.print()
-            self.console.print(Panel(
-                Markdown(response) if self._is_markdown(response) else Text(response),
-                title=f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']}[/bold cyan]",
-                border_style="cyan",
-                padding=(1, 2)
-            ))
+            # Get result
+            task = task_manager.get_task(task_id)
+            if task and task.status == TaskStatus.COMPLETED:
+                response = task.result
 
-            # If system-aware mode, check for and execute commands (outside status context)
-            if self.system_aware:
-                self._execute_commands_from_response(response)
+                # Store in history
+                self.conversation_history.append({
+                    'role': 'user',
+                    'content': prompt,
+                    'timestamp': time.time()
+                })
+                self.conversation_history.append({
+                    'role': 'assistant',
+                    'content': response,
+                    'timestamp': time.time()
+                })
 
-        except ToolNotInstalledError as e:
-            self.console.print(Panel(
-                f"[red]{str(e)}[/red]",
-                title="Tool Not Installed",
-                border_style="red"
-            ))
+                # Display response
+                self.console.print()
+                self.console.print(Panel(
+                    Markdown(response) if self._is_markdown(response) else Text(response),
+                    title=f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']}[/bold cyan]",
+                    border_style="cyan",
+                    padding=(1, 2)
+                ))
 
-        except ToolTimeoutError as e:
-            self.console.print(Panel(
-                f"[yellow]{str(e)}[/yellow]\n\n"
-                "This usually happens with complex queries. Try:\n"
-                "• Breaking your question into smaller parts\n"
-                "• Being more specific\n"
-                "• Reducing the amount of context",
-                title="Timeout",
-                border_style="yellow"
-            ))
+                # Execute commands if system-aware
+                if self.system_aware:
+                    self._execute_commands_from_response(response)
 
-        except AICLIError as e:
-            self.console.print(Panel(
-                f"[red]{str(e)}[/red]",
-                title="AI Error",
-                border_style="red"
-            ))
+            elif task and task.status == TaskStatus.FAILED:
+                self.console.print(Panel(
+                    f"[red]Error: {task.error}[/red]",
+                    title="AI Error",
+                    border_style="red"
+                ))
 
         except KeyboardInterrupt:
-            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
-            raise  # Re-raise to be caught by outer handler
+            # Task continues in background
+            self.console.print("\n[bold green]✓ Detached from task[/bold green]")
+            self.console.print(f"[dim]Task #{task_id} continues in background[/dim]")
+            self.console.print(f"[dim]Use /results to view completed tasks or /status to see running tasks[/dim]\n")
+            # Don't re-raise - let user continue
 
     def _execute_commands_from_response(self, response: str):
         """Extract and execute commands from AI response
@@ -350,6 +365,8 @@ Welcome to the LeadSauce AI Assistant! You can:
             ("/clear", "Clear conversation history"),
             ("/history", "Show conversation history"),
             ("/status", "Show AI tool status"),
+            ("/tasks", "Show running background tasks"),
+            ("/results", "View completed task results"),
             ("/menu", "Switch to another main menu"),
             ("/exit, /quit, /q", "Exit browser"),
         ]
@@ -477,6 +494,76 @@ Welcome to the LeadSauce AI Assistant! You can:
         self.console.print(status_table)
         self.console.print(f"\n[bold]Current Tool:[/bold] {self.service.get_tool_info(self.tool)['name']}")
         self.console.print(f"[bold]Working Directory:[/bold] {self.working_dir}")
+
+    def _show_background_tasks(self):
+        """Show running background tasks"""
+        running_tasks = task_manager.get_running_tasks()
+
+        if not running_tasks:
+            self.console.print("[dim]No background tasks running[/dim]")
+            return
+
+        task_table = Table(title="Background Tasks", show_header=True, header_style="bold cyan")
+        task_table.add_column("ID", style="cyan", width=10)
+        task_table.add_column("Description", style="white", width=40)
+        task_table.add_column("Status", style="white", width=10)
+        task_table.add_column("Started", style="dim", width=15)
+
+        for task in running_tasks:
+            status_icon = "🔄" if task.status == TaskStatus.RUNNING else "⏳"
+            elapsed = (datetime.now() - task.started_at).total_seconds()
+            task_table.add_row(
+                task.task_id,
+                task.description[:40],
+                f"{status_icon} {task.status.value}",
+                f"{int(elapsed)}s ago"
+            )
+
+        self.console.print(task_table)
+
+    def _show_results(self):
+        """Show and display completed task results"""
+        completed_tasks = task_manager.get_completed_tasks()
+
+        if not completed_tasks:
+            self.console.print("[dim]No completed results available[/dim]")
+            return
+
+        # Show list of completed tasks
+        self.console.print("\n[bold]Completed Tasks:[/bold]\n")
+        for i, task in enumerate(completed_tasks, 1):
+            elapsed = (task.completed_at - task.started_at).total_seconds()
+            self.console.print(f"[cyan]{i}.[/cyan] {task.description} [dim]({elapsed:.1f}s)[/dim]")
+
+        self.console.print()
+        choice = Prompt.ask(
+            "View result number (or press Enter to skip)",
+            default="",
+            console=self.console
+        )
+
+        if choice and choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(completed_tasks):
+                task = completed_tasks[idx]
+
+                # Display result
+                self.console.print()
+                self.console.print(Panel(
+                    Markdown(task.result) if self._is_markdown(task.result) else Text(str(task.result)),
+                    title=f"[bold cyan]Result: {task.description}[/bold cyan]",
+                    border_style="cyan",
+                    padding=(1, 2)
+                ))
+
+                # Ask to execute commands if system-aware
+                if self.system_aware:
+                    execute = questionary.confirm(
+                        "Execute any commands in this result?",
+                        default=False
+                    ).ask()
+                    if execute:
+                        self._execute_commands_from_response(task.result)
 
     def _is_markdown(self, text: str) -> bool:
         """Check if text appears to be markdown
