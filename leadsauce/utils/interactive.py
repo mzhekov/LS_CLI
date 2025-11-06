@@ -395,6 +395,10 @@ def show_dashboard_view():
 
         console.clear()
 
+        # Get terminal size for responsive rendering
+        import shutil
+        term_width, term_height = shutil.get_terminal_size(fallback=(80, 24))
+
         # Show top navigation bar
         console.print(render_top_bar("Dashboard"))
         console.print()
@@ -472,7 +476,9 @@ def show_dashboard_view():
         if profile_filter_company:
             profiles_query = profiles_query.filter(Profile.company_id == profile_filter_company)
 
-        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(15).all()
+        # Adjust limits based on terminal height
+        profile_limit = max(5, min(15, (term_height - 20) // 2))  # Dynamic based on screen
+        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(profile_limit).all()
 
         # Create statistics panel
         stats_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -502,11 +508,15 @@ def show_dashboard_view():
         all_upcoming = all_upcoming[:5]  # Limit to 5 total
 
         if all_upcoming:
+            # Responsive column widths based on terminal size
+            reminder_col_width = max(15, min(25, term_width // 8))
+            linked_col_width = max(20, min(30, term_width // 6))
+
             reminders_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1), border_style="magenta")
-            reminders_table.add_column("Reminder", style="magenta bold", width=25)
-            reminders_table.add_column("Due", style="yellow", width=12)
-            reminders_table.add_column("Priority", style="white", width=8)
-            reminders_table.add_column("Linked To", style="cyan", width=30)
+            reminders_table.add_column("Reminder", style="magenta bold", width=reminder_col_width)
+            reminders_table.add_column("Due", style="yellow", width=10)
+            reminders_table.add_column("Pri", style="white", width=6)
+            reminders_table.add_column("Linked To", style="cyan", width=linked_col_width)
 
             for reminder in all_upcoming:
                 # Format due date
@@ -696,12 +706,16 @@ def show_dashboard_view():
         ).order_by(Task.due_date.asc().nullsfirst()).limit(10).all()
 
         if upcoming_tasks:
+            # Responsive tasks table
+            task_col_width = max(15, min(25, term_width // 6))
+            desc_col_width = max(15, min(20, term_width // 8))
+
             tasks_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="yellow")
             tasks_table.add_column("#", style="dim", width=3)
-            tasks_table.add_column("Task", style="cyan", no_wrap=False, width=25)
-            tasks_table.add_column("Description", style="dim", no_wrap=False, width=20)
+            tasks_table.add_column("Task", style="cyan", no_wrap=False, width=task_col_width)
+            tasks_table.add_column("Description", style="dim", no_wrap=False, width=desc_col_width)
             tasks_table.add_column("Status", width=10)
-            tasks_table.add_column("Priority", width=8)
+            tasks_table.add_column("Pri", width=6)
             tasks_table.add_column("Due", width=12)
             tasks_table.add_column("Linked To", style="dim", no_wrap=False)
 
@@ -781,31 +795,38 @@ def show_dashboard_view():
 
         # Recent profiles
         if recent_profiles:
+            # Responsive profile table - adjust columns based on width
             profiles_table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
-            profiles_table.add_column("Name", style="cyan", width=20)
-            profiles_table.add_column("Email", style="blue", width=25)
-            profiles_table.add_column("Phone", style="green", width=15)
-            profiles_table.add_column("Seniority", style="yellow", width=12)
-            profiles_table.add_column("Generation", style="magenta", width=10)
-            profiles_table.add_column("Company", style="green", width=20)
-            profiles_table.add_column("Skills", style="dim", no_wrap=False, width=20)
-            profiles_table.add_column("Tags", style="yellow", no_wrap=False)
+
+            if term_width >= 160:  # Wide screen - show all columns
+                profiles_table.add_column("Name", style="cyan", width=20)
+                profiles_table.add_column("Email", style="blue", width=25)
+                profiles_table.add_column("Phone", style="green", width=15)
+                profiles_table.add_column("Seniority", style="yellow", width=12)
+                profiles_table.add_column("Generation", style="magenta", width=10)
+                profiles_table.add_column("Company", style="green", width=20)
+                profiles_table.add_column("Skills", style="dim", no_wrap=False, width=20)
+                profiles_table.add_column("Tags", style="yellow", no_wrap=False)
+                show_all_columns = True
+            elif term_width >= 120:  # Medium screen - skip skills
+                profiles_table.add_column("Name", style="cyan", width=20)
+                profiles_table.add_column("Email", style="blue", width=30)
+                profiles_table.add_column("Seniority", style="yellow", width=12)
+                profiles_table.add_column("Company", style="green", width=25)
+                profiles_table.add_column("Tags", style="yellow", no_wrap=False)
+                show_all_columns = False
+            else:  # Narrow screen - essentials only
+                profiles_table.add_column("Name", style="cyan", width=25)
+                profiles_table.add_column("Email", style="blue", width=35)
+                profiles_table.add_column("Company", style="green", width=20)
+                show_all_columns = None
 
             for p in recent_profiles:
                 # Email (truncated if too long)
-                email_display = p.email[:23] + "..." if p.email and len(p.email) > 23 else (p.email or "-")
-
-                # Phone
-                phone_display = p.phone or "-"
-
-                # Generation
-                generation_display = p.generation.title() if p.generation else "-"
+                email_display = p.email[:33] + "..." if p.email and len(p.email) > 35 else (p.email or "-")
 
                 # Company
                 company_display = p.company.name[:18] + "..." if p.company and len(p.company.name) > 18 else (p.company.name if p.company else "-")
-
-                # Skills (Good at - truncated)
-                skills_display = p.good_at[:18] + "..." if p.good_at and len(p.good_at) > 18 else (p.good_at or "-")
 
                 # Tags (show first 2)
                 if p.tags:
@@ -816,16 +837,35 @@ def show_dashboard_view():
                 else:
                     tags_display = "-"
 
-                profiles_table.add_row(
-                    p.name,
-                    email_display,
-                    phone_display,
-                    p.seniority.title(),
-                    generation_display,
-                    company_display,
-                    skills_display,
-                    tags_display
-                )
+                # Add row based on column layout
+                if show_all_columns is True:  # Wide screen
+                    phone_display = p.phone or "-"
+                    generation_display = p.generation.title() if p.generation else "-"
+                    skills_display = p.good_at[:18] + "..." if p.good_at and len(p.good_at) > 18 else (p.good_at or "-")
+                    profiles_table.add_row(
+                        p.name,
+                        email_display,
+                        phone_display,
+                        p.seniority.title(),
+                        generation_display,
+                        company_display,
+                        skills_display,
+                        tags_display
+                    )
+                elif show_all_columns is False:  # Medium screen
+                    profiles_table.add_row(
+                        p.name,
+                        email_display,
+                        p.seniority.title(),
+                        company_display,
+                        tags_display
+                    )
+                else:  # Narrow screen
+                    profiles_table.add_row(
+                        p.name,
+                        email_display,
+                        company_display
+                    )
 
             # Build filter subtitle
             filter_parts = []
@@ -852,27 +892,37 @@ def show_dashboard_view():
                 border_style="yellow"
             )
 
-        # Create two-column layout: Left (70%) and Right (30%)
-        # Use a table without borders to create columns
-        from rich.table import Table as LayoutTable
+        # Responsive layout: Two columns on wide screens, single column on narrow
+        if term_width >= 100:  # Wide enough for two columns
+            # Create two-column layout: Left (70%) and Right (30%)
+            from rich.table import Table as LayoutTable
 
-        layout_table = LayoutTable(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False)
-        layout_table.add_column(ratio=7)  # 70% width
-        layout_table.add_column(ratio=3)  # 30% width
+            layout_table = LayoutTable(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False)
+            layout_table.add_column(ratio=7)  # 70% width
+            layout_table.add_column(ratio=3)  # 30% width
 
-        # Left column: Overview, Goals, Tasks stacked vertically
-        left_content = Group(
-            overview_panel,
-            Text(),  # Empty line
-            goals_panel,
-            Text(),  # Empty line
-            tasks_panel
-        )
+            # Left column: Overview, Goals, Tasks stacked vertically
+            left_content = Group(
+                overview_panel,
+                Text(),  # Empty line
+                goals_panel,
+                Text(),  # Empty line
+                tasks_panel
+            )
 
-        # Add both columns to the layout table
-        layout_table.add_row(left_content, reminders_panel)
+            # Add both columns to the layout table
+            layout_table.add_row(left_content, reminders_panel)
 
-        console.print(layout_table)
+            console.print(layout_table)
+        else:  # Narrow terminal - single column layout
+            console.print(overview_panel)
+            console.print()
+            console.print(reminders_panel)
+            console.print()
+            console.print(goals_panel)
+            console.print()
+            console.print(tasks_panel)
+
         console.print()
 
         # Recent Profiles at full width below the split layout
