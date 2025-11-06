@@ -226,12 +226,16 @@ def render_top_bar(current_view="Dashboard"):
             nav_text.append(f"[{key}]", style="dim yellow")
             nav_text.append(f" {name}", style="white")
 
-    # Check for recent browser session and add indicator
+    # Check for browser session and add indicator
     browser_session = get_browser_session()
     subtitle = "[dim]Press number keys to navigate[/]"
-    if browser_session.has_recent_session():
+
+    if browser_session.has_active_tmux_window():
         info = browser_session.get_info()
-        subtitle = f"[dim]Press number keys to navigate[/] │ [bold cyan]🌐 Last browser:[/] [green]{info['browser']}[/]"
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (tmux)[/]"
+    elif browser_session.has_recent_session():
+        info = browser_session.get_info()
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold cyan]🌐 Last:[/] [green]{info['browser']}[/]"
 
     return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
@@ -324,7 +328,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-9) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-9, 0 for Browser) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -868,7 +872,7 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9 for navigation) | Double backspace or 'q' to quit:[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9/0 for navigation, Enter to continue):[/]")
         action = get_single_key()
 
         # Handle double backspace quit
@@ -881,7 +885,7 @@ def show_dashboard_view():
             session.close()
             return None
 
-        # Check if user wants to navigate to another menu (numbers 1-9 or q)
+        # Check if user wants to navigate to another menu (numbers 1-9, 0 for Browser, or q)
         # Map numbers to view names
         nav_map = {
             '1': 'Dashboard',
@@ -893,6 +897,7 @@ def show_dashboard_view():
             '7': 'Workshop',
             '8': 'Export',
             '9': 'Import',
+            '0': 'Browser',
             'q': 'Exit',
             'Q': 'Exit'
         }
@@ -7574,192 +7579,84 @@ def import_menu():
     return None
 
 
-def browser_menu():
-    """Terminal web browser menu with session memory"""
-    import subprocess
-    import shutil
-    from leadsauce.utils.helpers import get_available_browsers, get_browser_session
-    from rich.text import Text
+def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmux, separate_window):
+    """Helper function to launch browser with appropriate messages
 
-    browser_session = get_browser_session()
+    Args:
+        browser_session: The BrowserSession instance
+        browser_cmd: Browser command to run
+        url: URL to open
+        use_tmux: Whether to use tmux window
+        in_tmux: Whether currently in tmux
+        separate_window: Whether to use separate terminal window
+    """
+    console.clear()
+    console.print(render_top_bar("Browser"))
+    console.print()
 
-    while True:
-        console.clear()
-        console.print(render_top_bar("Browser"))
-        console.print()
-
-        # Check for available browsers
-        available_browsers = get_available_browsers()
-
-        if not available_browsers:
-            console.print(Panel(
-                "[bold red]No terminal browsers found![/]\n\n"
-                "[yellow]Please install a terminal browser:[/]\n"
-                "  • Ubuntu/Debian: [cyan]sudo apt install w3m lynx links[/]\n"
-                "  • Fedora/RHEL: [cyan]sudo dnf install w3m lynx links[/]\n"
-                "  • Arch Linux: [cyan]sudo pacman -S w3m lynx links[/]\n"
-                "  • macOS: [cyan]brew install w3m lynx links[/]",
-                border_style="red",
-                title="Browser Not Found"
-            ))
-            console.print()
-            questionary.press_any_key_to_continue("Press any key to return to Dashboard...").ask()
-            return "Dashboard"
-
-        # Check if there's a recent browser session
-        if browser_session.has_recent_session():
-            info = browser_session.get_info()
-            minutes_ago = int(info['time_ago'].total_seconds() / 60) if info.get('time_ago') else 0
-
-            console.print(Panel(
-                f"[bold cyan]Recent Browser Session[/]\n\n"
-                f"[cyan]Browser:[/] {info['browser'].upper()}\n"
-                f"[cyan]Last URL:[/] {info['url']}\n"
-                f"[cyan]Used:[/] {minutes_ago} minute{'s' if minutes_ago != 1 else ''} ago",
-                border_style="cyan",
-                title="Continue Browsing?"
-            ))
-            console.print()
-
-            choices = [
-                f"🔄 Reopen {info['browser'].upper()} with same URL",
-                "🌐 Start New Browser Session",
-                "🗑️  Clear History & Start New",
-                "← Back to Dashboard"
-            ]
-
-            action = questionary.select(
-                "What would you like to do?",
-                choices=choices,
-                style=custom_style
-            ).ask()
-
-            if not action or action == "← Back to Dashboard":
-                return "Dashboard"
-
-            if action.startswith("🔄"):
-                # Reopen with same browser and URL
-                console.clear()
-                console.print(render_top_bar("Browser"))
-                console.print()
-                console.print(Panel(
-                    f"[bold green]Launching {info['browser'].upper()}...[/]\n\n"
-                    f"[cyan]URL:[/] {info['url']}\n\n"
-                    "[dim]Browser Controls:[/]\n"
-                    "  • [yellow]q[/] - Quit browser\n"
-                    "  • [yellow]h[/] - Help (in most browsers)\n"
-                    "  • [yellow]Arrow keys[/] - Navigate\n"
-                    "  • [yellow]Enter[/] - Follow link",
-                    border_style="green",
-                    title="Browser Starting"
-                ))
-                console.print()
-                time.sleep(1)
-
-                # Launch the browser with the same settings
-                browser_session.launch(info['browser'], info['url'])
-                continue
-
-            elif action.startswith("🗑️"):
-                browser_session.clear()
-                # Continue to browser selection below
-
-        # Display available browsers
+    if separate_window:
         console.print(Panel(
-            "[bold cyan]Terminal Web Browser[/]\n\n"
-            "[dim]Browse the web directly from your terminal.[/]",
-            border_style="cyan",
-            title="Web Browser"
+            f"[bold green]Opening {browser_cmd.upper()} in new window...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[bold yellow]Browser opened in separate terminal window![/]\n\n"
+            "[dim]The browser is now running independently.[/]\n"
+            "[green]✓ You can navigate all menus while browsing[/]\n"
+            "[green]✓ Close the browser window when done[/]\n"
+            "[green]✓ Press [0] anytime to reopen same URL[/]",
+            border_style="green",
+            title="Browser Launched"
         ))
         console.print()
 
-        # Show installed browsers
-        browsers_text = Text()
-        browsers_text.append("Installed browsers: ", style="bold")
-        browsers_text.append(", ".join(available_browsers.keys()), style="green")
-        console.print(browsers_text)
+        success = browser_session.launch(browser_cmd, url, separate_window=True)
+
+        if success:
+            time.sleep(2)
+        else:
+            console.print("[yellow]No terminal emulator found. Launching in this window instead...[/]")
+            time.sleep(2)
+            success = browser_session.launch(browser_cmd, url, use_tmux=False, separate_window=False)
+
+    elif use_tmux and in_tmux:
+        console.print(Panel(
+            f"[bold green]Opening {browser_cmd.upper()} in new tmux window...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[bold yellow]Browser opened in separate window![/]\n\n"
+            "[dim]Switch between windows:[/]\n"
+            "  • [yellow]Ctrl+b then window number[/] - Switch to specific window\n"
+            "  • [yellow]Ctrl+b n[/] - Next window\n"
+            "  • [yellow]Ctrl+b p[/] - Previous window\n"
+            "  • [yellow]Ctrl+b w[/] - List all windows\n\n"
+            "[bold green]You can now navigate menus while browsing![/]",
+            border_style="green",
+            title="Browser Launched"
+        ))
         console.print()
 
-        # Browser selection menu
-        browser_choices = []
-        browser_map = {}
+        success = browser_session.launch(browser_cmd, url, use_tmux=True)
 
-        # Add browser options with descriptions
-        if 'w3m' in available_browsers:
-            desc = "🌟 W3M - Advanced browser with image support (Recommended)"
-            browser_choices.append(desc)
-            browser_map[desc] = 'w3m'
-
-        if 'lynx' in available_browsers:
-            desc = "📄 Lynx - Classic text-only browser"
-            browser_choices.append(desc)
-            browser_map[desc] = 'lynx'
-
-        if 'links' in available_browsers:
-            desc = "🔗 Links - Fast text/graphical browser"
-            browser_choices.append(desc)
-            browser_map[desc] = 'links'
-
-        if 'elinks' in available_browsers:
-            desc = "⚡ ELinks - Extended Links with more features"
-            browser_choices.append(desc)
-            browser_map[desc] = 'elinks'
-
-        browser_choices.append("← Back to Dashboard")
-
-        action = questionary.select(
-            "Select a browser:",
-            choices=browser_choices,
-            style=custom_style
-        ).ask()
-
-        if not action or action == "← Back to Dashboard":
-            return "Dashboard"
-
-        # Get selected browser command
-        browser_cmd = browser_map[action]
-
-        # Get URL from user with helpful suggestions
-        console.print()
-        console.print("[dim]Popular starting points:[/]")
-        console.print("  • [cyan]https://duckduckgo.com[/] - Privacy-focused search")
-        console.print("  • [cyan]https://www.linkedin.com[/] - Professional networking")
-        console.print("  • [cyan]https://www.google.com[/] - Google search")
-        console.print("  • [cyan]Or leave blank to start browser without URL[/]")
-        console.print()
-
-        url = questionary.text(
-            "Enter URL:",
-            style=custom_style,
-            default="https://duckduckgo.com"
-        ).ask()
-
-        if url is None:
-            # User cancelled (Ctrl+C)
-            continue
-
-        # Launch browser with direct terminal access
-        console.clear()
-        console.print(render_top_bar("Browser"))
-        console.print()
+        if success:
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        else:
+            console.print("[red]Failed to launch browser in tmux window[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    else:
         console.print(Panel(
             f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
-            f"[cyan]URL:[/] {url if url.strip() else 'Home page'}\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
             "[dim]Browser Controls:[/]\n"
-            "  • [yellow]q[/] - Quit browser\n"
+            "  • [yellow]q[/] - Quit browser and return to menu\n"
             "  • [yellow]h[/] - Help (in most browsers)\n"
             "  • [yellow]Arrow keys[/] - Navigate\n"
-            "  • [yellow]Enter[/] - Follow link",
+            "  • [yellow]Enter[/] - Follow link\n\n"
+            "[bold yellow]Tip:[/] [dim]Session saved - press [0] anytime to quickly reopen[/]",
             border_style="green",
             title="Browser Starting"
         ))
         console.print()
+        time.sleep(1)
 
-        # Small delay to let user read the instructions
-        time.sleep(1.5)
-
-        # Launch the browser (will block until browser exits)
-        success = browser_session.launch(browser_cmd, url)
+        success = browser_session.launch(browser_cmd, url, use_tmux=False, separate_window=False)
 
         if not success:
             console.clear()
@@ -7774,5 +7671,660 @@ def browser_menu():
             console.print()
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
-        # Return to browser menu after exiting browser
-        continue
+
+def integrated_web_viewer():
+    """Integrated web viewer that displays content within the app"""
+    from leadsauce.utils.helpers import fetch_webpage_as_text, get_browser_session
+    from rich.text import Text
+    from rich.console import Group
+    import re
+    import textwrap
+    import shutil
+
+    browser_session = get_browser_session()
+
+    # Restore previous state if available
+    if browser_session.has_viewer_state():
+        current_url = browser_session.viewer_url
+        # Don't restore page_content - always fetch fresh to get Quick Links
+        page_content = None
+        scroll_position = browser_session.viewer_scroll_position
+    else:
+        current_url = "https://duckduckgo.com"
+        page_content = None
+        scroll_position = 0
+
+    while True:
+        console.clear()
+        console.print(render_top_bar("Browser"))
+        console.print()
+
+        # Get terminal size for responsive display
+        term_width, term_height = shutil.get_terminal_size(fallback=(80, 24))
+
+        # URL input bar with navigation shortcuts
+        console.print(Panel(
+            f"[bold cyan]Current URL:[/] {current_url}",
+            border_style="cyan",
+            title="🌐 Integrated Web Viewer"
+        ))
+        console.print()
+
+        # Compact shortcuts guide - always visible
+        shortcuts_compact = (
+            "[cyan]n/p[/] Next/Prev │ "
+            "[cyan]o[/] Open Link [a-z] │ "
+            "[cyan]g[/] Go URL │ "
+            "[cyan]r[/] Reload │ "
+            "[cyan]s[/] Search │ "
+            "[cyan]h[/] History │ "
+            "[cyan]1-9[/] Menus │ "
+            "[cyan]b[/] Back │ "
+            "[cyan]?[/] Help"
+        )
+        console.print(Panel(
+            shortcuts_compact,
+            border_style="dim",
+            padding=(0, 1)
+        ))
+        console.print()
+
+        # Fetch and display page if not loaded
+        if page_content is None:
+            console.print("[yellow]Loading page and extracting links...[/]")
+            page_content = fetch_webpage_as_text(current_url)
+
+            # Add quick links section at the top
+            from leadsauce.utils.helpers import fetch_webpage_links
+
+            try:
+                extracted_links = fetch_webpage_links(current_url)
+                console.print(f"[green]✓ Found {len(extracted_links)} links[/]")
+
+                if extracted_links and page_content:
+                    links_section = "\n[bold cyan]═══ Quick Links (Press 'o' then letter) ═══[/]\n\n"
+
+                    # Show first 26 links in compact format
+                    display_count = min(26, len(extracted_links))
+                    for idx in range(display_count):
+                        link_text, link_url = extracted_links[idx]
+                        letter = chr(ord('a') + idx)
+                        # Truncate long link text
+                        if len(link_text) > 60:
+                            link_text = link_text[:57] + "..."
+                        links_section += f"[cyan][{letter}][/] {link_text}\n"
+
+                    if len(extracted_links) > 26:
+                        links_section += f"\n[dim]... and {len(extracted_links) - 26} more links (press 'l' for full list)[/]\n"
+
+                    links_section += "\n[bold cyan]═══════════════════════════════════════[/]\n\n"
+
+                    # Prepend links section to content
+                    page_content = links_section + page_content
+                    console.print("[green]✓ Quick Links section added[/]")
+                else:
+                    console.print("[yellow]⚠ No links found or page failed to load[/]")
+            except Exception as e:
+                console.print(f"[red]✗ Error extracting links: {e}[/]")
+
+            # Small delay to see the messages
+            import time
+            time.sleep(1)
+
+            if page_content is None:
+                console.print(Panel(
+                    f"[bold red]Failed to load page![/]\n\n"
+                    f"[yellow]URL:[/] {current_url}\n\n"
+                    "[dim]Please check the URL and try again.[/]",
+                    border_style="red",
+                    title="Error"
+                ))
+                console.print()
+                action = questionary.select(
+                    "What would you like to do?",
+                    choices=[
+                        "Try different URL",
+                        "← Back to Browser Menu"
+                    ],
+                    style=custom_style
+                ).ask()
+
+                if action == "Try different URL":
+                    new_url = questionary.text(
+                        "Enter URL:",
+                        style=custom_style,
+                        default=current_url
+                    ).ask()
+
+                    if new_url:
+                        current_url = new_url
+                        page_content = None
+                        continue
+                else:
+                    return
+
+        # Display page content in scrollable area with pagination
+        # Note: Link shortcuts [a], [b], [c] are already embedded in the page content
+        # by fetch_webpage_as_text() function
+        if page_content:
+            # Save current state
+            browser_session.save_viewer_state(current_url, page_content, scroll_position)
+
+            # Calculate display parameters based on terminal size
+            # Account for: top bar (3 lines), URL panel (4 lines), shortcuts panel (3 lines),
+            # page info panel borders (4 lines), prompt line (2 lines) = ~16 lines overhead
+            usable_height = max(10, term_height - 16)
+            # Account for panel borders and padding in content width
+            content_width = max(40, term_width - 6)
+
+            # Get links from extracted_links (already fetched and appended to content)
+            from leadsauce.utils.helpers import fetch_webpage_links
+            extracted_links = fetch_webpage_links(current_url)
+            page_links = [url for text, url in extracted_links]
+
+            # Split content into lines and wrap long lines to fit terminal width
+            lines = page_content.split('\n')
+            wrapped_lines = []
+            for line in lines:
+                if len(line) <= content_width:
+                    wrapped_lines.append(line)
+                else:
+                    # Wrap long lines
+                    wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                    wrapped_lines.extend(wrapped if wrapped else [''])
+
+            lines_per_page = usable_height
+            total_pages = (len(wrapped_lines) + lines_per_page - 1) // lines_per_page if wrapped_lines else 1
+            current_page = scroll_position // lines_per_page + 1
+
+            start_line = scroll_position
+            end_line = min(start_line + lines_per_page, len(wrapped_lines))
+            display_lines = wrapped_lines[start_line:end_line]
+
+            content_text = '\n'.join(display_lines) if display_lines else '[dim]No content to display[/]'
+
+            # Add link count to page info
+            link_info = f" | {len(page_links)} links" if page_links else ""
+            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(wrapped_lines)}{link_info}"
+            if current_page < total_pages:
+                page_info += " | [yellow]Press [n] for next page[/]"
+
+            console.print(Panel(
+                content_text,
+                border_style="green",
+                title=f"[bold green]📄 Page Content[/]",
+                subtitle=f"[dim]{page_info}[/]"
+            ))
+            console.print()
+
+        # Get single key press for quick actions
+        console.print("[dim]Press key for action (or Enter for menu):[/]")
+        from leadsauce.utils.interactive import get_single_key
+        key = get_single_key()
+
+        # Show shortcuts guide
+        if key == '?':
+            console.clear()
+            console.print(render_top_bar("Browser - Shortcuts Guide"))
+            console.print()
+
+            shortcuts_guide = """[bold cyan]🌐 Web Viewer Keyboard Shortcuts[/]
+
+[bold yellow]Navigation:[/]
+  [cyan]n[/]         Next page
+  [cyan]p[/]         Previous page
+  [cyan]g[/]         Go to new URL
+  [cyan]r[/]         Reload current page
+  [cyan]b[/] or [cyan]q[/]   Back to menu
+
+[bold yellow]Links & Content:[/]
+  [cyan]o[/]         Open link by letter (links shown as [a], [b], [c]...)
+  [cyan]s[/]         Search in current page
+  [cyan]l[/]         View all links list
+  [cyan]h[/]         View browsing history (last 10 URLs)
+
+[bold yellow]Quick Menu Navigation:[/]
+  [cyan]1[/]         Jump to Dashboard
+  [cyan]2[/]         Jump to Profiles
+  [cyan]3[/]         Jump to Companies
+  [cyan]4[/]         Jump to Network & Relationships
+  [cyan]5[/]         Jump to Search
+  [cyan]6[/]         Jump to Tags
+  [cyan]7[/]         Jump to Workshop
+  [cyan]8[/]         Jump to Export
+  [cyan]9[/]         Jump to Import
+
+[bold yellow]Other:[/]
+  [cyan]?[/]         Show this shortcuts guide
+  [cyan]Enter[/]     Show full action menu
+
+[bold green]✨ Tips:[/]
+• Links are automatically labeled in content: [cyan][a][/cyan], [cyan][b][/cyan], [cyan][c][/cyan], etc.
+• Press [cyan]o[/] then the letter to open a link instantly
+• Your browser state is saved when you switch menus
+• Press [cyan]0[/] from any menu to return to the browser!"""
+
+            console.print(Panel(
+                shortcuts_guide,
+                border_style="cyan",
+                title="[bold cyan]Keyboard Shortcuts Guide[/]",
+                padding=(1, 2)
+            ))
+            console.print()
+            questionary.press_any_key_to_continue("\nPress any key to return to browser...").ask()
+            continue
+
+        # Handle navigation shortcuts (1-9 for menus)
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            '8': 'Export',
+            '9': 'Import',
+        }
+
+        if key in nav_map:
+            # Save state and return to switch menu
+            if page_content:
+                browser_session.save_viewer_state(current_url, page_content, scroll_position)
+            return nav_map[key]
+
+        # Handle browsing actions
+        if key == 'n' and page_content:
+            # Next page - recalculate wrapped lines for navigation
+            lines = page_content.split('\n')
+            wrapped_lines_nav = []
+            for line in lines:
+                if len(line) <= content_width:
+                    wrapped_lines_nav.append(line)
+                else:
+                    wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                    wrapped_lines_nav.extend(wrapped if wrapped else [''])
+
+            if scroll_position + usable_height < len(wrapped_lines_nav):
+                scroll_position += usable_height
+            continue
+
+        elif key == 'p' and page_content:
+            # Previous page
+            if scroll_position >= usable_height:
+                scroll_position -= usable_height
+            else:
+                scroll_position = 0
+            continue
+
+        elif key == 's' and page_content:
+            # Search in page
+            search_term = questionary.text(
+                "Search for:",
+                style=custom_style
+            ).ask()
+
+            if search_term:
+                # Recalculate wrapped lines for search
+                lines = page_content.split('\n')
+                wrapped_lines_search = []
+                for line in lines:
+                    if len(line) <= content_width:
+                        wrapped_lines_search.append(line)
+                    else:
+                        wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                        wrapped_lines_search.extend(wrapped if wrapped else [''])
+
+                matches = [i for i, line in enumerate(wrapped_lines_search) if search_term.lower() in line.lower()]
+
+                if matches:
+                    console.print(f"[green]Found {len(matches)} matches[/]")
+                    # Jump to first match
+                    scroll_position = matches[0]
+                    time.sleep(1)
+                else:
+                    console.print("[yellow]No matches found[/]")
+                    time.sleep(1)
+            continue
+
+        elif key == 'h':
+            # Show history
+            if browser_session.viewer_history:
+                console.print("\n[bold cyan]Recent URLs:[/]")
+                for i, url in enumerate(reversed(browser_session.viewer_history[-10:]), 1):
+                    console.print(f"  {i}. {url}")
+                console.print()
+
+                choice = questionary.text(
+                    "Enter number to visit (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if choice and choice.isdigit():
+                    idx = int(choice) - 1
+                    recent_urls = list(reversed(browser_session.viewer_history[-10:]))
+                    if 0 <= idx < len(recent_urls):
+                        current_url = recent_urls[idx]
+                        page_content = None
+                        scroll_position = 0
+            else:
+                console.print("[yellow]No history yet[/]")
+                time.sleep(1)
+            continue
+
+        elif key == 'l' and page_content:
+            # Extract and show links from page
+            import urllib.parse
+
+            # Extract URLs using regex
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            found_urls = re.findall(url_pattern, page_content)
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_urls = []
+            for url in found_urls:
+                if url not in seen:
+                    seen.add(url)
+                    unique_urls.append(url)
+
+            if unique_urls:
+                console.print(f"\n[bold cyan]Found {len(unique_urls)} links on this page:[/]\n")
+
+                # Show first 20 links
+                display_count = min(20, len(unique_urls))
+                for i, url in enumerate(unique_urls[:display_count], 1):
+                    # Truncate long URLs for display
+                    display_url = url if len(url) <= 80 else url[:77] + "..."
+                    console.print(f"  [cyan]{i:2d}.[/] {display_url}")
+
+                if len(unique_urls) > 20:
+                    console.print(f"\n[dim]... and {len(unique_urls) - 20} more links[/]")
+
+                console.print()
+
+                choice = questionary.text(
+                    "Enter link number to visit (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if choice and choice.isdigit():
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(unique_urls):
+                        current_url = unique_urls[idx]
+                        page_content = None
+                        scroll_position = 0
+            else:
+                console.print("[yellow]No links found on this page[/]")
+                time.sleep(1)
+            continue
+
+        elif key == 'o' and page_content and page_links:
+            # Open link by letter (from inline labeling)
+            console.print(f"\n[cyan]Found {len(page_links)} labeled links on this page[/]")
+            console.print("[dim]Links are labeled: a, b, c, ..., z, aa, ab, ...[/]\n")
+
+            link_letter = questionary.text(
+                "Enter link letter to open (or Enter to cancel):",
+                style=custom_style
+            ).ask()
+
+            if link_letter:
+                link_letter = link_letter.lower().strip()
+
+                # Convert letter to index
+                if len(link_letter) == 1 and 'a' <= link_letter <= 'z':
+                    # Single letter: a-z
+                    idx = ord(link_letter) - ord('a')
+                elif len(link_letter) == 2 and 'a' <= link_letter[0] <= 'z' and 'a' <= link_letter[1] <= 'z':
+                    # Double letter: aa-zz
+                    first = ord(link_letter[0]) - ord('a') + 1
+                    second = ord(link_letter[1]) - ord('a')
+                    idx = first * 26 + second
+                else:
+                    idx = -1
+
+                if 0 <= idx < len(page_links):
+                    current_url = page_links[idx]
+                    page_content = None
+                    scroll_position = 0
+                else:
+                    console.print(f"[yellow]Invalid link letter. Please enter a valid letter (a-z, aa, ab, etc.)[/]")
+                    time.sleep(1)
+            continue
+
+        elif key == 'g':
+            # Go to URL
+            new_url = questionary.text(
+                "Enter URL:",
+                style=custom_style,
+                default="https://"
+            ).ask()
+
+            if new_url:
+                current_url = new_url
+                page_content = None
+                scroll_position = 0
+            continue
+
+        elif key == 'r':
+            # Reload page
+            page_content = None
+            scroll_position = 0
+            continue
+
+        elif key == 'b' or key == 'q':
+            # Back to menu
+            if page_content:
+                browser_session.save_viewer_state(current_url, page_content, scroll_position)
+            return None
+
+        # If Enter pressed, show full menu
+        elif key in ['\r', '\n', '']:
+            # Build menu choices based on whether links are available
+            menu_choices = [
+                "🔗 Go to new URL",
+                "🔄 Reload page",
+                "🔍 Search in page",
+            ]
+
+            if page_links:
+                menu_choices.append("🔵 Open link by letter [a-z]")
+
+            menu_choices.extend([
+                "🌐 View all links list",
+                "📜 View history",
+                "⬇️  Next page",
+                "⬆️  Previous page",
+                "← Back to Browser Menu"
+            ])
+
+            action = questionary.select(
+                "Choose an action:",
+                choices=menu_choices,
+                style=custom_style
+            ).ask()
+
+            if not action or action == "← Back to Browser Menu":
+                if page_content:
+                    browser_session.save_viewer_state(current_url, page_content, scroll_position)
+                return None
+
+            if action.startswith("🔗"):
+                new_url = questionary.text(
+                    "Enter URL:",
+                    style=custom_style,
+                    default="https://"
+                ).ask()
+
+                if new_url:
+                    current_url = new_url
+                    page_content = None
+                    scroll_position = 0
+
+            elif action.startswith("🔄"):
+                page_content = None
+                scroll_position = 0
+
+            elif action.startswith("🔍"):
+                search_term = questionary.text(
+                    "Search for:",
+                    style=custom_style
+                ).ask()
+
+                if search_term:
+                    # Recalculate wrapped lines for search
+                    lines = page_content.split('\n')
+                    wrapped_lines_search = []
+                    for line in lines:
+                        if len(line) <= content_width:
+                            wrapped_lines_search.append(line)
+                        else:
+                            wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                            wrapped_lines_search.extend(wrapped if wrapped else [''])
+
+                    matches = [i for i, line in enumerate(wrapped_lines_search) if search_term.lower() in line.lower()]
+
+                    if matches:
+                        console.print(f"[green]Found {len(matches)} matches[/]")
+                        scroll_position = matches[0]
+                        time.sleep(1)
+                    else:
+                        console.print("[yellow]No matches found[/]")
+                        time.sleep(1)
+
+            elif action.startswith("🔵"):
+                # Open link by letter
+                console.print(f"\n[cyan]Found {len(page_links)} labeled links on this page[/]")
+                console.print("[dim]Links are labeled: a, b, c, ..., z, aa, ab, ...[/]\n")
+
+                link_letter = questionary.text(
+                    "Enter link letter to open (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if link_letter:
+                    link_letter = link_letter.lower().strip()
+
+                    # Convert letter to index
+                    if len(link_letter) == 1 and 'a' <= link_letter <= 'z':
+                        idx = ord(link_letter) - ord('a')
+                    elif len(link_letter) == 2 and 'a' <= link_letter[0] <= 'z' and 'a' <= link_letter[1] <= 'z':
+                        first = ord(link_letter[0]) - ord('a') + 1
+                        second = ord(link_letter[1]) - ord('a')
+                        idx = first * 26 + second
+                    else:
+                        idx = -1
+
+                    if 0 <= idx < len(page_links):
+                        current_url = page_links[idx]
+                        page_content = None
+                        scroll_position = 0
+                    else:
+                        console.print(f"[yellow]Invalid link letter[/]")
+                        time.sleep(1)
+
+            elif action.startswith("🌐"):
+                # View links on page
+                import urllib.parse
+
+                # Extract URLs using regex
+                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                found_urls = re.findall(url_pattern, page_content)
+
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_urls = []
+                for url in found_urls:
+                    if url not in seen:
+                        seen.add(url)
+                        unique_urls.append(url)
+
+                if unique_urls:
+                    console.print(f"\n[bold cyan]Found {len(unique_urls)} links on this page:[/]\n")
+
+                    # Show first 20 links
+                    display_count = min(20, len(unique_urls))
+                    for i, url in enumerate(unique_urls[:display_count], 1):
+                        # Truncate long URLs for display
+                        display_url = url if len(url) <= 80 else url[:77] + "..."
+                        console.print(f"  [cyan]{i:2d}.[/] {display_url}")
+
+                    if len(unique_urls) > 20:
+                        console.print(f"\n[dim]... and {len(unique_urls) - 20} more links[/]")
+
+                    console.print()
+
+                    choice = questionary.text(
+                        "Enter link number to visit (or Enter to cancel):",
+                        style=custom_style
+                    ).ask()
+
+                    if choice and choice.isdigit():
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(unique_urls):
+                            current_url = unique_urls[idx]
+                            page_content = None
+                            scroll_position = 0
+                else:
+                    console.print("[yellow]No links found on this page[/]")
+                    time.sleep(1)
+
+            elif action.startswith("📜"):
+                if browser_session.viewer_history:
+                    console.print("\n[bold cyan]Recent URLs:[/]")
+                    for i, url in enumerate(reversed(browser_session.viewer_history[-10:]), 1):
+                        console.print(f"  {i}. {url}")
+                    console.print()
+
+                    choice = questionary.text(
+                        "Enter number to visit (or Enter to cancel):",
+                        style=custom_style
+                    ).ask()
+
+                    if choice and choice.isdigit():
+                        idx = int(choice) - 1
+                        recent_urls = list(reversed(browser_session.viewer_history[-10:]))
+                        if 0 <= idx < len(recent_urls):
+                            current_url = recent_urls[idx]
+                            page_content = None
+                            scroll_position = 0
+                else:
+                    console.print("[yellow]No history yet[/]")
+                    time.sleep(1)
+
+            elif action.startswith("⬇️"):
+                # Next page - recalculate wrapped lines
+                lines = page_content.split('\n')
+                wrapped_lines_nav = []
+                for line in lines:
+                    if len(line) <= content_width:
+                        wrapped_lines_nav.append(line)
+                    else:
+                        wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                        wrapped_lines_nav.extend(wrapped if wrapped else [''])
+
+                if scroll_position + usable_height < len(wrapped_lines_nav):
+                    scroll_position += usable_height
+
+            elif action.startswith("⬆️"):
+                # Previous page
+                if scroll_position >= usable_height:
+                    scroll_position -= usable_height
+                else:
+                    scroll_position = 0
+
+
+def browser_menu():
+    """Terminal web browser menu with integrated viewer"""
+    from leadsauce.utils.helpers import get_browser_session
+
+    browser_session = get_browser_session()
+
+    while True:
+        # Launch integrated web viewer directly
+        result = integrated_web_viewer()
+        # If viewer returns a menu name, navigate there
+        if result:
+            return result
+        # Otherwise, loop back to viewer (in case user wants to browse more)
