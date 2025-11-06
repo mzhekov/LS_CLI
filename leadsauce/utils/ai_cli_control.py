@@ -458,7 +458,6 @@ You respond with:
             "Goals",
             "Import/Export",
             "Browser",
-            "AI Assistant",
             "← Stay in AI CLI Control",
         ]
 
@@ -804,7 +803,6 @@ When you're done, press Ctrl+D or type 'exit' to return to the LeadSauce menu.
             "Goals",
             "Import/Export",
             "Browser",
-            "AI Assistant",
             "← Stay in AI CLI Control",
         ]
 

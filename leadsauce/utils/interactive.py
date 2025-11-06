@@ -204,7 +204,7 @@ NAV_ITEMS = [
     ("Workshop", "🔧", "7"),
     ("Import/Export", "📦", "8"),
     ("AI CLI Control", "🎮", "9"),
-    ("AI Assistant", "🤖", "0"),
+    ("Browser", "🌐", "0"),
     ("Exit", "❌", "q")
 ]
 
@@ -317,16 +317,9 @@ def interactive_main_menu():
             else:
                 current_view = "Dashboard"
             continue
-        elif current_view == "AI Assistant":
+        elif current_view == "Browser":
             ai_menu = AIAssistantMenu()
             new_view = ai_menu.show()
-            if new_view:
-                current_view = new_view
-            else:
-                current_view = "Dashboard"
-            continue
-        elif current_view == "Browser":
-            new_view = browser_menu()
             if new_view:
                 current_view = new_view
             else:

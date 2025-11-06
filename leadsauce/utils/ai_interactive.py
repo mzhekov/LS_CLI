@@ -126,7 +126,7 @@ Welcome to the LeadSauce AI Assistant! You can:
 
                     # Handle special commands
                     if user_input.lower() in ['/exit', '/quit', '/q']:
-                        self.console.print("[dim]Exiting AI Assistant...[/dim]")
+                        self.console.print("[dim]Exiting Browser...[/dim]")
                         return None
 
                     elif user_input.lower() == '/help':
@@ -166,7 +166,7 @@ Welcome to the LeadSauce AI Assistant! You can:
                     action = questionary.select(
                         "What would you like to do?",
                         choices=[
-                            "Continue in AI Assistant",
+                            "Continue in Browser",
                             "Switch to another menu",
                             "Exit to Dashboard"
                         ],
@@ -182,7 +182,7 @@ Welcome to the LeadSauce AI Assistant! You can:
                             return menu_choice
                     elif action == "Exit to Dashboard":
                         return None
-                    # Otherwise continue in AI Assistant
+                    # Otherwise continue in Browser
                     continue
 
                 except Exception as e:
@@ -341,7 +341,7 @@ Welcome to the LeadSauce AI Assistant! You can:
 
     def _show_help(self):
         """Display help information"""
-        help_table = Table(title="AI Assistant Commands", show_header=True, header_style="bold cyan")
+        help_table = Table(title="Browser Commands", show_header=True, header_style="bold cyan")
         help_table.add_column("Command", style="cyan", width=20)
         help_table.add_column("Description", style="white")
 
@@ -352,7 +352,7 @@ Welcome to the LeadSauce AI Assistant! You can:
             ("/history", "Show conversation history"),
             ("/status", "Show AI tool status"),
             ("/menu", "Switch to another main menu"),
-            ("/exit, /quit, /q", "Exit AI assistant"),
+            ("/exit, /quit, /q", "Exit browser"),
         ]
 
         for cmd, desc in commands:
@@ -377,9 +377,8 @@ Welcome to the LeadSauce AI Assistant! You can:
             "Tasks",
             "Goals",
             "Import/Export",
-            "Browser",
             "AI CLI Control",
-            "← Stay in AI Assistant",
+            "← Stay in Browser",
         ]
 
         choice = questionary.select(
@@ -392,7 +391,7 @@ Welcome to the LeadSauce AI Assistant! You can:
             ])
         ).ask()
 
-        if choice and choice != "← Stay in AI Assistant":
+        if choice and choice != "← Stay in Browser":
             return choice
         return None
 
@@ -533,7 +532,7 @@ class AIAssistantMenu:
 
             # Show menu
             choice = questionary.select(
-                "AI Assistant",
+                "Browser",
                 choices=choices,
                 style=questionary.Style([
                     ('selected', 'fg:cyan bold'),
@@ -666,7 +665,7 @@ When you're done, press Ctrl+D or type 'exit' to return to the LeadSauce menu.
             action = questionary.select(
                 "What would you like to do?",
                 choices=[
-                    "Return to AI Assistant menu",
+                    "Return to Browser menu",
                     "Switch to another menu",
                     "Launch Claude Code again"
                 ],
