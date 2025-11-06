@@ -2464,162 +2464,179 @@ def network_and_relationships_menu():
 
                     return [top, text_line, bottom]
 
-                # Group profiles by company
-                company_groups = {}
-                profiles_without_company = []
+                # Filter to only show profiles and companies with active connections
+                connected_profile_ids = set()
+                connected_company_ids = set()
 
+                # Add profiles with relationships to other profiles
+                for rel in profile_relationships:
+                    connected_profile_ids.add(rel.from_profile_id)
+                    connected_profile_ids.add(rel.to_profile_id)
+
+                # Add companies with relationships to other companies
+                for rel in company_relationships:
+                    connected_company_ids.add(rel.from_company_id)
+                    connected_company_ids.add(rel.to_company_id)
+
+                # Add profiles that work at companies (if company has relationships or employees with relationships)
                 for profile in profiles:
-                    if profile.company_id and profile.company_id in [c.id for c in companies]:
-                        if profile.company_id not in company_groups:
-                            company_groups[profile.company_id] = []
-                        company_groups[profile.company_id].append(profile)
-                    else:
-                        profiles_without_company.append(profile)
+                    if profile.company_id:
+                        # Check if this profile has relationships
+                        if profile.id in connected_profile_ids:
+                            connected_company_ids.add(profile.company_id)
 
-                # Build the hierarchical map output
-                map_lines = []
+                # Also add companies that have employees with relationships
+                for profile in profiles:
+                    if profile.id in connected_profile_ids and profile.company_id:
+                        connected_company_ids.add(profile.company_id)
 
-                # Draw companies and their employees
-                for company in companies:
-                    company_name = shorten_name(company.name, 15)
-                    company_box = create_box(f"🏢 {company_name}", 20)
+                # Filter profiles and companies to only connected ones
+                filtered_profiles = [p for p in profiles if p.id in connected_profile_ids]
+                filtered_companies = [c for c in companies if c.id in connected_company_ids]
 
-                    # Center the company box
-                    for line in company_box:
-                        map_lines.append(line.center(80))
+                # Check if there are any connected entities
+                if not filtered_profiles and not filtered_companies:
+                    # No connections exist - show message
+                    console.print(Panel(
+                        "[yellow]No relationships found. Press 'a' to create your first relationship![/]",
+                        border_style="yellow",
+                        title="[bold cyan]Network Map[/]"
+                    ))
+                    console.print()
+                else:
+                    # Group profiles by company
+                    company_groups = {}
+                    profiles_without_company = []
 
-                    # Get employees for this company
-                    employees = company_groups.get(company.id, [])
-
-                    if employees:
-                        # Draw connection lines to employees
-                        if len(employees) == 1:
-                            map_lines.append("│".center(80))
+                    for profile in filtered_profiles:
+                        if profile.company_id and profile.company_id in [c.id for c in filtered_companies]:
+                            if profile.company_id not in company_groups:
+                                company_groups[profile.company_id] = []
+                            company_groups[profile.company_id].append(profile)
                         else:
-                            # Multiple employees - draw branching
-                            branch_width = min(len(employees) * 20, 70)
-                            map_lines.append("│".center(80))
+                            profiles_without_company.append(profile)
 
-                            # Draw horizontal connector
-                            left_pos = 40 - branch_width // 2
-                            right_pos = 40 + branch_width // 2
-                            line = ' ' * 80
-                            line_list = list(line)
+                    # Build the hierarchical map output
+                    map_lines = []
 
-                            # Place branches
-                            step = branch_width // len(employees)
-                            for i in range(len(employees)):
-                                pos = left_pos + i * step + step // 2
-                                if pos < 80:
-                                    line_list[pos] = '│'
+                    # Draw companies and their employees
+                    for company in filtered_companies:
+                        company_name = shorten_name(company.name, 15)
+                        company_box = create_box(f"🏢 {company_name}", 20)
 
-                            # Connect with horizontal line
-                            if len(employees) > 1:
-                                first_branch = left_pos + step // 2
-                                last_branch = left_pos + (len(employees) - 1) * step + step // 2
-                                for i in range(first_branch, min(last_branch + 1, 80)):
-                                    if line_list[i] == ' ':
-                                        line_list[i] = '─'
-                                line_list[first_branch] = '┌' if first_branch > 0 else '─'
-                                if last_branch < 80:
-                                    line_list[last_branch] = '┐'
-                                line_list[40] = '┴'
+                        # Center the company box
+                        for line in company_box:
+                            map_lines.append(line.center(80))
 
-                            map_lines.append(''.join(line_list))
+                        # Get employees for this company
+                        employees = company_groups.get(company.id, [])
 
-                        # Draw employee boxes
-                        emp_boxes = []
-                        for emp in employees:
-                            emp_name = shorten_name(emp.name, 12)
-                            emp_box = create_box(f"👥 {emp_name}", 16)
-                            emp_boxes.append(emp_box)
+                        if employees:
+                            # Draw connection lines to employees
+                            if len(employees) == 1:
+                                map_lines.append("│".center(80))
+                            else:
+                                # Multiple employees - draw branching
+                                branch_width = min(len(employees) * 20, 70)
+                                map_lines.append("│".center(80))
 
-                        # Position employee boxes side by side
-                        if len(emp_boxes) == 1:
-                            for line in emp_boxes[0]:
-                                map_lines.append(line.center(80))
-                        else:
-                            # Multiple employees - place side by side
-                            for line_idx in range(3):  # Each box has 3 lines
-                                line_parts = []
-                                step = 70 // len(emp_boxes)
+                                # Draw horizontal connector
+                                left_pos = 40 - branch_width // 2
+                                right_pos = 40 + branch_width // 2
+                                line = ' ' * 80
+                                line_list = list(line)
 
-                                for i, emp_box in enumerate(emp_boxes):
-                                    line_parts.append(emp_box[line_idx])
+                                # Place branches
+                                step = branch_width // len(employees)
+                                for i in range(len(employees)):
+                                    pos = left_pos + i * step + step // 2
+                                    if pos < 80:
+                                        line_list[pos] = '│'
 
-                                # Join with spacing
-                                combined = '  '.join(line_parts)
-                                map_lines.append(combined.center(80))
+                                # Connect with horizontal line
+                                if len(employees) > 1:
+                                    first_branch = left_pos + step // 2
+                                    last_branch = left_pos + (len(employees) - 1) * step + step // 2
+                                    for i in range(first_branch, min(last_branch + 1, 80)):
+                                        if line_list[i] == ' ':
+                                            line_list[i] = '─'
+                                    line_list[first_branch] = '┌' if first_branch > 0 else '─'
+                                    if last_branch < 80:
+                                        line_list[last_branch] = '┐'
+                                    line_list[40] = '┴'
 
-                    map_lines.append("")  # Spacing between companies
+                                map_lines.append(''.join(line_list))
 
-                # Draw profiles without companies
-                if profiles_without_company:
-                    map_lines.append("")
-                    map_lines.append("── Independent Profiles ──".center(80))
-                    map_lines.append("")
+                            # Draw employee boxes
+                            emp_boxes = []
+                            for emp in employees:
+                                emp_name = shorten_name(emp.name, 12)
+                                emp_box = create_box(f"👥 {emp_name}", 16)
+                                emp_boxes.append(emp_box)
 
-                    for i in range(0, len(profiles_without_company), 3):
-                        # Show up to 3 profiles per row
-                        batch = profiles_without_company[i:i+3]
-                        profile_boxes = []
+                            # Position employee boxes side by side
+                            if len(emp_boxes) == 1:
+                                for line in emp_boxes[0]:
+                                    map_lines.append(line.center(80))
+                            else:
+                                # Multiple employees - place side by side
+                                for line_idx in range(3):  # Each box has 3 lines
+                                    line_parts = []
+                                    step = 70 // len(emp_boxes)
 
-                        for profile in batch:
-                            prof_name = shorten_name(profile.name, 12)
-                            prof_box = create_box(f"👥 {prof_name}", 16)
-                            profile_boxes.append(prof_box)
+                                    for i, emp_box in enumerate(emp_boxes):
+                                        line_parts.append(emp_box[line_idx])
 
-                        # Draw boxes side by side
-                        for line_idx in range(3):
-                            parts = [box[line_idx] for box in profile_boxes]
-                            combined = '  '.join(parts)
-                            map_lines.append(combined.center(80))
+                                    # Join with spacing
+                                    combined = '  '.join(line_parts)
+                                    map_lines.append(combined.center(80))
 
+                        map_lines.append("")  # Spacing between companies
+
+                    # Draw profiles without companies
+                    if profiles_without_company:
+                        map_lines.append("")
+                        map_lines.append("── Independent Profiles ──".center(80))
                         map_lines.append("")
 
-                # Show relationship connections
-                if profile_relationships or company_relationships:
-                    map_lines.append("")
-                    map_lines.append("── Key Relationships ──".center(80))
-                    map_lines.append("")
+                        for i in range(0, len(profiles_without_company), 3):
+                            # Show up to 3 profiles per row
+                            batch = profiles_without_company[i:i+3]
+                            profile_boxes = []
 
-                    # Show a few key relationships
-                    rel_count = 0
-                    max_rels_to_show = 5
+                            for profile in batch:
+                                prof_name = shorten_name(profile.name, 12)
+                                prof_box = create_box(f"👥 {prof_name}", 16)
+                                profile_boxes.append(prof_box)
 
-                    for rel in profile_relationships[:max_rels_to_show]:
-                        from_name = shorten_name(rel.from_profile.name, 12)
-                        to_name = shorten_name(rel.to_profile.name, 12)
-                        arrow = "═══" if rel.bidirectional else "───"
-                        rel_type = rel.relationship_type[:10]
+                            # Draw boxes side by side
+                            for line_idx in range(3):
+                                parts = [box[line_idx] for box in profile_boxes]
+                                combined = '  '.join(parts)
+                                map_lines.append(combined.center(80))
 
-                        rel_line = f"{from_name} {arrow}[{rel_type}]{arrow}> {to_name}"
-                        map_lines.append(rel_line.center(80))
-                        rel_count += 1
+                            map_lines.append("")
 
-                    if len(profile_relationships) > max_rels_to_show:
-                        map_lines.append(f"... and {len(profile_relationships) - max_rels_to_show} more".center(80))
+                    map_text = '\n'.join(map_lines)
 
-                map_text = '\n'.join(map_lines)
+                    # Add legend
+                    legend = Text()
+                    legend.append("🏢 Company", style="green")
+                    legend.append("  ", style="dim")
+                    legend.append("👥 Profile", style="cyan")
+                    legend.append("  ", style="dim")
+                    legend.append("─── Direct", style="dim")
+                    legend.append("  ", style="dim")
+                    legend.append("═══ Bidirectional", style="dim")
 
-                # Add legend
-                legend = Text()
-                legend.append("🏢 Company", style="green")
-                legend.append("  ", style="dim")
-                legend.append("👥 Profile", style="cyan")
-                legend.append("  ", style="dim")
-                legend.append("─── Direct", style="dim")
-                legend.append("  ", style="dim")
-                legend.append("═══ Bidirectional", style="dim")
-
-                console.print(Panel(
-                    map_text,
-                    title="[bold cyan]Network Map[/]",
-                    subtitle=legend,
-                    border_style="cyan",
-                    box=box.SIMPLE
-                ))
-                console.print()
+                    console.print(Panel(
+                        map_text,
+                        title="[bold cyan]Network Map[/]",
+                        subtitle=legend,
+                        border_style="cyan",
+                        box=box.SIMPLE
+                    ))
+                    console.print()
 
         # Get relationships
         profile_rels = session.query(ProfileRelationship).all()
