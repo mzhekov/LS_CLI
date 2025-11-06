@@ -293,6 +293,100 @@ def launch_browser(url: Optional[str] = None, browser: Optional[str] = None) -> 
         return False
 
 
+def is_tmux_available() -> bool:
+    """Check if tmux is installed and available"""
+    import shutil
+    return shutil.which('tmux') is not None
+
+
+def is_in_tmux() -> bool:
+    """Check if currently running inside a tmux session"""
+    return os.getenv('TMUX') is not None
+
+
+def get_tmux_browser_windows() -> List[str]:
+    """Get list of tmux windows that contain browsers
+
+    Returns:
+        List of window names that start with 'browser-'
+    """
+    import subprocess
+
+    if not is_in_tmux():
+        return []
+
+    try:
+        result = subprocess.run(
+            ['tmux', 'list-windows', '-F', '#{window_name}'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if result.returncode == 0:
+            windows = result.stdout.strip().split('\n')
+            return [w for w in windows if w.startswith('browser-')]
+        return []
+    except Exception:
+        return []
+
+
+def launch_browser_in_tmux(browser: str, url: str = None) -> bool:
+    """Launch browser in a new tmux window
+
+    Args:
+        browser: Browser command to run
+        url: Optional URL to open
+
+    Returns:
+        True if browser launched successfully in tmux
+    """
+    import subprocess
+
+    if not is_in_tmux():
+        return False
+
+    cmd = [browser]
+    if url and url.strip():
+        cmd.append(url.strip())
+
+    # Create window name
+    from datetime import datetime
+    window_name = f"browser-{browser}"
+
+    try:
+        # Create new tmux window with the browser
+        # -n: window name
+        # -d: don't switch to the new window (stay in current window)
+        subprocess.run(
+            ['tmux', 'new-window', '-n', window_name] + cmd,
+            check=False
+        )
+        return True
+    except Exception:
+        return False
+
+
+def switch_to_tmux_window(window_name: str) -> bool:
+    """Switch to a specific tmux window
+
+    Args:
+        window_name: Name of the window to switch to
+
+    Returns:
+        True if successfully switched
+    """
+    import subprocess
+
+    if not is_in_tmux():
+        return False
+
+    try:
+        subprocess.run(['tmux', 'select-window', '-t', window_name], check=False)
+        return True
+    except Exception:
+        return False
+
+
 class BrowserSession:
     """Manages browser session state and last used configuration"""
 
@@ -300,6 +394,7 @@ class BrowserSession:
         self.browser = None
         self.url = None
         self.last_used_time = None
+        self.tmux_window = None
 
     def has_recent_session(self) -> bool:
         """Check if there's a recent browser session (within last hour)"""
@@ -310,12 +405,21 @@ class BrowserSession:
         # Consider session recent if used within last hour
         return datetime.now() - self.last_used_time < timedelta(hours=1)
 
-    def launch(self, browser: str, url: str = None) -> bool:
-        """Launch browser with direct terminal access
+    def has_active_tmux_window(self) -> bool:
+        """Check if there's an active tmux window with browser"""
+        if not self.tmux_window:
+            return False
+
+        active_windows = get_tmux_browser_windows()
+        return self.tmux_window in active_windows
+
+    def launch(self, browser: str, url: str = None, use_tmux: bool = False) -> bool:
+        """Launch browser with direct terminal access or in tmux
 
         Args:
             browser: Browser command to run
             url: Optional URL to open
+            use_tmux: If True and tmux is available, launch in new tmux window
 
         Returns:
             True if browser launched successfully
@@ -323,6 +427,16 @@ class BrowserSession:
         import subprocess
         from datetime import datetime
 
+        # Try tmux launch if requested and available
+        if use_tmux and is_in_tmux():
+            if launch_browser_in_tmux(browser, url):
+                self.browser = browser
+                self.url = url if url and url.strip() else "Home page"
+                self.last_used_time = datetime.now()
+                self.tmux_window = f"browser-{browser}"
+                return True
+
+        # Fallback to regular launch
         cmd = [browser]
         if url and url.strip():
             cmd.append(url.strip())
@@ -336,15 +450,28 @@ class BrowserSession:
             self.browser = browser
             self.url = url if url and url.strip() else "Home page"
             self.last_used_time = datetime.now()
+            self.tmux_window = None
             return True
         except Exception:
             return False
+
+    def switch_to_browser(self) -> bool:
+        """Switch to the tmux window containing the browser
+
+        Returns:
+            True if successfully switched to browser window
+        """
+        if not self.tmux_window:
+            return False
+
+        return switch_to_tmux_window(self.tmux_window)
 
     def clear(self):
         """Clear session information"""
         self.browser = None
         self.url = None
         self.last_used_time = None
+        self.tmux_window = None
 
     def get_info(self) -> Dict[str, Any]:
         """Get browser session information
@@ -358,12 +485,16 @@ class BrowserSession:
         from datetime import datetime
         time_ago = datetime.now() - self.last_used_time if self.last_used_time else None
 
-        return {
+        info = {
             'browser': self.browser,
             'url': self.url,
             'last_used': self.last_used_time,
-            'time_ago': time_ago
+            'time_ago': time_ago,
+            'in_tmux': self.tmux_window is not None,
+            'tmux_active': self.has_active_tmux_window()
         }
+
+        return info
 
 
 # Global browser session instance
