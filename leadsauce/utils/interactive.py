@@ -5826,6 +5826,31 @@ def integrated_web_viewer():
             console.print("[yellow]Loading page...[/]")
             page_content = fetch_webpage_as_text(current_url)
 
+            # Add quick links section at the top
+            from leadsauce.utils.helpers import fetch_webpage_links
+            extracted_links = fetch_webpage_links(current_url)
+
+            if extracted_links and page_content:
+                links_section = "\n[bold cyan]═══ Quick Links (Press 'o' then letter) ═══[/]\n\n"
+
+                # Show first 26 links in compact format
+                display_count = min(26, len(extracted_links))
+                for idx in range(display_count):
+                    link_text, link_url = extracted_links[idx]
+                    letter = chr(ord('a') + idx)
+                    # Truncate long link text
+                    if len(link_text) > 60:
+                        link_text = link_text[:57] + "..."
+                    links_section += f"[cyan][{letter}][/] {link_text}\n"
+
+                if len(extracted_links) > 26:
+                    links_section += f"\n[dim]... and {len(extracted_links) - 26} more links (press 'l' for full list)[/]\n"
+
+                links_section += "\n[bold cyan]═══════════════════════════════════════[/]\n\n"
+
+                # Prepend links section to content
+                page_content = links_section + page_content
+
             if page_content is None:
                 console.print(Panel(
                     f"[bold red]Failed to load page![/]\n\n"
