@@ -5767,25 +5767,35 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
 
 def integrated_web_viewer():
     """Integrated web viewer that displays content within the app"""
-    from leadsauce.utils.helpers import fetch_webpage_as_text
+    from leadsauce.utils.helpers import fetch_webpage_as_text, get_browser_session
     from rich.text import Text
     from rich.console import Group
     import re
 
-    current_url = "https://duckduckgo.com"
-    page_content = None
+    browser_session = get_browser_session()
+
+    # Restore previous state if available
+    if browser_session.has_viewer_state():
+        current_url = browser_session.viewer_url
+        page_content = browser_session.viewer_content
+        scroll_position = browser_session.viewer_scroll_position
+    else:
+        current_url = "https://duckduckgo.com"
+        page_content = None
+        scroll_position = 0
 
     while True:
         console.clear()
         console.print(render_top_bar("Browser"))
         console.print()
 
-        # URL input bar
+        # URL input bar with navigation shortcuts
         console.print(Panel(
             f"[bold cyan]Current URL:[/] {current_url}\n\n"
-            "[dim]Commands: [g] Go to URL | [r] Reload | [b] Back to menu[/]",
+            "[dim]Browse: [s] Search in page | [n] Next page | [p] Previous page | [h] History[/]\n"
+            "[dim]Navigate: [1-9] Jump to menu | [g] Go to URL | [r] Reload | [b] Back[/]",
             border_style="cyan",
-            title="Integrated Web Viewer"
+            title="🌐 Integrated Web Viewer"
         ))
         console.print()
 
@@ -5826,39 +5836,123 @@ def integrated_web_viewer():
                 else:
                     return
 
-        # Display page content in scrollable area
+        # Display page content in scrollable area with pagination
         if page_content:
-            # Split content into lines and limit display
+            # Save current state
+            browser_session.save_viewer_state(current_url, page_content, scroll_position)
+
+            # Split content into lines and paginate
             lines = page_content.split('\n')
-            display_lines = lines[:100]  # Show first 100 lines
+            lines_per_page = 100
+            total_pages = (len(lines) + lines_per_page - 1) // lines_per_page
+            current_page = scroll_position // lines_per_page + 1
+
+            start_line = scroll_position
+            end_line = min(start_line + lines_per_page, len(lines))
+            display_lines = lines[start_line:end_line]
 
             content_text = '\n'.join(display_lines)
-            if len(lines) > 100:
-                content_text += f"\n\n[dim]... ({len(lines) - 100} more lines)[/]"
+
+            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(lines)}"
+            if current_page < total_pages:
+                page_info += " | [yellow]Press [n] for next page[/]"
 
             console.print(Panel(
                 content_text,
                 border_style="green",
-                title=f"[bold green]Page Content[/] (Showing {min(100, len(lines))} of {len(lines)} lines)",
-                subtitle="[dim]Scroll up to see full content[/]"
+                title=f"[bold green]📄 Page Content[/]",
+                subtitle=f"[dim]{page_info}[/]"
             ))
             console.print()
 
-        # Action menu
-        action = questionary.select(
-            "Choose an action:",
-            choices=[
-                "🔗 Go to new URL",
-                "🔄 Reload page",
-                "← Back to Browser Menu"
-            ],
-            style=custom_style
-        ).ask()
+        # Get single key press for quick actions
+        console.print("[dim]Press key for action (or Enter for menu):[/]")
+        from leadsauce.utils.interactive import get_single_key
+        key = get_single_key()
 
-        if not action or action == "← Back to Browser Menu":
-            return
+        # Handle navigation shortcuts (1-9 for menus)
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            '8': 'Export',
+            '9': 'Import',
+        }
 
-        if action.startswith("🔗"):
+        if key in nav_map:
+            # Save state and return to switch menu
+            if page_content:
+                browser_session.save_viewer_state(current_url, page_content, scroll_position)
+            return nav_map[key]
+
+        # Handle browsing actions
+        if key == 'n' and page_content:
+            # Next page
+            lines = page_content.split('\n')
+            if scroll_position + 100 < len(lines):
+                scroll_position += 100
+            continue
+
+        elif key == 'p' and page_content:
+            # Previous page
+            if scroll_position >= 100:
+                scroll_position -= 100
+            else:
+                scroll_position = 0
+            continue
+
+        elif key == 's' and page_content:
+            # Search in page
+            search_term = questionary.text(
+                "Search for:",
+                style=custom_style
+            ).ask()
+
+            if search_term:
+                lines = page_content.split('\n')
+                matches = [i for i, line in enumerate(lines) if search_term.lower() in line.lower()]
+
+                if matches:
+                    console.print(f"[green]Found {len(matches)} matches[/]")
+                    # Jump to first match
+                    scroll_position = matches[0]
+                    time.sleep(1)
+                else:
+                    console.print("[yellow]No matches found[/]")
+                    time.sleep(1)
+            continue
+
+        elif key == 'h':
+            # Show history
+            if browser_session.viewer_history:
+                console.print("\n[bold cyan]Recent URLs:[/]")
+                for i, url in enumerate(reversed(browser_session.viewer_history[-10:]), 1):
+                    console.print(f"  {i}. {url}")
+                console.print()
+
+                choice = questionary.text(
+                    "Enter number to visit (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if choice and choice.isdigit():
+                    idx = int(choice) - 1
+                    recent_urls = list(reversed(browser_session.viewer_history[-10:]))
+                    if 0 <= idx < len(recent_urls):
+                        current_url = recent_urls[idx]
+                        page_content = None
+                        scroll_position = 0
+            else:
+                console.print("[yellow]No history yet[/]")
+                time.sleep(1)
+            continue
+
+        elif key == 'g':
+            # Go to URL
             new_url = questionary.text(
                 "Enter URL:",
                 style=custom_style,
@@ -5867,10 +5961,110 @@ def integrated_web_viewer():
 
             if new_url:
                 current_url = new_url
-                page_content = None  # Trigger reload
+                page_content = None
+                scroll_position = 0
+            continue
 
-        elif action.startswith("🔄"):
-            page_content = None  # Trigger reload
+        elif key == 'r':
+            # Reload page
+            page_content = None
+            scroll_position = 0
+            continue
+
+        elif key == 'b' or key == 'q':
+            # Back to menu
+            if page_content:
+                browser_session.save_viewer_state(current_url, page_content, scroll_position)
+            return None
+
+        # If Enter pressed, show full menu
+        elif key in ['\r', '\n', '']:
+            action = questionary.select(
+                "Choose an action:",
+                choices=[
+                    "🔗 Go to new URL",
+                    "🔄 Reload page",
+                    "🔍 Search in page",
+                    "📜 View history",
+                    "⬇️  Next page",
+                    "⬆️  Previous page",
+                    "← Back to Browser Menu"
+                ],
+                style=custom_style
+            ).ask()
+
+            if not action or action == "← Back to Browser Menu":
+                if page_content:
+                    browser_session.save_viewer_state(current_url, page_content, scroll_position)
+                return None
+
+            if action.startswith("🔗"):
+                new_url = questionary.text(
+                    "Enter URL:",
+                    style=custom_style,
+                    default="https://"
+                ).ask()
+
+                if new_url:
+                    current_url = new_url
+                    page_content = None
+                    scroll_position = 0
+
+            elif action.startswith("🔄"):
+                page_content = None
+                scroll_position = 0
+
+            elif action.startswith("🔍"):
+                search_term = questionary.text(
+                    "Search for:",
+                    style=custom_style
+                ).ask()
+
+                if search_term:
+                    lines = page_content.split('\n')
+                    matches = [i for i, line in enumerate(lines) if search_term.lower() in line.lower()]
+
+                    if matches:
+                        console.print(f"[green]Found {len(matches)} matches[/]")
+                        scroll_position = matches[0]
+                        time.sleep(1)
+                    else:
+                        console.print("[yellow]No matches found[/]")
+                        time.sleep(1)
+
+            elif action.startswith("📜"):
+                if browser_session.viewer_history:
+                    console.print("\n[bold cyan]Recent URLs:[/]")
+                    for i, url in enumerate(reversed(browser_session.viewer_history[-10:]), 1):
+                        console.print(f"  {i}. {url}")
+                    console.print()
+
+                    choice = questionary.text(
+                        "Enter number to visit (or Enter to cancel):",
+                        style=custom_style
+                    ).ask()
+
+                    if choice and choice.isdigit():
+                        idx = int(choice) - 1
+                        recent_urls = list(reversed(browser_session.viewer_history[-10:]))
+                        if 0 <= idx < len(recent_urls):
+                            current_url = recent_urls[idx]
+                            page_content = None
+                            scroll_position = 0
+                else:
+                    console.print("[yellow]No history yet[/]")
+                    time.sleep(1)
+
+            elif action.startswith("⬇️"):
+                lines = page_content.split('\n')
+                if scroll_position + 100 < len(lines):
+                    scroll_position += 100
+
+            elif action.startswith("⬆️"):
+                if scroll_position >= 100:
+                    scroll_position -= 100
+                else:
+                    scroll_position = 0
 
 
 def browser_menu():
@@ -5919,7 +6113,10 @@ def browser_menu():
 
         if action.startswith("🌐"):
             # Launch integrated web viewer
-            integrated_web_viewer()
+            result = integrated_web_viewer()
+            # If viewer returns a menu name, navigate there
+            if result:
+                return result
             continue
 
         # External browser option

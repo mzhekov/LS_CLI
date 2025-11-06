@@ -564,6 +564,11 @@ class BrowserSession:
         self.last_used_time = None
         self.tmux_window = None
         self.in_separate_window = False
+        # Integrated viewer state
+        self.viewer_url = None
+        self.viewer_content = None
+        self.viewer_scroll_position = 0
+        self.viewer_history = []  # List of visited URLs
 
     def has_recent_session(self) -> bool:
         """Check if there's a recent browser session (within last 2 hours)"""
@@ -651,6 +656,38 @@ class BrowserSession:
 
         return switch_to_tmux_window(self.tmux_window)
 
+    def save_viewer_state(self, url: str, content: str, scroll_position: int = 0):
+        """Save integrated viewer state
+
+        Args:
+            url: Current URL
+            content: Page content
+            scroll_position: Current scroll position
+        """
+        from datetime import datetime
+
+        self.viewer_url = url
+        self.viewer_content = content
+        self.viewer_scroll_position = scroll_position
+        self.last_used_time = datetime.now()
+
+        # Add to history if not already the last entry
+        if not self.viewer_history or self.viewer_history[-1] != url:
+            self.viewer_history.append(url)
+            # Keep only last 20 URLs
+            if len(self.viewer_history) > 20:
+                self.viewer_history.pop(0)
+
+    def has_viewer_state(self) -> bool:
+        """Check if there's saved viewer state"""
+        return self.viewer_url is not None and self.viewer_content is not None
+
+    def clear_viewer_state(self):
+        """Clear integrated viewer state"""
+        self.viewer_url = None
+        self.viewer_content = None
+        self.viewer_scroll_position = 0
+
     def clear(self):
         """Clear session information"""
         self.browser = None
@@ -658,6 +695,10 @@ class BrowserSession:
         self.last_used_time = None
         self.tmux_window = None
         self.in_separate_window = False
+        # Keep viewer state for resume
+        # self.viewer_url = None
+        # self.viewer_content = None
+        # self.viewer_scroll_position = 0
 
     def get_info(self) -> Dict[str, Any]:
         """Get browser session information
