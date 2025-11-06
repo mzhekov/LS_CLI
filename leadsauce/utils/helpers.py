@@ -224,3 +224,70 @@ def set_nested(d: Dict, *keys, value):
     for key in keys[:-1]:
         d = d.setdefault(key, {})
     d[keys[-1]] = value
+
+
+def get_available_browsers() -> Dict[str, Optional[str]]:
+    """Detect installed terminal browsers
+
+    Returns:
+        Dictionary mapping browser names to their paths (or None if not found)
+    """
+    import shutil
+
+    browsers = {
+        'w3m': shutil.which('w3m'),
+        'lynx': shutil.which('lynx'),
+        'links': shutil.which('links') or shutil.which('links2'),
+        'elinks': shutil.which('elinks')
+    }
+    return {k: v for k, v in browsers.items() if v}
+
+
+def get_preferred_browser() -> Optional[str]:
+    """Get preferred browser from environment or auto-detect
+
+    Returns:
+        Browser command name or None if no browser found
+    """
+    import shutil
+
+    # Check environment variable first
+    env_browser = os.getenv('BROWSER')
+    if env_browser and shutil.which(env_browser):
+        return env_browser
+
+    # Default priority: w3m > lynx > links > elinks
+    for browser in ['w3m', 'lynx', 'links', 'elinks']:
+        if shutil.which(browser):
+            return browser
+
+    return None
+
+
+def launch_browser(url: Optional[str] = None, browser: Optional[str] = None) -> bool:
+    """Launch terminal browser with optional URL
+
+    Args:
+        url: Optional URL to open
+        browser: Optional browser command (auto-detected if None)
+
+    Returns:
+        True if browser launched successfully, False otherwise
+    """
+    import subprocess
+
+    if browser is None:
+        browser = get_preferred_browser()
+
+    if not browser:
+        return False
+
+    try:
+        cmd = [browser]
+        if url:
+            cmd.append(url)
+
+        subprocess.run(cmd, check=False)
+        return True
+    except Exception:
+        return False
