@@ -5771,6 +5771,8 @@ def integrated_web_viewer():
     from rich.text import Text
     from rich.console import Group
     import re
+    import textwrap
+    import shutil
 
     browser_session = get_browser_session()
 
@@ -5789,11 +5791,13 @@ def integrated_web_viewer():
         console.print(render_top_bar("Browser"))
         console.print()
 
+        # Get terminal size for responsive display
+        term_width, term_height = shutil.get_terminal_size(fallback=(80, 24))
+
         # URL input bar with navigation shortcuts
         console.print(Panel(
             f"[bold cyan]Current URL:[/] {current_url}\n\n"
-            "[dim]Browse: [s] Search in page | [n] Next page | [p] Previous page | [h] History[/]\n"
-            "[dim]Navigate: [1-9] Jump to menu | [g] Go to URL | [r] Reload | [b] Back[/]",
+            "[dim]Press [?] for shortcuts guide | [Enter] for menu | [b] to go back[/]",
             border_style="cyan",
             title="🌐 Integrated Web Viewer"
         ))
@@ -5841,19 +5845,35 @@ def integrated_web_viewer():
             # Save current state
             browser_session.save_viewer_state(current_url, page_content, scroll_position)
 
-            # Split content into lines and paginate
+            # Calculate display parameters based on terminal size
+            # Account for: top bar (3 lines), URL panel (5 lines), page info panel borders (4 lines),
+            # prompt line (2 lines) = ~14 lines overhead
+            usable_height = max(10, term_height - 14)
+            # Account for panel borders and padding in content width
+            content_width = max(40, term_width - 6)
+
+            # Split content into lines and wrap long lines to fit terminal width
             lines = page_content.split('\n')
-            lines_per_page = 100
-            total_pages = (len(lines) + lines_per_page - 1) // lines_per_page
+            wrapped_lines = []
+            for line in lines:
+                if len(line) <= content_width:
+                    wrapped_lines.append(line)
+                else:
+                    # Wrap long lines
+                    wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                    wrapped_lines.extend(wrapped if wrapped else [''])
+
+            lines_per_page = usable_height
+            total_pages = (len(wrapped_lines) + lines_per_page - 1) // lines_per_page if wrapped_lines else 1
             current_page = scroll_position // lines_per_page + 1
 
             start_line = scroll_position
-            end_line = min(start_line + lines_per_page, len(lines))
-            display_lines = lines[start_line:end_line]
+            end_line = min(start_line + lines_per_page, len(wrapped_lines))
+            display_lines = wrapped_lines[start_line:end_line]
 
-            content_text = '\n'.join(display_lines)
+            content_text = '\n'.join(display_lines) if display_lines else '[dim]No content to display[/]'
 
-            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(lines)}"
+            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(wrapped_lines)}"
             if current_page < total_pages:
                 page_info += " | [yellow]Press [n] for next page[/]"
 
@@ -5869,6 +5889,53 @@ def integrated_web_viewer():
         console.print("[dim]Press key for action (or Enter for menu):[/]")
         from leadsauce.utils.interactive import get_single_key
         key = get_single_key()
+
+        # Show shortcuts guide
+        if key == '?':
+            console.clear()
+            console.print(render_top_bar("Browser - Shortcuts Guide"))
+            console.print()
+
+            shortcuts_guide = """[bold cyan]🌐 Web Viewer Keyboard Shortcuts[/]
+
+[bold yellow]Navigation:[/]
+  [cyan]n[/]         Next page
+  [cyan]p[/]         Previous page
+  [cyan]g[/]         Go to new URL
+  [cyan]r[/]         Reload current page
+  [cyan]b[/] or [cyan]q[/]   Back to menu
+
+[bold yellow]Search & History:[/]
+  [cyan]s[/]         Search in current page
+  [cyan]h[/]         View browsing history (last 10 URLs)
+
+[bold yellow]Quick Menu Navigation:[/]
+  [cyan]1[/]         Jump to Dashboard
+  [cyan]2[/]         Jump to Profiles
+  [cyan]3[/]         Jump to Companies
+  [cyan]4[/]         Jump to Network & Relationships
+  [cyan]5[/]         Jump to Search
+  [cyan]6[/]         Jump to Tags
+  [cyan]7[/]         Jump to Workshop
+  [cyan]8[/]         Jump to Export
+  [cyan]9[/]         Jump to Import
+
+[bold yellow]Other:[/]
+  [cyan]?[/]         Show this shortcuts guide
+  [cyan]Enter[/]     Show full action menu
+
+[bold green]✨ Tip:[/] Your browser state (URL, content, scroll position) is automatically
+saved when you switch to other menus. Press [cyan]0[/] from any menu to return to the browser!"""
+
+            console.print(Panel(
+                shortcuts_guide,
+                border_style="cyan",
+                title="[bold cyan]Keyboard Shortcuts Guide[/]",
+                padding=(1, 2)
+            ))
+            console.print()
+            questionary.press_any_key_to_continue("\nPress any key to return to browser...").ask()
+            continue
 
         # Handle navigation shortcuts (1-9 for menus)
         nav_map = {
@@ -5891,16 +5958,24 @@ def integrated_web_viewer():
 
         # Handle browsing actions
         if key == 'n' and page_content:
-            # Next page
+            # Next page - recalculate wrapped lines for navigation
             lines = page_content.split('\n')
-            if scroll_position + 100 < len(lines):
-                scroll_position += 100
+            wrapped_lines_nav = []
+            for line in lines:
+                if len(line) <= content_width:
+                    wrapped_lines_nav.append(line)
+                else:
+                    wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                    wrapped_lines_nav.extend(wrapped if wrapped else [''])
+
+            if scroll_position + usable_height < len(wrapped_lines_nav):
+                scroll_position += usable_height
             continue
 
         elif key == 'p' and page_content:
             # Previous page
-            if scroll_position >= 100:
-                scroll_position -= 100
+            if scroll_position >= usable_height:
+                scroll_position -= usable_height
             else:
                 scroll_position = 0
             continue
@@ -5913,8 +5988,17 @@ def integrated_web_viewer():
             ).ask()
 
             if search_term:
+                # Recalculate wrapped lines for search
                 lines = page_content.split('\n')
-                matches = [i for i, line in enumerate(lines) if search_term.lower() in line.lower()]
+                wrapped_lines_search = []
+                for line in lines:
+                    if len(line) <= content_width:
+                        wrapped_lines_search.append(line)
+                    else:
+                        wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                        wrapped_lines_search.extend(wrapped if wrapped else [''])
+
+                matches = [i for i, line in enumerate(wrapped_lines_search) if search_term.lower() in line.lower()]
 
                 if matches:
                     console.print(f"[green]Found {len(matches)} matches[/]")
@@ -6021,8 +6105,17 @@ def integrated_web_viewer():
                 ).ask()
 
                 if search_term:
+                    # Recalculate wrapped lines for search
                     lines = page_content.split('\n')
-                    matches = [i for i, line in enumerate(lines) if search_term.lower() in line.lower()]
+                    wrapped_lines_search = []
+                    for line in lines:
+                        if len(line) <= content_width:
+                            wrapped_lines_search.append(line)
+                        else:
+                            wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                            wrapped_lines_search.extend(wrapped if wrapped else [''])
+
+                    matches = [i for i, line in enumerate(wrapped_lines_search) if search_term.lower() in line.lower()]
 
                     if matches:
                         console.print(f"[green]Found {len(matches)} matches[/]")
@@ -6056,13 +6149,23 @@ def integrated_web_viewer():
                     time.sleep(1)
 
             elif action.startswith("⬇️"):
+                # Next page - recalculate wrapped lines
                 lines = page_content.split('\n')
-                if scroll_position + 100 < len(lines):
-                    scroll_position += 100
+                wrapped_lines_nav = []
+                for line in lines:
+                    if len(line) <= content_width:
+                        wrapped_lines_nav.append(line)
+                    else:
+                        wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                        wrapped_lines_nav.extend(wrapped if wrapped else [''])
+
+                if scroll_position + usable_height < len(wrapped_lines_nav):
+                    scroll_position += usable_height
 
             elif action.startswith("⬆️"):
-                if scroll_position >= 100:
-                    scroll_position -= 100
+                # Previous page
+                if scroll_position >= usable_height:
+                    scroll_position -= usable_height
                 else:
                     scroll_position = 0
 
