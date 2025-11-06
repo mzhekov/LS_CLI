@@ -478,6 +478,43 @@ def fetch_webpage_as_text(url: str) -> Optional[str]:
     return None
 
 
+def fetch_webpage_links(url: str) -> List[tuple]:
+    """Extract all links from a webpage
+
+    Args:
+        url: URL to fetch
+
+    Returns:
+        List of (link_text, href) tuples, or empty list on error
+    """
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        from urllib.parse import urljoin
+
+        response = requests.get(url, timeout=30, headers={
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
+        })
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        links = []
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag['href']
+            # Convert relative URLs to absolute
+            absolute_url = urljoin(url, href)
+
+            # Only include http/https links
+            if absolute_url.startswith('http'):
+                link_text = a_tag.get_text(strip=True) or '[No text]'
+                links.append((link_text, absolute_url))
+
+        return links
+    except Exception:
+        return []
+
+
 def get_available_terminal_emulators() -> Dict[str, Optional[str]]:
     """Detect available terminal emulators
 

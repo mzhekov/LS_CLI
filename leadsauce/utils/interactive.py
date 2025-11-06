@@ -5858,6 +5858,34 @@ def integrated_web_viewer():
                 else:
                     return
 
+            # Fetch links from the page HTML
+            from leadsauce.utils.helpers import fetch_webpage_links
+            extracted_links = fetch_webpage_links(current_url)
+
+            # Append links section to content if links were found
+            if extracted_links:
+                page_content += "\n\n" + "="*50 + "\n"
+                page_content += "[bold cyan]🔗 Links on this page:[/]\n"
+                page_content += "="*50 + "\n\n"
+
+                for idx, (link_text, link_url) in enumerate(extracted_links):
+                    # Generate letter label (a, b, c, ..., z, aa, ab, ...)
+                    if idx < 26:
+                        letter = chr(ord('a') + idx)
+                    else:
+                        first = chr(ord('a') + (idx // 26) - 1)
+                        second = chr(ord('a') + (idx % 26))
+                        letter = first + second
+
+                    # Only show first 52 links
+                    if idx >= 52:
+                        remaining = len(extracted_links) - 52
+                        page_content += f"\n[dim]... and {remaining} more links (press 'l' to view all)[/]"
+                        break
+
+                    # Add link with label
+                    page_content += f"[cyan][{letter}][/cyan] {link_text}\n    {link_url}\n\n"
+
         # Display page content in scrollable area with pagination
         if page_content:
             # Save current state
@@ -5870,40 +5898,13 @@ def integrated_web_viewer():
             # Account for panel borders and padding in content width
             content_width = max(40, term_width - 6)
 
-            # Extract and label links inline in content
-            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-            found_urls = re.findall(url_pattern, page_content)
-
-            # Create mapping of link letters to URLs (remove duplicates)
-            seen_urls = set()
-            page_links = []
-            for url in found_urls:
-                if url not in seen_urls:
-                    seen_urls.add(url)
-                    page_links.append(url)
-
-            # Replace URLs in content with lettered versions (a-z, then aa-az, ba-bz, etc.)
-            content_with_links = page_content
-            for idx, url in enumerate(page_links):
-                # Generate letter label (a, b, c, ..., z, aa, ab, ...)
-                if idx < 26:
-                    letter = chr(ord('a') + idx)
-                else:
-                    # For more than 26 links, use aa, ab, ac, etc.
-                    first = chr(ord('a') + (idx // 26) - 1)
-                    second = chr(ord('a') + (idx % 26))
-                    letter = first + second
-
-                # Only label first 52 links (a-z + aa-az) to keep it manageable
-                if idx >= 52:
-                    break
-
-                # Add cyan colored link letter after the URL
-                labeled_url = f"{url} [cyan][{letter}][/cyan]"
-                content_with_links = content_with_links.replace(url, labeled_url, 1)
+            # Get links from extracted_links (already fetched and appended to content)
+            from leadsauce.utils.helpers import fetch_webpage_links
+            extracted_links = fetch_webpage_links(current_url)
+            page_links = [url for text, url in extracted_links]
 
             # Split content into lines and wrap long lines to fit terminal width
-            lines = content_with_links.split('\n')
+            lines = page_content.split('\n')
             wrapped_lines = []
             for line in lines:
                 if len(line) <= content_width:
