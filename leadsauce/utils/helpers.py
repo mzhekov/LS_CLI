@@ -294,93 +294,57 @@ def launch_browser(url: Optional[str] = None, browser: Optional[str] = None) -> 
 
 
 class BrowserSession:
-    """Manages background browser session state"""
+    """Manages browser session state and last used configuration"""
 
     def __init__(self):
-        self.process = None
         self.browser = None
         self.url = None
-        self.start_time = None
+        self.last_used_time = None
 
-    def is_active(self) -> bool:
-        """Check if browser is currently running"""
-        if self.process is None:
+    def has_recent_session(self) -> bool:
+        """Check if there's a recent browser session (within last hour)"""
+        if self.browser is None or self.last_used_time is None:
             return False
 
-        # Check if process is still alive
-        poll_result = self.process.poll()
-        if poll_result is not None:
-            # Process has terminated
-            self.cleanup()
-            return False
+        from datetime import datetime, timedelta
+        # Consider session recent if used within last hour
+        return datetime.now() - self.last_used_time < timedelta(hours=1)
 
-        return True
-
-    def start(self, browser: str, url: str = None):
-        """Start a new browser session in background
+    def launch(self, browser: str, url: str = None) -> bool:
+        """Launch browser with direct terminal access
 
         Args:
             browser: Browser command to run
             url: Optional URL to open
+
+        Returns:
+            True if browser launched successfully
         """
         import subprocess
         from datetime import datetime
-
-        # Clean up any existing session
-        self.cleanup()
 
         cmd = [browser]
         if url and url.strip():
             cmd.append(url.strip())
 
-        # Start browser in background
-        self.process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        self.browser = browser
-        self.url = url if url and url.strip() else "Home page"
-        self.start_time = datetime.now()
-
-    def resume(self):
-        """Bring browser to foreground (wait for it to exit)
-
-        Returns:
-            True if resumed successfully, False if browser was not running
-        """
-        if not self.is_active():
-            return False
-
         try:
-            # Wait for the browser process to complete
-            self.process.wait()
+            # Launch browser with direct terminal access (no pipe redirects)
+            # This allows the browser to properly interact with the terminal
+            subprocess.run(cmd, check=False)
+
+            # Update session info after browser exits
+            self.browser = browser
+            self.url = url if url and url.strip() else "Home page"
+            self.last_used_time = datetime.now()
             return True
         except Exception:
             return False
-        finally:
-            # Clean up after browser exits
-            self.cleanup()
 
-    def cleanup(self):
-        """Clean up browser session"""
-        if self.process:
-            try:
-                # Try to terminate gracefully
-                self.process.terminate()
-                self.process.wait(timeout=2)
-            except Exception:
-                try:
-                    # Force kill if terminate didn't work
-                    self.process.kill()
-                except Exception:
-                    pass
-
-        self.process = None
+    def clear(self):
+        """Clear session information"""
         self.browser = None
         self.url = None
-        self.start_time = None
+        self.last_used_time = None
 
     def get_info(self) -> Dict[str, Any]:
         """Get browser session information
@@ -388,17 +352,17 @@ class BrowserSession:
         Returns:
             Dictionary with browser session info
         """
-        if not self.is_active():
+        if not self.has_recent_session():
             return {}
 
         from datetime import datetime
-        running_time = datetime.now() - self.start_time if self.start_time else None
+        time_ago = datetime.now() - self.last_used_time if self.last_used_time else None
 
         return {
             'browser': self.browser,
             'url': self.url,
-            'pid': self.process.pid if self.process else None,
-            'running_time': running_time
+            'last_used': self.last_used_time,
+            'time_ago': time_ago
         }
 
 

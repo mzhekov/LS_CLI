@@ -95,12 +95,12 @@ def render_top_bar(current_view="Dashboard"):
             nav_text.append(f"[{key}]", style="dim yellow")
             nav_text.append(f" {name}", style="white")
 
-    # Check for active browser session and add indicator
+    # Check for recent browser session and add indicator
     browser_session = get_browser_session()
     subtitle = "[dim]Press number keys to navigate[/]"
-    if browser_session.is_active():
+    if browser_session.has_recent_session():
         info = browser_session.get_info()
-        subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser running:[/] [cyan]{info['browser']}[/]"
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold cyan]🌐 Last browser:[/] [green]{info['browser']}[/]"
 
     return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
@@ -5668,7 +5668,7 @@ def import_menu():
 
 
 def browser_menu():
-    """Terminal web browser menu with background session support"""
+    """Terminal web browser menu with session memory"""
     import subprocess
     import shutil
     from leadsauce.utils.helpers import get_available_browsers, get_browser_session
@@ -5699,25 +5699,25 @@ def browser_menu():
             questionary.press_any_key_to_continue("Press any key to return to Dashboard...").ask()
             return "Dashboard"
 
-        # Check if there's an active browser session
-        if browser_session.is_active():
+        # Check if there's a recent browser session
+        if browser_session.has_recent_session():
             info = browser_session.get_info()
-            running_minutes = int(info['running_time'].total_seconds() / 60) if info.get('running_time') else 0
+            minutes_ago = int(info['time_ago'].total_seconds() / 60) if info.get('time_ago') else 0
 
             console.print(Panel(
-                f"[bold green]Active Browser Session[/]\n\n"
+                f"[bold cyan]Recent Browser Session[/]\n\n"
                 f"[cyan]Browser:[/] {info['browser'].upper()}\n"
-                f"[cyan]URL:[/] {info['url']}\n"
-                f"[cyan]PID:[/] {info['pid']}\n"
-                f"[cyan]Running time:[/] {running_minutes} minute{'s' if running_minutes != 1 else ''}",
-                border_style="green",
-                title="Browser Running"
+                f"[cyan]Last URL:[/] {info['url']}\n"
+                f"[cyan]Used:[/] {minutes_ago} minute{'s' if minutes_ago != 1 else ''} ago",
+                border_style="cyan",
+                title="Continue Browsing?"
             ))
             console.print()
 
             choices = [
-                "🔄 Resume Browser Session",
-                "🗑️  Close Browser & Start New",
+                f"🔄 Reopen {info['browser'].upper()} with same URL",
+                "🌐 Start New Browser Session",
+                "🗑️  Clear History & Start New",
                 "← Back to Dashboard"
             ]
 
@@ -5730,38 +5730,37 @@ def browser_menu():
             if not action or action == "← Back to Dashboard":
                 return "Dashboard"
 
-            if action == "🔄 Resume Browser Session":
+            if action.startswith("🔄"):
+                # Reopen with same browser and URL
                 console.clear()
                 console.print(render_top_bar("Browser"))
                 console.print()
                 console.print(Panel(
-                    f"[bold green]Resuming {info['browser'].upper()}...[/]\n\n"
+                    f"[bold green]Launching {info['browser'].upper()}...[/]\n\n"
                     f"[cyan]URL:[/] {info['url']}\n\n"
                     "[dim]Browser Controls:[/]\n"
-                    "  • [yellow]q[/] - Quit browser and close session\n"
-                    "  • [yellow]Ctrl+Z[/] - Suspend browser (return to menu)\n"
+                    "  • [yellow]q[/] - Quit browser\n"
                     "  • [yellow]h[/] - Help (in most browsers)\n"
                     "  • [yellow]Arrow keys[/] - Navigate\n"
                     "  • [yellow]Enter[/] - Follow link",
                     border_style="green",
-                    title="Resuming Browser"
+                    title="Browser Starting"
                 ))
                 console.print()
                 time.sleep(1)
 
-                # Resume the browser session
-                browser_session.resume()
+                # Launch the browser with the same settings
+                browser_session.launch(info['browser'], info['url'])
                 continue
 
-            elif action == "🗑️  Close Browser & Start New":
-                browser_session.cleanup()
+            elif action.startswith("🗑️"):
+                browser_session.clear()
                 # Continue to browser selection below
 
         # Display available browsers
         console.print(Panel(
             "[bold cyan]Terminal Web Browser[/]\n\n"
-            "[dim]Browse the web directly from your terminal.\n"
-            "Browser runs in background - you can switch to other menus and come back.[/]",
+            "[dim]Browse the web directly from your terminal.[/]",
             border_style="cyan",
             title="Web Browser"
         ))
@@ -5832,41 +5831,36 @@ def browser_menu():
             # User cancelled (Ctrl+C)
             continue
 
-        # Launch browser in background
-        try:
+        # Launch browser with direct terminal access
+        console.clear()
+        console.print(render_top_bar("Browser"))
+        console.print()
+        console.print(Panel(
+            f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
+            f"[cyan]URL:[/] {url if url.strip() else 'Home page'}\n\n"
+            "[dim]Browser Controls:[/]\n"
+            "  • [yellow]q[/] - Quit browser\n"
+            "  • [yellow]h[/] - Help (in most browsers)\n"
+            "  • [yellow]Arrow keys[/] - Navigate\n"
+            "  • [yellow]Enter[/] - Follow link",
+            border_style="green",
+            title="Browser Starting"
+        ))
+        console.print()
+
+        # Small delay to let user read the instructions
+        time.sleep(1.5)
+
+        # Launch the browser (will block until browser exits)
+        success = browser_session.launch(browser_cmd, url)
+
+        if not success:
             console.clear()
             console.print(render_top_bar("Browser"))
             console.print()
             console.print(Panel(
-                f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
-                f"[cyan]URL:[/] {url if url.strip() else 'Home page'}\n\n"
-                "[dim]Browser Controls:[/]\n"
-                "  • [yellow]q[/] - Quit browser and close session\n"
-                "  • [yellow]Ctrl+Z[/] - Suspend browser (return to menu)\n"
-                "  • [yellow]h[/] - Help (in most browsers)\n"
-                "  • [yellow]Arrow keys[/] - Navigate\n"
-                "  • [yellow]Enter[/] - Follow link\n\n"
-                "[bold yellow]Tip:[/] [dim]Use Ctrl+Z to return to menu while keeping browser open[/]",
-                border_style="green",
-                title="Browser Starting"
-            ))
-            console.print()
-
-            # Small delay to let user read the instructions
-            time.sleep(2)
-
-            # Start browser session in background
-            browser_session.start(browser_cmd, url)
-
-            # Wait for the browser (bringing it to foreground)
-            browser_session.resume()
-
-        except Exception as e:
-            console.clear()
-            console.print(render_top_bar("Browser"))
-            console.print()
-            console.print(Panel(
-                f"[bold red]Error launching browser![/]\n\n{str(e)}",
+                "[bold red]Error launching browser![/]\n\n"
+                "The browser failed to start. Please check that it's properly installed.",
                 border_style="red",
                 title="Browser Error"
             ))
