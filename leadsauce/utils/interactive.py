@@ -4563,6 +4563,280 @@ def edit_company_relationship():
 
     session.close()
 
+
+def create_relationship_interactive():
+    """Interactive menu to create a new relationship (profile or company)"""
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]➕ Create Relationship[/]\n"
+        "[dim]What type of relationship would you like to create?[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    # Ask user to choose type
+    rel_type = questionary.select(
+        "Relationship type:",
+        choices=[
+            {'name': '👥 Profile Relationship (Person to Person)', 'value': 'profile'},
+            {'name': '🏢 Company Relationship (Organization to Organization)', 'value': 'company'},
+            {'name': '← Cancel', 'value': None}
+        ],
+        style=custom_style
+    ).ask()
+
+    if rel_type == 'profile':
+        add_profile_relationship()
+    elif rel_type == 'company':
+        add_company_relationship()
+
+
+def edit_profile_relationship_interactive(rel_id):
+    """Edit a specific profile relationship by ID"""
+    from leadsauce.models.relationship import ProfileRelationship, PROFILE_RELATIONSHIP_TYPES, RELATIONSHIP_STATUS
+
+    session = get_session()
+    relationship = session.query(ProfileRelationship).filter(ProfileRelationship.id == rel_id).first()
+
+    if not relationship:
+        console.print("\n[red]Relationship not found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Edit loop
+    while True:
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]Editing Relationship[/]\n"
+            f"[white]{relationship.from_profile.name}[/] → [white]{relationship.to_profile.name}[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Show current values
+        arrow = "↔" if relationship.bidirectional else "→"
+        status_color = "green" if relationship.status == "Good" else "red" if relationship.status == "Bad" else "dim"
+
+        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table.add_column(style="cyan bold", justify="right")
+        info_table.add_column(style="white")
+
+        info_table.add_row("Type:", relationship.relationship_type)
+        info_table.add_row("Status:", f"[{status_color}]{relationship.status}[/]")
+        info_table.add_row("Bidirectional:", f"{arrow} {'Yes' if relationship.bidirectional else 'No'}")
+        info_table.add_row("Description:", relationship.description or "-")
+
+        console.print(info_table)
+        console.print()
+
+        # Edit options
+        edit_choices = [
+            "Relationship Type",
+            "Status",
+            "Bidirectional",
+            "Description",
+            "🗑️  Delete Relationship",
+            "← Done Editing"
+        ]
+
+        field = questionary.select(
+            "What would you like to edit?",
+            choices=edit_choices,
+            style=custom_style
+        ).ask()
+
+        if not field or field == "← Done Editing":
+            break
+
+        if field == "Relationship Type":
+            new_type = questionary.select(
+                "Relationship type:",
+                choices=PROFILE_RELATIONSHIP_TYPES,
+                style=custom_style,
+                default=relationship.relationship_type if relationship.relationship_type in PROFILE_RELATIONSHIP_TYPES else None
+            ).ask()
+            if new_type:
+                relationship.relationship_type = new_type
+                session.commit()
+                console.print(f"\n[green]✓ Updated relationship type to '{new_type}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Status":
+            new_status = questionary.select(
+                "Relationship status:",
+                choices=RELATIONSHIP_STATUS,
+                style=custom_style,
+                default=relationship.status if relationship.status in RELATIONSHIP_STATUS else "Good"
+            ).ask()
+            if new_status:
+                relationship.status = new_status
+                session.commit()
+                console.print(f"\n[green]✓ Updated status to '{new_status}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Bidirectional":
+            new_bidirectional = questionary.confirm(
+                "Is this a two-way relationship?",
+                style=custom_style,
+                default=relationship.bidirectional
+            ).ask()
+            relationship.bidirectional = new_bidirectional
+            session.commit()
+            console.print(f"\n[green]✓ Updated bidirectional to {'Yes' if new_bidirectional else 'No'}[/]\n")
+            time.sleep(0.5)
+
+        elif field == "Description":
+            new_description = questionary.text(
+                "Description (leave empty to clear):",
+                style=custom_style,
+                default=relationship.description or ""
+            ).ask()
+            relationship.description = new_description or None
+            session.commit()
+            console.print(f"\n[green]✓ Updated description[/]\n")
+            time.sleep(0.5)
+
+        elif field == "🗑️  Delete Relationship":
+            confirm = questionary.confirm(
+                f"Are you sure you want to delete this relationship?",
+                style=custom_style,
+                default=False
+            ).ask()
+            if confirm:
+                session.delete(relationship)
+                session.commit()
+                console.print(f"\n[green]✓ Relationship deleted[/]\n")
+                questionary.press_any_key_to_continue().ask()
+                session.close()
+                return
+
+    session.close()
+
+
+def edit_company_relationship_interactive(rel_id):
+    """Edit a specific company relationship by ID"""
+    from leadsauce.models.relationship import CompanyRelationship, COMPANY_RELATIONSHIP_TYPES, RELATIONSHIP_STATUS
+
+    session = get_session()
+    relationship = session.query(CompanyRelationship).filter(CompanyRelationship.id == rel_id).first()
+
+    if not relationship:
+        console.print("\n[red]Relationship not found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Edit loop
+    while True:
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]Editing Relationship[/]\n"
+            f"[white]{relationship.from_company.name}[/] → [white]{relationship.to_company.name}[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Show current values
+        arrow = "↔" if relationship.bidirectional else "→"
+        status_color = "green" if relationship.status == "Good" else "red" if relationship.status == "Bad" else "dim"
+
+        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table.add_column(style="cyan bold", justify="right")
+        info_table.add_column(style="white")
+
+        info_table.add_row("Type:", relationship.relationship_type)
+        info_table.add_row("Status:", f"[{status_color}]{relationship.status}[/]")
+        info_table.add_row("Bidirectional:", f"{arrow} {'Yes' if relationship.bidirectional else 'No'}")
+        info_table.add_row("Description:", relationship.description or "-")
+
+        console.print(info_table)
+        console.print()
+
+        # Edit options
+        edit_choices = [
+            "Relationship Type",
+            "Status",
+            "Bidirectional",
+            "Description",
+            "🗑️  Delete Relationship",
+            "← Done Editing"
+        ]
+
+        field = questionary.select(
+            "What would you like to edit?",
+            choices=edit_choices,
+            style=custom_style
+        ).ask()
+
+        if not field or field == "← Done Editing":
+            break
+
+        if field == "Relationship Type":
+            new_type = questionary.select(
+                "Relationship type:",
+                choices=COMPANY_RELATIONSHIP_TYPES,
+                style=custom_style,
+                default=relationship.relationship_type if relationship.relationship_type in COMPANY_RELATIONSHIP_TYPES else None
+            ).ask()
+            if new_type:
+                relationship.relationship_type = new_type
+                session.commit()
+                console.print(f"\n[green]✓ Updated relationship type to '{new_type}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Status":
+            new_status = questionary.select(
+                "Relationship status:",
+                choices=RELATIONSHIP_STATUS,
+                style=custom_style,
+                default=relationship.status if relationship.status in RELATIONSHIP_STATUS else "Good"
+            ).ask()
+            if new_status:
+                relationship.status = new_status
+                session.commit()
+                console.print(f"\n[green]✓ Updated status to '{new_status}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Bidirectional":
+            new_bidirectional = questionary.confirm(
+                "Is this a two-way relationship?",
+                style=custom_style,
+                default=relationship.bidirectional
+            ).ask()
+            relationship.bidirectional = new_bidirectional
+            session.commit()
+            console.print(f"\n[green]✓ Updated bidirectional to {'Yes' if new_bidirectional else 'No'}[/]\n")
+            time.sleep(0.5)
+
+        elif field == "Description":
+            new_description = questionary.text(
+                "Description (leave empty to clear):",
+                style=custom_style,
+                default=relationship.description or ""
+            ).ask()
+            relationship.description = new_description or None
+            session.commit()
+            console.print(f"\n[green]✓ Updated description[/]\n")
+            time.sleep(0.5)
+
+        elif field == "🗑️  Delete Relationship":
+            confirm = questionary.confirm(
+                f"Are you sure you want to delete this relationship?",
+                style=custom_style,
+                default=False
+            ).ask()
+            if confirm:
+                session.delete(relationship)
+                session.commit()
+                console.print(f"\n[green]✓ Relationship deleted[/]\n")
+                questionary.press_any_key_to_continue().ask()
+                session.close()
+                return
+
+    session.close()
+
+
 def delete_profile_relationship():
     """Delete a profile relationship"""
     from leadsauce.models.relationship import ProfileRelationship
