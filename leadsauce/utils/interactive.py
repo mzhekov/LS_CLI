@@ -5824,33 +5824,45 @@ def integrated_web_viewer():
 
         # Fetch and display page if not loaded
         if page_content is None:
-            console.print("[yellow]Loading page...[/]")
+            console.print("[yellow]Loading page and extracting links...[/]")
             page_content = fetch_webpage_as_text(current_url)
 
             # Add quick links section at the top
             from leadsauce.utils.helpers import fetch_webpage_links
-            extracted_links = fetch_webpage_links(current_url)
 
-            if extracted_links and page_content:
-                links_section = "\n[bold cyan]═══ Quick Links (Press 'o' then letter) ═══[/]\n\n"
+            try:
+                extracted_links = fetch_webpage_links(current_url)
+                console.print(f"[green]✓ Found {len(extracted_links)} links[/]")
 
-                # Show first 26 links in compact format
-                display_count = min(26, len(extracted_links))
-                for idx in range(display_count):
-                    link_text, link_url = extracted_links[idx]
-                    letter = chr(ord('a') + idx)
-                    # Truncate long link text
-                    if len(link_text) > 60:
-                        link_text = link_text[:57] + "..."
-                    links_section += f"[cyan][{letter}][/] {link_text}\n"
+                if extracted_links and page_content:
+                    links_section = "\n[bold cyan]═══ Quick Links (Press 'o' then letter) ═══[/]\n\n"
 
-                if len(extracted_links) > 26:
-                    links_section += f"\n[dim]... and {len(extracted_links) - 26} more links (press 'l' for full list)[/]\n"
+                    # Show first 26 links in compact format
+                    display_count = min(26, len(extracted_links))
+                    for idx in range(display_count):
+                        link_text, link_url = extracted_links[idx]
+                        letter = chr(ord('a') + idx)
+                        # Truncate long link text
+                        if len(link_text) > 60:
+                            link_text = link_text[:57] + "..."
+                        links_section += f"[cyan][{letter}][/] {link_text}\n"
 
-                links_section += "\n[bold cyan]═══════════════════════════════════════[/]\n\n"
+                    if len(extracted_links) > 26:
+                        links_section += f"\n[dim]... and {len(extracted_links) - 26} more links (press 'l' for full list)[/]\n"
 
-                # Prepend links section to content
-                page_content = links_section + page_content
+                    links_section += "\n[bold cyan]═══════════════════════════════════════[/]\n\n"
+
+                    # Prepend links section to content
+                    page_content = links_section + page_content
+                    console.print("[green]✓ Quick Links section added[/]")
+                else:
+                    console.print("[yellow]⚠ No links found or page failed to load[/]")
+            except Exception as e:
+                console.print(f"[red]✗ Error extracting links: {e}[/]")
+
+            # Small delay to see the messages
+            import time
+            time.sleep(1)
 
             if page_content is None:
                 console.print(Panel(
