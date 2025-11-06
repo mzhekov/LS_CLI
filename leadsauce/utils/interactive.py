@@ -476,8 +476,8 @@ def show_dashboard_view():
         if profile_filter_company:
             profiles_query = profiles_query.filter(Profile.company_id == profile_filter_company)
 
-        # Limit recent profiles to 7
-        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(7).all()
+        # Limit recent profiles to 5
+        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(5).all()
 
         # Create statistics panel
         stats_table = Table(show_header=False, box=None, padding=(0, 2))
