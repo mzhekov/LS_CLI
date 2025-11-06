@@ -162,7 +162,27 @@ Welcome to the LeadSauce AI Assistant! You can:
                     self._send_query(user_input, context_files)
 
                 except KeyboardInterrupt:
-                    self.console.print("\n[dim]Use /exit to quit[/dim]")
+                    self.console.print()
+                    action = questionary.select(
+                        "What would you like to do?",
+                        choices=[
+                            "Continue in AI Assistant",
+                            "Switch to another menu",
+                            "Exit to Dashboard"
+                        ],
+                        style=questionary.Style([
+                            ('selected', 'fg:cyan bold'),
+                            ('pointer', 'fg:cyan bold'),
+                        ])
+                    ).ask()
+
+                    if action == "Switch to another menu":
+                        menu_choice = self._show_menu_navigation()
+                        if menu_choice:
+                            return menu_choice
+                    elif action == "Exit to Dashboard":
+                        return None
+                    # Otherwise continue in AI Assistant
                     continue
 
                 except Exception as e:
@@ -191,7 +211,7 @@ Welcome to the LeadSauce AI Assistant! You can:
         # Show loading indicator
         try:
             with self.console.status(
-                f"[bold cyan]Asking {self.service.get_tool_info(self.tool)['name']}...[/bold cyan]",
+                f"[bold cyan]Asking {self.service.get_tool_info(self.tool)['name']}... [dim](Press Ctrl+C to cancel)[/dim][/bold cyan]",
                 spinner="dots"
             ):
                 response = self.service.query(
@@ -250,6 +270,11 @@ Welcome to the LeadSauce AI Assistant! You can:
                 title="AI Error",
                 border_style="red"
             ))
+
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
+            self.console.print("[dim]Returning to prompt... (type /menu to switch sections or /exit to quit)[/dim]")
+            raise  # Re-raise to be caught by outer handler
 
     def _execute_commands_from_response(self, response: str):
         """Extract and execute commands from AI response

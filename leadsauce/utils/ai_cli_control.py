@@ -172,7 +172,27 @@ The AI has **direct control** over your LeadSauce system:
                     self._process_command(full_prompt)
 
                 except KeyboardInterrupt:
-                    self.console.print("\n[dim]Use /exit to quit[/dim]")
+                    self.console.print()
+                    action = questionary.select(
+                        "What would you like to do?",
+                        choices=[
+                            "Continue in AI CLI Control",
+                            "Switch to another menu",
+                            "Exit to Dashboard"
+                        ],
+                        style=questionary.Style([
+                            ('selected', 'fg:cyan bold'),
+                            ('pointer', 'fg:cyan bold'),
+                        ])
+                    ).ask()
+
+                    if action == "Switch to another menu":
+                        menu_choice = self._show_menu_navigation()
+                        if menu_choice:
+                            return menu_choice
+                    elif action == "Exit to Dashboard":
+                        return None
+                    # Otherwise continue in AI CLI Control
                     continue
 
                 except Exception as e:
@@ -279,7 +299,7 @@ You respond with:
         try:
             # Query AI with status display
             with self.console.status(
-                f"[bold cyan]{self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
+                f"[bold cyan]{self.service.get_tool_info(self.tool)['name']} processing... [dim](Press Ctrl+C to cancel)[/dim][/bold cyan]",
                 spinner="dots"
             ):
                 response = self.service.query(
@@ -298,6 +318,11 @@ You respond with:
 
             # Extract and execute commands (outside status context)
             self._execute_commands_from_response(response)
+
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
+            self.console.print("[dim]Returning to prompt... (type /menu to switch sections or /exit to quit)[/dim]")
+            raise  # Re-raise to be caught by outer handler
 
         except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
             self.console.print(Panel(
