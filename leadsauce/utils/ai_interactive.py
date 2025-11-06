@@ -176,11 +176,11 @@ Welcome to the LeadSauce AI Assistant! You can:
             self.system_context_sent = True
 
         # Show loading indicator
-        with self.console.status(
-            f"[bold cyan]Asking {self.service.get_tool_info(self.tool)['name']}...[/bold cyan]",
-            spinner="dots"
-        ):
-            try:
+        try:
+            with self.console.status(
+                f"[bold cyan]Asking {self.service.get_tool_info(self.tool)['name']}...[/bold cyan]",
+                spinner="dots"
+            ):
                 response = self.service.query(
                     prompt=full_prompt,
                     tool=self.tool,
@@ -188,55 +188,55 @@ Welcome to the LeadSauce AI Assistant! You can:
                     working_dir=self.working_dir
                 )
 
-                # Store in history (store original prompt, not full with context)
-                self.conversation_history.append({
-                    'role': 'user',
-                    'content': prompt,
-                    'timestamp': time.time()
-                })
-                self.conversation_history.append({
-                    'role': 'assistant',
-                    'content': response,
-                    'timestamp': time.time()
-                })
+            # Store in history (store original prompt, not full with context)
+            self.conversation_history.append({
+                'role': 'user',
+                'content': prompt,
+                'timestamp': time.time()
+            })
+            self.conversation_history.append({
+                'role': 'assistant',
+                'content': response,
+                'timestamp': time.time()
+            })
 
-                # Display response
-                self.console.print()
-                self.console.print(Panel(
-                    Markdown(response) if self._is_markdown(response) else Text(response),
-                    title=f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']}[/bold cyan]",
-                    border_style="cyan",
-                    padding=(1, 2)
-                ))
+            # Display response (outside status context)
+            self.console.print()
+            self.console.print(Panel(
+                Markdown(response) if self._is_markdown(response) else Text(response),
+                title=f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']}[/bold cyan]",
+                border_style="cyan",
+                padding=(1, 2)
+            ))
 
-                # If system-aware mode, check for and execute commands
-                if self.system_aware:
-                    self._execute_commands_from_response(response)
+            # If system-aware mode, check for and execute commands (outside status context)
+            if self.system_aware:
+                self._execute_commands_from_response(response)
 
-            except ToolNotInstalledError as e:
-                self.console.print(Panel(
-                    f"[red]{str(e)}[/red]",
-                    title="Tool Not Installed",
-                    border_style="red"
-                ))
+        except ToolNotInstalledError as e:
+            self.console.print(Panel(
+                f"[red]{str(e)}[/red]",
+                title="Tool Not Installed",
+                border_style="red"
+            ))
 
-            except ToolTimeoutError as e:
-                self.console.print(Panel(
-                    f"[yellow]{str(e)}[/yellow]\n\n"
-                    "This usually happens with complex queries. Try:\n"
-                    "• Breaking your question into smaller parts\n"
-                    "• Being more specific\n"
-                    "• Reducing the amount of context",
-                    title="Timeout",
-                    border_style="yellow"
-                ))
+        except ToolTimeoutError as e:
+            self.console.print(Panel(
+                f"[yellow]{str(e)}[/yellow]\n\n"
+                "This usually happens with complex queries. Try:\n"
+                "• Breaking your question into smaller parts\n"
+                "• Being more specific\n"
+                "• Reducing the amount of context",
+                title="Timeout",
+                border_style="yellow"
+            ))
 
-            except AICLIError as e:
-                self.console.print(Panel(
-                    f"[red]{str(e)}[/red]",
-                    title="AI Error",
-                    border_style="red"
-                ))
+        except AICLIError as e:
+            self.console.print(Panel(
+                f"[red]{str(e)}[/red]",
+                title="AI Error",
+                border_style="red"
+            ))
 
     def _execute_commands_from_response(self, response: str):
         """Extract and execute commands from AI response

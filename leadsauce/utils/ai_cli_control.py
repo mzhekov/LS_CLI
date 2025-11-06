@@ -263,34 +263,35 @@ You respond with:
         Args:
             prompt: Full prompt with context and user command
         """
-        with self.console.status(
-            f"[bold cyan]{self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
-            spinner="dots"
-        ):
-            try:
+        try:
+            # Query AI with status display
+            with self.console.status(
+                f"[bold cyan]{self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
+                spinner="dots"
+            ):
                 response = self.service.query(
                     prompt=prompt,
                     tool=self.tool,
                     working_dir=self.working_dir
                 )
 
-                # Display AI response
-                self.console.print()
-                self.console.print(Panel(
-                    Markdown(response) if '```' in response else Text(response),
-                    title=f"[bold cyan]🤖 AI Response[/bold cyan]",
-                    border_style="cyan"
-                ))
+            # Display AI response (outside status context)
+            self.console.print()
+            self.console.print(Panel(
+                Markdown(response) if '```' in response else Text(response),
+                title=f"[bold cyan]🤖 AI Response[/bold cyan]",
+                border_style="cyan"
+            ))
 
-                # Extract and execute commands
-                self._execute_commands_from_response(response)
+            # Extract and execute commands (outside status context)
+            self._execute_commands_from_response(response)
 
-            except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
-                self.console.print(Panel(
-                    f"[red]{str(e)}[/red]",
-                    title="Error",
-                    border_style="red"
-                ))
+        except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
+            self.console.print(Panel(
+                f"[red]{str(e)}[/red]",
+                title="Error",
+                border_style="red"
+            ))
 
     def _execute_commands_from_response(self, response: str):
         """Extract and execute commands from AI response
