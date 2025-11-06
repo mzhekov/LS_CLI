@@ -428,11 +428,12 @@ def fetch_webpage_as_text(url: str) -> Optional[str]:
             if idx >= 52:
                 break
 
-            # Add shortcut after link text in HTML
-            # Create a text node with the shortcut
-            from bs4 import NavigableString
-            shortcut_text = NavigableString(f" [{letter}]")
-            a_tag.insert_after(shortcut_text)
+            # Get current link text and append shortcut to it
+            link_text = a_tag.get_text()
+            # Clear the tag's contents
+            a_tag.clear()
+            # Set new text with shortcut inside the <a> tag
+            a_tag.string = f"{link_text} [{letter}]"
 
         # Save modified HTML to temp file
         modified_html = str(soup)
