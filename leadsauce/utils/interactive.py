@@ -230,14 +230,14 @@ def render_top_bar(current_view="Dashboard"):
 
     # Check for browser session and add indicator
     browser_session = get_browser_session()
-    subtitle = "[dim]Press number keys to navigate[/]"
+    subtitle = "[dim]Press number keys to navigate │ [cyan]Ctrl+K[/cyan] Quick Claude Command[/]"
 
     if browser_session.has_active_tmux_window():
         info = browser_session.get_info()
-        subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (tmux)[/]"
+        subtitle = f"[dim]Press number keys to navigate │ [cyan]Ctrl+K[/cyan] Claude[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (tmux)[/]"
     elif browser_session.has_recent_session():
         info = browser_session.get_info()
-        subtitle = f"[dim]Press number keys to navigate[/] │ [bold cyan]🌐 Last:[/] [green]{info['browser']}[/]"
+        subtitle = f"[dim]Press number keys to navigate │ [cyan]Ctrl+K[/cyan] Claude[/] │ [bold cyan]🌐 Last:[/] [green]{info['browser']}[/]"
 
     return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
@@ -397,6 +397,10 @@ def show_dashboard_view():
         # Show top navigation bar
         console.print(render_top_bar("Dashboard"))
         console.print()
+
+        # Check for Claude assistant notifications
+        from leadsauce.utils.claude_assistant import check_claude_notifications
+        check_claude_notifications()
 
         # Action shortcuts top bar - Tasks
         tasks_actions = Text()
@@ -875,8 +879,29 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9/0 for navigation, Enter to continue):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9/0 for navigation, [cyan]Ctrl+K[/cyan] Claude, [cyan]Ctrl+R[/cyan] Results):[/]")
         action = get_single_key()
+
+        # Handle Ctrl+K - Quick Claude Command
+        if action == '\x0b':  # Ctrl+K
+            from leadsauce.utils.claude_assistant import get_claude_assistant
+            assistant = get_claude_assistant()
+            # Pass current context
+            context = {
+                'view': 'Dashboard',
+                'working_dir': str(Path.cwd()),
+                'database': str(Path.cwd() / 'leadsauce.db')
+            }
+            assistant.show_quick_command_palette(context)
+            continue
+
+        # Handle Ctrl+R - View Claude Results
+        if action == '\x12':  # Ctrl+R
+            from leadsauce.utils.claude_assistant import get_claude_assistant
+            assistant = get_claude_assistant()
+            assistant.show_results()
+            questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+            continue
 
         # Handle double backspace quit
         if action == 'DOUBLE_BACKSPACE_QUIT':

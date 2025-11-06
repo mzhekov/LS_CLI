@@ -165,11 +165,11 @@ Welcome to the LeadSauce AI Assistant! You can:
                     shortcuts = (
                         "[bold cyan]Quick Actions:[/]\n"
                         "[cyan]1-9/0[/] Jump to menu  │  "
+                        "[cyan]Ctrl+K[/] Delegate to Claude Code  │  "
+                        "[cyan]Ctrl+R[/] View Results  │  "
                         "[cyan]?[/] Help  │  "
                         "[cyan]q[/] Quit  │  "
-                        "[cyan]Enter[/] Ask AI  │  "
-                        "[cyan]/menu[/] Menu dialog  │  "
-                        "[cyan]/help[/] All commands"
+                        "[cyan]Enter[/] Ask AI"
                     )
                     self.console.print(shortcuts)
                     self.console.print()
@@ -197,6 +197,27 @@ Welcome to the LeadSauce AI Assistant! You can:
                     if key in nav_map:
                         self.console.print(f"[dim]Switching to {nav_map[key]}...[/]")
                         return nav_map[key]
+
+                    # Handle Ctrl+K - Quick Claude Code Command
+                    if key == '\x0b':  # Ctrl+K
+                        from leadsauce.utils.claude_assistant import get_claude_assistant
+                        assistant = get_claude_assistant()
+                        context = {
+                            'view': 'AI Assistant',
+                            'tool': self.tool,
+                            'working_dir': str(self.working_dir),
+                            'conversation_messages': len(self.conversation_history)
+                        }
+                        assistant.show_quick_command_palette(context)
+                        continue
+
+                    # Handle Ctrl+R - View Claude Code Results
+                    if key == '\x12':  # Ctrl+R
+                        from leadsauce.utils.claude_assistant import get_claude_assistant
+                        assistant = get_claude_assistant()
+                        assistant.show_results()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+                        continue
 
                     # Handle help
                     if key == '?':
