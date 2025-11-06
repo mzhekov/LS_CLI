@@ -5779,7 +5779,8 @@ def integrated_web_viewer():
     # Restore previous state if available
     if browser_session.has_viewer_state():
         current_url = browser_session.viewer_url
-        page_content = browser_session.viewer_content
+        # Don't restore page_content - always fetch fresh to get Quick Links
+        page_content = None
         scroll_position = browser_session.viewer_scroll_position
     else:
         current_url = "https://duckduckgo.com"
