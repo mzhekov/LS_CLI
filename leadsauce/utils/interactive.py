@@ -476,9 +476,8 @@ def show_dashboard_view():
         if profile_filter_company:
             profiles_query = profiles_query.filter(Profile.company_id == profile_filter_company)
 
-        # Adjust limits based on terminal height
-        profile_limit = max(5, min(15, (term_height - 20) // 2))  # Dynamic based on screen
-        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(profile_limit).all()
+        # Limit recent profiles to 7
+        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(7).all()
 
         # Create statistics panel
         stats_table = Table(show_header=False, box=None, padding=(0, 2))
