@@ -1586,6 +1586,10 @@ def profiles_menu():
     """Show profiles list with action shortcuts in top bar"""
     session = get_session()
 
+    # Pagination state
+    current_page = 0
+    items_per_page = 20
+
     while True:
         console.clear()
 
@@ -1603,6 +1607,10 @@ def profiles_menu():
         actions_text.append(" • ", style="dim")
         actions_text.append("[s] Search", style="cyan")
         actions_text.append(" • ", style="dim")
+        actions_text.append("[n] Next Page", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[p] Prev Page", style="blue")
+        actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="blue")
         actions_text.append(" • ", style="dim")
         actions_text.append("[Enter] Back", style="dim white")
@@ -1615,8 +1623,14 @@ def profiles_menu():
         ))
         console.print()
 
-        # Get profiles
-        profiles = session.query(Profile).order_by(Profile.name).all()
+        # Get total count and paginated profiles
+        total_profiles = session.query(Profile).count()
+        total_pages = (total_profiles + items_per_page - 1) // items_per_page if total_profiles > 0 else 1
+
+        # Ensure current_page is within bounds
+        current_page = max(0, min(current_page, total_pages - 1))
+
+        profiles = session.query(Profile).order_by(Profile.name).offset(current_page * items_per_page).limit(items_per_page).all()
 
         if profiles:
             # Display profiles list with all information
@@ -1683,7 +1697,7 @@ def profiles_menu():
                 )
 
             console.print(table)
-            console.print(f"\n[dim]{len(profiles)} profile(s) total[/]")
+            console.print(f"\n[dim]Showing {len(profiles)} of {total_profiles} profile(s) | Page {current_page + 1} of {total_pages}[/]")
         else:
             console.print(Panel(
                 "[yellow]No profiles yet. Press 'a' to add your first contact![/]",
@@ -1716,6 +1730,18 @@ def profiles_menu():
         # Empty input (Enter) = back to dashboard
         if action == '\r' or action == '\n':
             break
+
+        # Pagination controls
+        if action.lower() == 'n':
+            # Next page
+            if current_page < total_pages - 1:
+                current_page += 1
+            continue
+        elif action.lower() == 'p':
+            # Previous page
+            if current_page > 0:
+                current_page -= 1
+            continue
 
         if action.lower() == 'a':
             add_profile_interactive()
@@ -1799,6 +1825,10 @@ def companies_menu():
     """Show companies list with action shortcuts in top bar"""
     session = get_session()
 
+    # Pagination state
+    current_page = 0
+    items_per_page = 20
+
     while True:
         console.clear()
 
@@ -1814,6 +1844,10 @@ def companies_menu():
         actions_text.append(" • ", style="dim")
         actions_text.append("[d] Delete", style="red")
         actions_text.append(" • ", style="dim")
+        actions_text.append("[n] Next Page", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[p] Prev Page", style="blue")
+        actions_text.append(" • ", style="dim")
         actions_text.append("[r] Refresh", style="cyan")
         actions_text.append(" • ", style="dim")
         actions_text.append("[Enter] Back", style="dim white")
@@ -1826,8 +1860,14 @@ def companies_menu():
         ))
         console.print()
 
-        # Get companies
-        companies = session.query(Company).order_by(Company.name).all()
+        # Get total count and paginated companies
+        total_companies = session.query(Company).count()
+        total_pages = (total_companies + items_per_page - 1) // items_per_page if total_companies > 0 else 1
+
+        # Ensure current_page is within bounds
+        current_page = max(0, min(current_page, total_pages - 1))
+
+        companies = session.query(Company).order_by(Company.name).offset(current_page * items_per_page).limit(items_per_page).all()
 
         if companies:
             # Display companies list with all information
@@ -1876,7 +1916,7 @@ def companies_menu():
                 )
 
             console.print(table)
-            console.print(f"\n[dim]{len(companies)} company(ies) total[/]")
+            console.print(f"\n[dim]Showing {len(companies)} of {total_companies} company(ies) | Page {current_page + 1} of {total_pages}[/]")
         else:
             console.print(Panel(
                 "[yellow]No companies yet. Press 'a' to add one![/]",
@@ -1909,6 +1949,18 @@ def companies_menu():
         # Empty input (Enter) = back to dashboard
         if action == '\r' or action == '\n':
             break
+
+        # Pagination controls
+        if action.lower() == 'n':
+            # Next page
+            if current_page < total_pages - 1:
+                current_page += 1
+            continue
+        elif action.lower() == 'p':
+            # Previous page
+            if current_page > 0:
+                current_page -= 1
+            continue
 
         if action.lower() == 'a':
             add_company_interactive()
