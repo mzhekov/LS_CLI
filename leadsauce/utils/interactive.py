@@ -7,6 +7,7 @@ import sys
 import tty
 import termios
 import questionary
+from pathlib import Path
 from questionary import Style
 from rich.console import Console, Group
 from rich.table import Table
