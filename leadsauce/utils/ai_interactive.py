@@ -74,6 +74,12 @@ Welcome to the LeadSauce AI Assistant! You can:
 • **Debug issues** and get suggestions
 • **Analyze** your database schema
 {system_mode_text}
+**Quick Navigation:**
+- Press `1`-`9` or `0` for instant menu switching
+  - [1] Dashboard  [2] Profiles  [3] Companies  [4] Network & Relationships
+  - [5] Search  [6] Tags  [7] Workshop  [8] Import/Export
+  - [9] AI CLI Control  [0] Browser
+
 **Commands:**
 - Type your question or prompt and press Enter
 - Type `/help` for all commands
@@ -134,6 +140,24 @@ Welcome to the LeadSauce AI Assistant! You can:
 
                     if not user_input:
                         continue
+
+                    # Check for single-key menu navigation (1-9, 0)
+                    if len(user_input) == 1 and user_input in '1234567890':
+                        nav_map = {
+                            '1': 'Dashboard',
+                            '2': 'Profiles',
+                            '3': 'Companies',
+                            '4': 'Network & Relationships',
+                            '5': 'Search',
+                            '6': 'Tags',
+                            '7': 'Workshop',
+                            '8': 'Import/Export',
+                            '9': 'AI CLI Control',
+                            '0': 'Browser',
+                        }
+                        if user_input in nav_map:
+                            self.console.print(f"[dim]Switching to {nav_map[user_input]}...[/dim]")
+                            return nav_map[user_input]
 
                     # Check for /bg prefix to run in background
                     run_in_bg = False
@@ -386,7 +410,7 @@ Welcome to the LeadSauce AI Assistant! You can:
 
     def _show_help(self):
         """Display help information"""
-        help_table = Table(title="Browser Commands", show_header=True, header_style="bold cyan")
+        help_table = Table(title="AI Assistant Commands", show_header=True, header_style="bold cyan")
         help_table.add_column("Command", style="cyan", width=20)
         help_table.add_column("Description", style="white")
 
@@ -400,8 +424,9 @@ Welcome to the LeadSauce AI Assistant! You can:
             ("/tasks", "Show running background tasks"),
             ("/results", "View completed task results"),
             ("/menu", "Switch to another main menu"),
-            ("/exit, /quit, /q", "Exit browser"),
+            ("/exit, /quit, /q", "Exit AI Assistant"),
             ("", ""),
+            ("1-9, 0", "Quick menu navigation (instant switch)"),
             ("Ctrl+C while waiting", "Send current query to background"),
         ]
 
