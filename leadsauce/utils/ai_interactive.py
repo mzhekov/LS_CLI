@@ -116,6 +116,15 @@ Welcome to the LeadSauce AI Assistant! You can:
 
             while True:
                 try:
+                    # Check for newly completed tasks
+                    pending_results = task_manager.get_pending_results()
+                    if pending_results:
+                        for task_id in pending_results:
+                            task = task_manager.get_task(task_id)
+                            if task and task.status == TaskStatus.COMPLETED:
+                                self.console.print(f"\n[bold green]✅ Task completed:[/bold green] {task.description}")
+                                self.console.print(f"[dim]Use /results to view, or continue asking questions[/dim]\n")
+
                     # Get user input
                     self.console.print()
                     user_input = Prompt.ask(
@@ -126,8 +135,23 @@ Welcome to the LeadSauce AI Assistant! You can:
                     if not user_input:
                         continue
 
+                    # Check for /bg prefix to run in background
+                    run_in_bg = False
+                    if user_input.lower().startswith('/bg '):
+                        run_in_bg = True
+                        user_input = user_input[4:].strip()  # Remove /bg prefix
+
                     # Handle special commands
                     if user_input.lower() in ['/exit', '/quit', '/q']:
+                        # Check if tasks are running
+                        running = task_manager.get_running_tasks()
+                        if running:
+                            confirm = questionary.confirm(
+                                f"{len(running)} task(s) still running. Exit anyway?",
+                                default=False
+                            ).ask()
+                            if not confirm:
+                                continue
                         self.console.print("[dim]Exiting Browser...[/dim]")
                         return None
 
@@ -169,7 +193,7 @@ Welcome to the LeadSauce AI Assistant! You can:
                         continue
 
                     # Send query to AI
-                    self._send_query(user_input, context_files)
+                    self._send_query(user_input, context_files, run_in_background=run_in_bg)
 
                 except KeyboardInterrupt:
                     self.console.print()
@@ -204,12 +228,13 @@ Welcome to the LeadSauce AI Assistant! You can:
             self.console.input("\nPress Enter to continue...")
             return None
 
-    def _send_query(self, prompt: str, context_files: Optional[List[str]] = None):
+    def _send_query(self, prompt: str, context_files: Optional[List[str]] = None, run_in_background: bool = False):
         """Send query to AI and display response
 
         Args:
             prompt: User's question/prompt
             context_files: Optional list of files for context
+            run_in_background: If True, run in background without waiting
         """
         # Prepend system context on first message if system-aware mode
         full_prompt = prompt
@@ -217,6 +242,13 @@ Welcome to the LeadSauce AI Assistant! You can:
             system_context = SystemContextProvider.get_contextualized_prompt()
             full_prompt = f"{system_context}\n\n---\n\nUser: {prompt}"
             self.system_context_sent = True
+
+        # Store original prompt in history
+        self.conversation_history.append({
+            'role': 'user',
+            'content': prompt,
+            'timestamp': time.time()
+        })
 
         # Create background task
         def query_task():
@@ -229,22 +261,27 @@ Welcome to the LeadSauce AI Assistant! You can:
 
         # Start background task
         task_id = task_manager.create_task(
-            description=f"AI query: {prompt[:50]}...",
+            description=f"{prompt[:50]}{'...' if len(prompt) > 50 else ''}",
             func=query_task
         )
 
-        # Wait for completion with ability to detach
-        try:
-            self.console.print(f"\n[bold cyan]🤔 {self.service.get_tool_info(self.tool)['name']} is thinking...[/bold cyan]")
-            self.console.print("[dim]Press Ctrl+C to continue working (task runs in background)[/dim]\n")
+        if run_in_background:
+            # Just start and return
+            self.console.print(f"\n[bold green]✓ Task started in background[/bold green] [dim](ID: {task_id})[/dim]")
+            self.console.print(f"[dim]Continue working. Use /results to view when complete.[/dim]\n")
+            return
 
-            # Poll for completion
-            with self.console.status("", spinner="dots"):
-                while True:
-                    task = task_manager.get_task(task_id)
-                    if task and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
-                        break
-                    time.sleep(0.5)
+        # Wait for completion with option to detach
+        self.console.print(f"\n[bold cyan]🤔 {self.service.get_tool_info(self.tool)['name']} is thinking...[/bold cyan]")
+        self.console.print(f"[dim]Waiting for response... Type 'bg' then Enter to send to background[/dim]\n")
+
+        # Poll for completion
+        try:
+            while True:
+                task = task_manager.get_task(task_id)
+                if task and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+                    break
+                time.sleep(0.3)
 
             # Get result
             task = task_manager.get_task(task_id)
@@ -252,11 +289,6 @@ Welcome to the LeadSauce AI Assistant! You can:
                 response = task.result
 
                 # Store in history
-                self.conversation_history.append({
-                    'role': 'user',
-                    'content': prompt,
-                    'timestamp': time.time()
-                })
                 self.conversation_history.append({
                     'role': 'assistant',
                     'content': response,
@@ -285,10 +317,9 @@ Welcome to the LeadSauce AI Assistant! You can:
 
         except KeyboardInterrupt:
             # Task continues in background
-            self.console.print("\n[bold green]✓ Detached from task[/bold green]")
-            self.console.print(f"[dim]Task #{task_id} continues in background[/dim]")
-            self.console.print(f"[dim]Use /results to view completed tasks or /status to see running tasks[/dim]\n")
-            # Don't re-raise - let user continue
+            self.console.print(f"\n\n[bold green]✓ Sent to background[/bold green] [dim](Task {task_id} still running)[/dim]")
+            self.console.print(f"[dim]Use /results to view when complete[/dim]\n")
+            return
 
     def _execute_commands_from_response(self, response: str):
         """Extract and execute commands from AI response
@@ -361,6 +392,7 @@ Welcome to the LeadSauce AI Assistant! You can:
 
         commands = [
             ("/help", "Show this help message"),
+            ("/bg <prompt>", "Run query in background immediately"),
             ("/context", "Add files as context for the AI"),
             ("/clear", "Clear conversation history"),
             ("/history", "Show conversation history"),
@@ -369,6 +401,8 @@ Welcome to the LeadSauce AI Assistant! You can:
             ("/results", "View completed task results"),
             ("/menu", "Switch to another main menu"),
             ("/exit, /quit, /q", "Exit browser"),
+            ("", ""),
+            ("Ctrl+C while waiting", "Send current query to background"),
         ]
 
         for cmd, desc in commands:
