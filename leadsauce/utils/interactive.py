@@ -5858,16 +5858,12 @@ def integrated_web_viewer():
                 else:
                     return
 
-            # Fetch links from the page HTML
+            # Fetch links from the page HTML and label them inline
             from leadsauce.utils.helpers import fetch_webpage_links
             extracted_links = fetch_webpage_links(current_url)
 
-            # Append links section to content if links were found
+            # Add letter shortcuts inline in the content where link text appears
             if extracted_links:
-                page_content += "\n\n" + "="*50 + "\n"
-                page_content += "[bold cyan]🔗 Links on this page:[/]\n"
-                page_content += "="*50 + "\n\n"
-
                 for idx, (link_text, link_url) in enumerate(extracted_links):
                     # Generate letter label (a, b, c, ..., z, aa, ab, ...)
                     if idx < 26:
@@ -5877,14 +5873,16 @@ def integrated_web_viewer():
                         second = chr(ord('a') + (idx % 26))
                         letter = first + second
 
-                    # Only show first 52 links
+                    # Only label first 52 links
                     if idx >= 52:
-                        remaining = len(extracted_links) - 52
-                        page_content += f"\n[dim]... and {remaining} more links (press 'l' to view all)[/]"
                         break
 
-                    # Add link with label
-                    page_content += f"[cyan][{letter}][/cyan] {link_text}\n    {link_url}\n\n"
+                    # Find and replace link text with labeled version in content
+                    # Add label after the link text
+                    if link_text and link_text != '[No text]' and link_text in page_content:
+                        labeled_text = f"{link_text} [{letter}]"
+                        # Replace only the first occurrence to avoid duplicates
+                        page_content = page_content.replace(link_text, labeled_text, 1)
 
         # Display page content in scrollable area with pagination
         if page_content:
