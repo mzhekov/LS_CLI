@@ -2468,27 +2468,15 @@ def network_and_relationships_menu():
                 connected_profile_ids = set()
                 connected_company_ids = set()
 
-                # Add profiles with relationships to other profiles
+                # ONLY add profiles with explicit profile-to-profile relationships
                 for rel in profile_relationships:
                     connected_profile_ids.add(rel.from_profile_id)
                     connected_profile_ids.add(rel.to_profile_id)
 
-                # Add companies with relationships to other companies
+                # ONLY add companies with explicit company-to-company relationships
                 for rel in company_relationships:
                     connected_company_ids.add(rel.from_company_id)
                     connected_company_ids.add(rel.to_company_id)
-
-                # Add profiles that work at companies (if company has relationships or employees with relationships)
-                for profile in profiles:
-                    if profile.company_id:
-                        # Check if this profile has relationships
-                        if profile.id in connected_profile_ids:
-                            connected_company_ids.add(profile.company_id)
-
-                # Also add companies that have employees with relationships
-                for profile in profiles:
-                    if profile.id in connected_profile_ids and profile.company_id:
-                        connected_company_ids.add(profile.company_id)
 
                 # Filter profiles and companies to only connected ones
                 filtered_profiles = [p for p in profiles if p.id in connected_profile_ids]
