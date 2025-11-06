@@ -318,8 +318,7 @@ def interactive_main_menu():
                 current_view = "Dashboard"
             continue
         elif current_view == "Browser":
-            ai_menu = AIAssistantMenu()
-            new_view = ai_menu.show()
+            new_view = browser_menu()
             if new_view:
                 current_view = new_view
             else:

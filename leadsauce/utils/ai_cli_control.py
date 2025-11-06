@@ -298,7 +298,6 @@ You respond with:
         """
         try:
             # Query AI with status display
-            self.console.print(f"\n[bold yellow]⚡ TIP: Press Ctrl+C anytime to cancel and switch menus[/bold yellow]\n")
             with self.console.status(
                 f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
                 spinner="dots"
@@ -321,11 +320,7 @@ You respond with:
             self._execute_commands_from_response(response)
 
         except KeyboardInterrupt:
-            self.console.print("\n[bold green]✓ Operation cancelled[/bold green]")
-            self.console.print("[bold]You can now:[/bold]")
-            self.console.print("  • Type another command")
-            self.console.print("  • Type [cyan]/menu[/cyan] to switch to another section")
-            self.console.print("  • Type [cyan]/exit[/cyan] to return to dashboard\n")
+            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
             raise  # Re-raise to be caught by outer handler
 
         except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
@@ -566,12 +561,11 @@ class AICLIControlMenu:
 
             # Header
             self.console.print(Panel(
-                "[bold cyan]🎮 AI CLI Control[/bold cyan]\n\n"
-                "Give AI **direct control** over your LeadSauce system.\n"
-                "AI can autonomously execute operations to fulfill your requests.\n\n"
-                "[yellow]⚠️  This is different from AI Assistant:[/yellow]\n"
-                "• AI Assistant (0): Conversational help and advice\n"
-                "• AI CLI Control (9): Direct system control and automation",
+                "[bold cyan]🎮 AI Features[/bold cyan]\n\n"
+                "Access AI capabilities for your LeadSauce system:\n\n"
+                "• [bold]AI CLI Control:[/bold] Direct system control and automation\n"
+                "• [bold]AI Assistant:[/bold] Conversational help and advice\n"
+                "• [bold]Native Claude Code:[/bold] Full development features",
                 border_style="cyan"
             ))
             self.console.print()
@@ -606,6 +600,7 @@ class AICLIControlMenu:
                     choices.append(f"🤖 Start Control Session with {tool['name']}")
 
             choices.extend([
+                "💬 AI Assistant (Conversational Mode)",
                 "📊 View AI Tools Status",
                 "ℹ️  About AI CLI Control",
                 "← Back to Main Menu"
@@ -653,6 +648,13 @@ class AICLIControlMenu:
                     menu_choice = session.run()
                     if menu_choice:
                         return menu_choice
+
+            elif "AI Assistant" in choice:
+                from leadsauce.utils.ai_interactive import AIAssistantMenu
+                ai_menu = AIAssistantMenu()
+                menu_choice = ai_menu.show()
+                if menu_choice:
+                    return menu_choice
 
             elif "View AI Tools Status" in choice:
                 self._show_status()

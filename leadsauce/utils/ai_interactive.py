@@ -210,7 +210,6 @@ Welcome to the LeadSauce AI Assistant! You can:
 
         # Show loading indicator
         try:
-            self.console.print(f"\n[bold yellow]⚡ TIP: Press Ctrl+C anytime to cancel and switch menus[/bold yellow]\n")
             with self.console.status(
                 f"[bold cyan]🤔 Asking {self.service.get_tool_info(self.tool)['name']}...[/bold cyan]",
                 spinner="dots"
@@ -273,11 +272,7 @@ Welcome to the LeadSauce AI Assistant! You can:
             ))
 
         except KeyboardInterrupt:
-            self.console.print("\n[bold green]✓ Operation cancelled[/bold green]")
-            self.console.print("[bold]You can now:[/bold]")
-            self.console.print("  • Type another question")
-            self.console.print("  • Type [cyan]/menu[/cyan] to switch to another section")
-            self.console.print("  • Type [cyan]/exit[/cyan] to return to dashboard\n")
+            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
             raise  # Re-raise to be caught by outer handler
 
     def _execute_commands_from_response(self, response: str):
