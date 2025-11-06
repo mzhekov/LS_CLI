@@ -99,7 +99,10 @@ def render_top_bar(current_view="Dashboard"):
     browser_session = get_browser_session()
     subtitle = "[dim]Press number keys to navigate[/]"
 
-    if browser_session.has_active_tmux_window():
+    if browser_session.has_active_process():
+        info = browser_session.get_info()
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (background)[/]"
+    elif browser_session.has_active_tmux_window():
         info = browser_session.get_info()
         subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (tmux)[/]"
     elif browser_session.has_recent_session():
@@ -5672,7 +5675,7 @@ def import_menu():
     return None
 
 
-def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmux):
+def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmux, background):
     """Helper function to launch browser with appropriate messages
 
     Args:
@@ -5681,6 +5684,7 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
         url: URL to open
         use_tmux: Whether to use tmux window
         in_tmux: Whether currently in tmux
+        background: Whether to launch in background
     """
     console.clear()
     console.print(render_top_bar("Browser"))
@@ -5709,6 +5713,30 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
         else:
             console.print("[red]Failed to launch browser in tmux window[/]")
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+    elif background:
+        console.print(Panel(
+            f"[bold green]Starting {browser_cmd.upper()} in background...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[bold yellow]Browser running in background![/]\n\n"
+            "[dim]You can now:[/]\n"
+            "  • [green]Navigate all menus freely[/]\n"
+            "  • [green]Press [0] anytime to return to Browser menu[/]\n"
+            "  • [green]Select 'Switch to Browser' to view and interact[/]\n\n"
+            "[bold green]The browser will stay loaded while you work![/]",
+            border_style="green",
+            title="Browser Ready"
+        ))
+        console.print()
+
+        success = browser_session.launch(browser_cmd, url, background=True)
+
+        if success:
+            time.sleep(2)
+        else:
+            console.print("[red]Failed to launch browser in background[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
     else:
         console.print(Panel(
             f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
@@ -5724,7 +5752,7 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
         console.print()
         time.sleep(1.5)
 
-        success = browser_session.launch(browser_cmd, url, use_tmux=False)
+        success = browser_session.launch(browser_cmd, url, use_tmux=False, background=False)
 
         if not success:
             console.clear()
@@ -5777,8 +5805,68 @@ def browser_menu():
             questionary.press_any_key_to_continue("Press any key to return to Dashboard...").ask()
             return "Dashboard"
 
+        # Check if there's an active background browser process
+        if browser_session.has_active_process():
+            info = browser_session.get_info()
+
+            status_text = "suspended" if info['is_suspended'] else "running"
+            console.print(Panel(
+                f"[bold green]Browser Running in Background[/]\n\n"
+                f"[cyan]Browser:[/] {info['browser'].upper()}\n"
+                f"[cyan]URL:[/] {info['url']}\n"
+                f"[cyan]Status:[/] {status_text.title()}\n"
+                f"[cyan]PID:[/] {info.get('pid', 'N/A')}\n\n"
+                "[bold yellow]The browser is loaded and ready![/]\n"
+                "[dim]You can switch to it or continue with menus[/]",
+                border_style="green",
+                title="Browser Active"
+            ))
+            console.print()
+
+            choices = [
+                "🔄 Switch to Browser (View/Interact)",
+                "🌐 Open Another Page",
+                "🗑️  Close & Start New",
+                "← Back to Dashboard"
+            ]
+
+            action = questionary.select(
+                "What would you like to do?",
+                choices=choices,
+                style=custom_style
+            ).ask()
+
+            if not action or action == "← Back to Dashboard":
+                return "Dashboard"
+
+            if action.startswith("🔄"):
+                # Resume browser to foreground
+                console.clear()
+                console.print(render_top_bar("Browser"))
+                console.print()
+                console.print(Panel(
+                    f"[bold green]Switching to {info['browser'].upper()}...[/]\n\n"
+                    "[dim]Browser Controls:[/]\n"
+                    "  • [yellow]q[/] - Quit browser and return to menu\n"
+                    "  • [yellow]h[/] - Help (in most browsers)\n"
+                    "  • [yellow]Arrow keys[/] - Navigate\n"
+                    "  • [yellow]Enter[/] - Follow link\n\n"
+                    "[bold yellow]Note:[/] [dim]When you quit the browser, you'll return to the menu[/]",
+                    border_style="green",
+                    title="Resuming Browser"
+                ))
+                console.print()
+                time.sleep(1)
+
+                browser_session.resume_to_foreground()
+                continue
+
+            elif action.startswith("🗑️"):
+                browser_session.clear()
+                # Continue to browser selection below
+
         # Check if there's an active tmux browser window
-        if browser_session.has_active_tmux_window():
+        elif browser_session.has_active_tmux_window():
             info = browser_session.get_info()
 
             console.print(Panel(
@@ -5850,13 +5938,16 @@ def browser_menu():
                 return "Dashboard"
 
             if action.startswith("🔄"):
-                # Reopen with same browser and URL - ask about tmux
+                # Reopen with same browser and URL - ask about mode
                 use_tmux_window = False
+                use_background = False
+
                 if in_tmux:
                     mode_choice = questionary.select(
                         "How would you like to open the browser?",
                         choices=[
-                            "🪟 In separate tmux window (allows menu navigation)",
+                            "🪟 In separate tmux window (best for multitasking)",
+                            "🔄 In background (allows menu navigation)",
                             "📺 In this window (fullscreen)"
                         ],
                         style=custom_style
@@ -5866,9 +5957,24 @@ def browser_menu():
                         continue
 
                     use_tmux_window = mode_choice.startswith("🪟")
+                    use_background = mode_choice.startswith("🔄")
+                else:
+                    mode_choice = questionary.select(
+                        "How would you like to open the browser?",
+                        choices=[
+                            "🔄 In background (allows menu navigation)",
+                            "📺 In this window (fullscreen)"
+                        ],
+                        style=custom_style
+                    ).ask()
+
+                    if not mode_choice:
+                        continue
+
+                    use_background = mode_choice.startswith("🔄")
 
                 # Launch the browser
-                launch_browser_with_info(browser_session, info['browser'], info['url'], use_tmux_window, in_tmux)
+                launch_browser_with_info(browser_session, info['browser'], info['url'], use_tmux_window, in_tmux, use_background)
                 continue
 
             elif action.startswith("🗑️"):
@@ -5876,15 +5982,10 @@ def browser_menu():
                 # Continue to browser selection below
 
         # Display available browsers
-        tmux_status = ""
-        if in_tmux:
-            tmux_status = "\n[bold green]✓ Tmux detected - you can open browsers in separate windows![/]"
-        elif tmux_available:
-            tmux_status = "\n[yellow]ℹ Start tmux first to enable multi-window browsing[/]"
-
         console.print(Panel(
-            f"[bold cyan]Terminal Web Browser[/]\n\n"
-            f"[dim]Browse the web directly from your terminal.[/]{tmux_status}",
+            "[bold cyan]Terminal Web Browser[/]\n\n"
+            "[dim]Browse the web directly from your terminal.[/]\n"
+            "[green]✓ Background mode available - navigate menus while browsing![/]",
             border_style="cyan",
             title="Web Browser"
         ))
@@ -5955,13 +6056,16 @@ def browser_menu():
             # User cancelled (Ctrl+C)
             continue
 
-        # Ask about tmux mode if available
+        # Ask about launch mode
         use_tmux_window = False
+        use_background = False
+
         if in_tmux:
             mode_choice = questionary.select(
                 "How would you like to open the browser?",
                 choices=[
-                    "🪟 In separate tmux window (allows menu navigation)",
+                    "🪟 In separate tmux window (best for multitasking)",
+                    "🔄 In background (allows menu navigation)",
                     "📺 In this window (fullscreen)"
                 ],
                 style=custom_style
@@ -5971,9 +6075,24 @@ def browser_menu():
                 continue
 
             use_tmux_window = mode_choice.startswith("🪟")
+            use_background = mode_choice.startswith("🔄")
+        else:
+            mode_choice = questionary.select(
+                "How would you like to open the browser?",
+                choices=[
+                    "🔄 In background (allows menu navigation)",
+                    "📺 In this window (fullscreen)"
+                ],
+                style=custom_style
+            ).ask()
+
+            if not mode_choice:
+                continue
+
+            use_background = mode_choice.startswith("🔄")
 
         # Launch the browser
-        launch_browser_with_info(browser_session, browser_cmd, url, use_tmux_window, in_tmux)
+        launch_browser_with_info(browser_session, browser_cmd, url, use_tmux_window, in_tmux, use_background)
 
         # Return to browser menu after launching
         continue

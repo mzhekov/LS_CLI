@@ -388,13 +388,15 @@ def switch_to_tmux_window(window_name: str) -> bool:
 
 
 class BrowserSession:
-    """Manages browser session state and last used configuration"""
+    """Manages background browser process with suspend/resume support"""
 
     def __init__(self):
         self.browser = None
         self.url = None
         self.last_used_time = None
         self.tmux_window = None
+        self.process = None
+        self.is_suspended = False
 
     def has_recent_session(self) -> bool:
         """Check if there's a recent browser session (within last hour)"""
@@ -405,6 +407,19 @@ class BrowserSession:
         # Consider session recent if used within last hour
         return datetime.now() - self.last_used_time < timedelta(hours=1)
 
+    def has_active_process(self) -> bool:
+        """Check if there's an active browser process running"""
+        if not self.process:
+            return False
+
+        # Check if process is still alive
+        if self.process.poll() is not None:
+            # Process has terminated
+            self.cleanup()
+            return False
+
+        return True
+
     def has_active_tmux_window(self) -> bool:
         """Check if there's an active tmux window with browser"""
         if not self.tmux_window:
@@ -413,19 +428,21 @@ class BrowserSession:
         active_windows = get_tmux_browser_windows()
         return self.tmux_window in active_windows
 
-    def launch(self, browser: str, url: str = None, use_tmux: bool = False) -> bool:
-        """Launch browser with direct terminal access or in tmux
+    def launch(self, browser: str, url: str = None, use_tmux: bool = False, background: bool = False) -> bool:
+        """Launch browser with various modes
 
         Args:
             browser: Browser command to run
             url: Optional URL to open
             use_tmux: If True and tmux is available, launch in new tmux window
+            background: If True, launch in background (suspended)
 
         Returns:
             True if browser launched successfully
         """
         import subprocess
         from datetime import datetime
+        import signal
 
         # Try tmux launch if requested and available
         if use_tmux and is_in_tmux():
@@ -436,24 +453,119 @@ class BrowserSession:
                 self.tmux_window = f"browser-{browser}"
                 return True
 
-        # Fallback to regular launch
+        # Prepare command
         cmd = [browser]
         if url and url.strip():
             cmd.append(url.strip())
 
         try:
-            # Launch browser with direct terminal access (no pipe redirects)
-            # This allows the browser to properly interact with the terminal
-            subprocess.run(cmd, check=False)
+            if background:
+                # Launch in background with process control
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
 
-            # Update session info after browser exits
-            self.browser = browser
-            self.url = url if url and url.strip() else "Home page"
-            self.last_used_time = datetime.now()
-            self.tmux_window = None
+                # Suspend the process immediately
+                import time
+                time.sleep(0.5)  # Give it a moment to start
+                try:
+                    self.process.send_signal(signal.SIGSTOP)
+                    self.is_suspended = True
+                except:
+                    pass
+
+                self.browser = browser
+                self.url = url if url and url.strip() else "Home page"
+                self.last_used_time = datetime.now()
+                self.tmux_window = None
+                return True
+            else:
+                # Launch browser in foreground (blocking)
+                subprocess.run(cmd, check=False)
+
+                # Update session info after browser exits
+                self.browser = browser
+                self.url = url if url and url.strip() else "Home page"
+                self.last_used_time = datetime.now()
+                self.tmux_window = None
+                self.process = None
+                self.is_suspended = False
+                return True
+        except Exception:
+            return False
+
+    def resume_to_foreground(self) -> bool:
+        """Resume the suspended browser and bring it to foreground
+
+        Returns:
+            True if successfully resumed
+        """
+        if not self.has_active_process():
+            return False
+
+        import signal
+        import os
+
+        try:
+            # Resume the process
+            if self.is_suspended:
+                self.process.send_signal(signal.SIGCONT)
+                self.is_suspended = False
+
+            # Wait for the process (blocking until it exits or is stopped)
+            returncode = self.process.wait()
+
+            # Process exited
+            self.cleanup()
+            return True
+
+        except Exception:
+            return False
+
+    def suspend(self) -> bool:
+        """Suspend the browser process
+
+        Returns:
+            True if successfully suspended
+        """
+        if not self.has_active_process():
+            return False
+
+        import signal
+
+        try:
+            if not self.is_suspended:
+                self.process.send_signal(signal.SIGSTOP)
+                self.is_suspended = True
             return True
         except Exception:
             return False
+
+    def terminate(self) -> bool:
+        """Terminate the browser process
+
+        Returns:
+            True if successfully terminated
+        """
+        if not self.has_active_process():
+            return False
+
+        try:
+            self.process.terminate()
+            self.process.wait(timeout=3)
+            self.cleanup()
+            return True
+        except:
+            try:
+                self.process.kill()
+                self.cleanup()
+                return True
+            except:
+                return False
 
     def switch_to_browser(self) -> bool:
         """Switch to the tmux window containing the browser
@@ -466,12 +578,21 @@ class BrowserSession:
 
         return switch_to_tmux_window(self.tmux_window)
 
+    def cleanup(self):
+        """Clean up process information"""
+        self.process = None
+        self.is_suspended = False
+
     def clear(self):
-        """Clear session information"""
+        """Clear all session information"""
+        if self.has_active_process():
+            self.terminate()
         self.browser = None
         self.url = None
         self.last_used_time = None
         self.tmux_window = None
+        self.process = None
+        self.is_suspended = False
 
     def get_info(self) -> Dict[str, Any]:
         """Get browser session information
@@ -479,20 +600,24 @@ class BrowserSession:
         Returns:
             Dictionary with browser session info
         """
-        if not self.has_recent_session():
-            return {}
-
         from datetime import datetime
-        time_ago = datetime.now() - self.last_used_time if self.last_used_time else None
 
         info = {
             'browser': self.browser,
             'url': self.url,
             'last_used': self.last_used_time,
-            'time_ago': time_ago,
+            'has_process': self.has_active_process(),
+            'is_suspended': self.is_suspended,
             'in_tmux': self.tmux_window is not None,
             'tmux_active': self.has_active_tmux_window()
         }
+
+        if self.last_used_time:
+            time_ago = datetime.now() - self.last_used_time
+            info['time_ago'] = time_ago
+
+        if self.process:
+            info['pid'] = self.process.pid
 
         return info
 
