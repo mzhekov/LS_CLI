@@ -202,12 +202,15 @@ NAV_ITEMS = [
     ("Workshop", "🔧", "7"),
     ("Export", "📤", "8"),
     ("Import", "📥", "9"),
+    ("Browser", "🌐", "0"),
     ("Exit", "❌", "q")
 ]
 
 
 def render_top_bar(current_view="Dashboard"):
     """Render the interactive top navigation bar with keyboard shortcuts"""
+    from leadsauce.utils.helpers import get_browser_session
+
     nav_text = Text()
 
     for i, (name, icon, key) in enumerate(NAV_ITEMS):
@@ -223,7 +226,14 @@ def render_top_bar(current_view="Dashboard"):
             nav_text.append(f"[{key}]", style="dim yellow")
             nav_text.append(f" {name}", style="white")
 
-    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle="[dim]Press number keys to navigate[/]")
+    # Check for recent browser session and add indicator
+    browser_session = get_browser_session()
+    subtitle = "[dim]Press number keys to navigate[/]"
+    if browser_session.has_recent_session():
+        info = browser_session.get_info()
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold cyan]🌐 Last browser:[/] [green]{info['browser']}[/]"
+
+    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
 
 def interactive_main_menu():
@@ -295,6 +305,13 @@ def interactive_main_menu():
             continue
         elif current_view == "Import":
             new_view = import_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
+        elif current_view == "Browser":
+            new_view = browser_menu()
             if new_view:
                 current_view = new_view
             else:
@@ -7555,3 +7572,207 @@ def import_menu():
 
     session.close()
     return None
+
+
+def browser_menu():
+    """Terminal web browser menu with session memory"""
+    import subprocess
+    import shutil
+    from leadsauce.utils.helpers import get_available_browsers, get_browser_session
+    from rich.text import Text
+
+    browser_session = get_browser_session()
+
+    while True:
+        console.clear()
+        console.print(render_top_bar("Browser"))
+        console.print()
+
+        # Check for available browsers
+        available_browsers = get_available_browsers()
+
+        if not available_browsers:
+            console.print(Panel(
+                "[bold red]No terminal browsers found![/]\n\n"
+                "[yellow]Please install a terminal browser:[/]\n"
+                "  • Ubuntu/Debian: [cyan]sudo apt install w3m lynx links[/]\n"
+                "  • Fedora/RHEL: [cyan]sudo dnf install w3m lynx links[/]\n"
+                "  • Arch Linux: [cyan]sudo pacman -S w3m lynx links[/]\n"
+                "  • macOS: [cyan]brew install w3m lynx links[/]",
+                border_style="red",
+                title="Browser Not Found"
+            ))
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to return to Dashboard...").ask()
+            return "Dashboard"
+
+        # Check if there's a recent browser session
+        if browser_session.has_recent_session():
+            info = browser_session.get_info()
+            minutes_ago = int(info['time_ago'].total_seconds() / 60) if info.get('time_ago') else 0
+
+            console.print(Panel(
+                f"[bold cyan]Recent Browser Session[/]\n\n"
+                f"[cyan]Browser:[/] {info['browser'].upper()}\n"
+                f"[cyan]Last URL:[/] {info['url']}\n"
+                f"[cyan]Used:[/] {minutes_ago} minute{'s' if minutes_ago != 1 else ''} ago",
+                border_style="cyan",
+                title="Continue Browsing?"
+            ))
+            console.print()
+
+            choices = [
+                f"🔄 Reopen {info['browser'].upper()} with same URL",
+                "🌐 Start New Browser Session",
+                "🗑️  Clear History & Start New",
+                "← Back to Dashboard"
+            ]
+
+            action = questionary.select(
+                "What would you like to do?",
+                choices=choices,
+                style=custom_style
+            ).ask()
+
+            if not action or action == "← Back to Dashboard":
+                return "Dashboard"
+
+            if action.startswith("🔄"):
+                # Reopen with same browser and URL
+                console.clear()
+                console.print(render_top_bar("Browser"))
+                console.print()
+                console.print(Panel(
+                    f"[bold green]Launching {info['browser'].upper()}...[/]\n\n"
+                    f"[cyan]URL:[/] {info['url']}\n\n"
+                    "[dim]Browser Controls:[/]\n"
+                    "  • [yellow]q[/] - Quit browser\n"
+                    "  • [yellow]h[/] - Help (in most browsers)\n"
+                    "  • [yellow]Arrow keys[/] - Navigate\n"
+                    "  • [yellow]Enter[/] - Follow link",
+                    border_style="green",
+                    title="Browser Starting"
+                ))
+                console.print()
+                time.sleep(1)
+
+                # Launch the browser with the same settings
+                browser_session.launch(info['browser'], info['url'])
+                continue
+
+            elif action.startswith("🗑️"):
+                browser_session.clear()
+                # Continue to browser selection below
+
+        # Display available browsers
+        console.print(Panel(
+            "[bold cyan]Terminal Web Browser[/]\n\n"
+            "[dim]Browse the web directly from your terminal.[/]",
+            border_style="cyan",
+            title="Web Browser"
+        ))
+        console.print()
+
+        # Show installed browsers
+        browsers_text = Text()
+        browsers_text.append("Installed browsers: ", style="bold")
+        browsers_text.append(", ".join(available_browsers.keys()), style="green")
+        console.print(browsers_text)
+        console.print()
+
+        # Browser selection menu
+        browser_choices = []
+        browser_map = {}
+
+        # Add browser options with descriptions
+        if 'w3m' in available_browsers:
+            desc = "🌟 W3M - Advanced browser with image support (Recommended)"
+            browser_choices.append(desc)
+            browser_map[desc] = 'w3m'
+
+        if 'lynx' in available_browsers:
+            desc = "📄 Lynx - Classic text-only browser"
+            browser_choices.append(desc)
+            browser_map[desc] = 'lynx'
+
+        if 'links' in available_browsers:
+            desc = "🔗 Links - Fast text/graphical browser"
+            browser_choices.append(desc)
+            browser_map[desc] = 'links'
+
+        if 'elinks' in available_browsers:
+            desc = "⚡ ELinks - Extended Links with more features"
+            browser_choices.append(desc)
+            browser_map[desc] = 'elinks'
+
+        browser_choices.append("← Back to Dashboard")
+
+        action = questionary.select(
+            "Select a browser:",
+            choices=browser_choices,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Dashboard":
+            return "Dashboard"
+
+        # Get selected browser command
+        browser_cmd = browser_map[action]
+
+        # Get URL from user with helpful suggestions
+        console.print()
+        console.print("[dim]Popular starting points:[/]")
+        console.print("  • [cyan]https://duckduckgo.com[/] - Privacy-focused search")
+        console.print("  • [cyan]https://www.linkedin.com[/] - Professional networking")
+        console.print("  • [cyan]https://www.google.com[/] - Google search")
+        console.print("  • [cyan]Or leave blank to start browser without URL[/]")
+        console.print()
+
+        url = questionary.text(
+            "Enter URL:",
+            style=custom_style,
+            default="https://duckduckgo.com"
+        ).ask()
+
+        if url is None:
+            # User cancelled (Ctrl+C)
+            continue
+
+        # Launch browser with direct terminal access
+        console.clear()
+        console.print(render_top_bar("Browser"))
+        console.print()
+        console.print(Panel(
+            f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
+            f"[cyan]URL:[/] {url if url.strip() else 'Home page'}\n\n"
+            "[dim]Browser Controls:[/]\n"
+            "  • [yellow]q[/] - Quit browser\n"
+            "  • [yellow]h[/] - Help (in most browsers)\n"
+            "  • [yellow]Arrow keys[/] - Navigate\n"
+            "  • [yellow]Enter[/] - Follow link",
+            border_style="green",
+            title="Browser Starting"
+        ))
+        console.print()
+
+        # Small delay to let user read the instructions
+        time.sleep(1.5)
+
+        # Launch the browser (will block until browser exits)
+        success = browser_session.launch(browser_cmd, url)
+
+        if not success:
+            console.clear()
+            console.print(render_top_bar("Browser"))
+            console.print()
+            console.print(Panel(
+                "[bold red]Error launching browser![/]\n\n"
+                "The browser failed to start. Please check that it's properly installed.",
+                border_style="red",
+                title="Browser Error"
+            ))
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        # Return to browser menu after exiting browser
+        continue

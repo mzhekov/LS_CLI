@@ -224,3 +224,155 @@ def set_nested(d: Dict, *keys, value):
     for key in keys[:-1]:
         d = d.setdefault(key, {})
     d[keys[-1]] = value
+
+
+def get_available_browsers() -> Dict[str, Optional[str]]:
+    """Detect installed terminal browsers
+
+    Returns:
+        Dictionary mapping browser names to their paths (or None if not found)
+    """
+    import shutil
+
+    browsers = {
+        'w3m': shutil.which('w3m'),
+        'lynx': shutil.which('lynx'),
+        'links': shutil.which('links') or shutil.which('links2'),
+        'elinks': shutil.which('elinks')
+    }
+    return {k: v for k, v in browsers.items() if v}
+
+
+def get_preferred_browser() -> Optional[str]:
+    """Get preferred browser from environment or auto-detect
+
+    Returns:
+        Browser command name or None if no browser found
+    """
+    import shutil
+
+    # Check environment variable first
+    env_browser = os.getenv('BROWSER')
+    if env_browser and shutil.which(env_browser):
+        return env_browser
+
+    # Default priority: w3m > lynx > links > elinks
+    for browser in ['w3m', 'lynx', 'links', 'elinks']:
+        if shutil.which(browser):
+            return browser
+
+    return None
+
+
+def launch_browser(url: Optional[str] = None, browser: Optional[str] = None) -> bool:
+    """Launch terminal browser with optional URL
+
+    Args:
+        url: Optional URL to open
+        browser: Optional browser command (auto-detected if None)
+
+    Returns:
+        True if browser launched successfully, False otherwise
+    """
+    import subprocess
+
+    if browser is None:
+        browser = get_preferred_browser()
+
+    if not browser:
+        return False
+
+    try:
+        cmd = [browser]
+        if url:
+            cmd.append(url)
+
+        subprocess.run(cmd, check=False)
+        return True
+    except Exception:
+        return False
+
+
+class BrowserSession:
+    """Manages browser session state and last used configuration"""
+
+    def __init__(self):
+        self.browser = None
+        self.url = None
+        self.last_used_time = None
+
+    def has_recent_session(self) -> bool:
+        """Check if there's a recent browser session (within last hour)"""
+        if self.browser is None or self.last_used_time is None:
+            return False
+
+        from datetime import datetime, timedelta
+        # Consider session recent if used within last hour
+        return datetime.now() - self.last_used_time < timedelta(hours=1)
+
+    def launch(self, browser: str, url: str = None) -> bool:
+        """Launch browser with direct terminal access
+
+        Args:
+            browser: Browser command to run
+            url: Optional URL to open
+
+        Returns:
+            True if browser launched successfully
+        """
+        import subprocess
+        from datetime import datetime
+
+        cmd = [browser]
+        if url and url.strip():
+            cmd.append(url.strip())
+
+        try:
+            # Launch browser with direct terminal access (no pipe redirects)
+            # This allows the browser to properly interact with the terminal
+            subprocess.run(cmd, check=False)
+
+            # Update session info after browser exits
+            self.browser = browser
+            self.url = url if url and url.strip() else "Home page"
+            self.last_used_time = datetime.now()
+            return True
+        except Exception:
+            return False
+
+    def clear(self):
+        """Clear session information"""
+        self.browser = None
+        self.url = None
+        self.last_used_time = None
+
+    def get_info(self) -> Dict[str, Any]:
+        """Get browser session information
+
+        Returns:
+            Dictionary with browser session info
+        """
+        if not self.has_recent_session():
+            return {}
+
+        from datetime import datetime
+        time_ago = datetime.now() - self.last_used_time if self.last_used_time else None
+
+        return {
+            'browser': self.browser,
+            'url': self.url,
+            'last_used': self.last_used_time,
+            'time_ago': time_ago
+        }
+
+
+# Global browser session instance
+_browser_session = None
+
+
+def get_browser_session() -> BrowserSession:
+    """Get the global browser session instance"""
+    global _browser_session
+    if _browser_session is None:
+        _browser_session = BrowserSession()
+    return _browser_session
