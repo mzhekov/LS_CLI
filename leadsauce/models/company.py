@@ -31,6 +31,7 @@ class Company(Base):
     # Relationships
     team = relationship('Team', back_populates='companies')
     profiles = relationship('Profile', back_populates='company')
+    reminders = relationship('Reminder', back_populates='company', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f"<Company(id={self.id}, name='{self.name}')>"
