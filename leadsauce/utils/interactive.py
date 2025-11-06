@@ -8,18 +8,20 @@ import tty
 import termios
 import questionary
 from questionary import Style
-from rich.console import Console
+from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
 from rich.layout import Layout
 from rich.text import Text
+from rich.columns import Columns
 from collections import defaultdict
 from leadsauce.utils.db import get_session
 from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
 from leadsauce.models.tag import Tag
 from leadsauce.models.task import Task
+from leadsauce.models.goal import Goal
 from leadsauce.utils.constants import SENIORITY_LEVELS, GENERATION_TYPES
 from leadsauce.utils.validators import validate_email, validate_phone, parse_tags
 from leadsauce.utils.ai_interactive import AIAssistantMenu
@@ -28,9 +30,15 @@ from datetime import datetime, timedelta
 
 console = Console()
 
+# Global state for double backspace detection
+_last_key_press = {'key': None, 'time': 0}
+_DOUBLE_BACKSPACE_WINDOW = 0.5  # seconds
+
 
 def get_single_key():
-    """Capture a single keypress without requiring Enter"""
+    """Capture a single keypress without requiring Enter, with double backspace to quit"""
+    import time
+
     try:
         # Save terminal settings
         fd = sys.stdin.fileno()
@@ -40,6 +48,25 @@ def get_single_key():
             tty.setraw(fd)
             # Read single character
             ch = sys.stdin.read(1)
+
+            # Check for double backspace (backspace is '\x7f' or '\x08')
+            current_time = time.time()
+            if ch in ['\x7f', '\x08']:  # Backspace pressed
+                if (_last_key_press['key'] in ['\x7f', '\x08'] and
+                    current_time - _last_key_press['time'] < _DOUBLE_BACKSPACE_WINDOW):
+                    # Double backspace detected - return special quit signal
+                    _last_key_press['key'] = None
+                    _last_key_press['time'] = 0
+                    return 'DOUBLE_BACKSPACE_QUIT'
+                else:
+                    # First backspace - record it
+                    _last_key_press['key'] = ch
+                    _last_key_press['time'] = current_time
+            else:
+                # Reset on any other key
+                _last_key_press['key'] = ch
+                _last_key_press['time'] = current_time
+
             return ch
         finally:
             # Restore terminal settings
@@ -47,6 +74,110 @@ def get_single_key():
     except:
         # Fallback to regular input if terminal manipulation fails
         return input()
+
+
+def create_double_backspace_bindings():
+    """Create key bindings for double backspace detection in questionary prompts"""
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
+    import time
+
+    bindings = KeyBindings()
+    last_backspace_time = {'time': 0}
+
+    @bindings.add(Keys.Backspace)
+    def handle_backspace(event):
+        """Handle backspace key - detect double press"""
+        current_time = time.time()
+
+        # Check if this is a double backspace (within 0.5 seconds)
+        if current_time - last_backspace_time['time'] < _DOUBLE_BACKSPACE_WINDOW:
+            # Double backspace detected - exit the prompt
+            event.app.exit(result='DOUBLE_BACKSPACE_QUIT')
+        else:
+            # First backspace - record time and perform normal backspace
+            last_backspace_time['time'] = current_time
+            # Perform normal backspace action
+            buffer = event.current_buffer
+            if buffer.cursor_position > 0:
+                buffer.delete_before_cursor(count=1)
+
+    return bindings
+
+
+def safe_questionary_text(message, default="", validate=None, **kwargs):
+    """Questionary text input with double backspace support"""
+    import questionary
+
+    console.print("[dim]Tip: Double backspace, ESC, or Ctrl+C to cancel[/dim]")
+
+    try:
+        # Create custom bindings for double backspace
+        custom_bindings = create_double_backspace_bindings()
+
+        result = questionary.text(
+            message,
+            default=default,
+            validate=validate,
+            style=custom_style,
+            key_bindings=custom_bindings,
+            **kwargs
+        ).ask()
+
+        # Check for our special quit signal
+        if result == 'DOUBLE_BACKSPACE_QUIT':
+            console.print("\n[yellow]Cancelled (double backspace)[/yellow]")
+            return None
+
+        return result
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+    except Exception as e:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+
+
+def safe_questionary_select(message, choices, **kwargs):
+    """Questionary select with double backspace support"""
+    import questionary
+
+    console.print("[dim]Tip: ESC or Ctrl+C to cancel[/dim]")
+
+    try:
+        result = questionary.select(
+            message,
+            choices=choices,
+            style=custom_style,
+            **kwargs
+        ).ask()
+        return result
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+    except Exception as e:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+
+
+def safe_questionary_confirm(message, default=True, **kwargs):
+    """Questionary confirm with Ctrl+C support"""
+    import questionary
+
+    try:
+        result = questionary.confirm(
+            message,
+            default=default,
+            style=custom_style,
+            **kwargs
+        ).ask()
+        return result
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
+    except Exception as e:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
 
 
 # Custom style for questionary
@@ -80,6 +211,8 @@ NAV_ITEMS = [
 
 def render_top_bar(current_view="Dashboard"):
     """Render the interactive top navigation bar with keyboard shortcuts"""
+    from leadsauce.utils.helpers import get_browser_session
+
     nav_text = Text()
 
     for i, (name, icon, key) in enumerate(NAV_ITEMS):
@@ -95,7 +228,18 @@ def render_top_bar(current_view="Dashboard"):
             nav_text.append(f"[{key}]", style="dim yellow")
             nav_text.append(f" {name}", style="white")
 
-    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle="[dim]Press number keys to navigate[/]")
+    # Check for browser session and add indicator
+    browser_session = get_browser_session()
+    subtitle = "[dim]Press number keys to navigate[/]"
+
+    if browser_session.has_active_tmux_window():
+        info = browser_session.get_info()
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (tmux)[/]"
+    elif browser_session.has_recent_session():
+        info = browser_session.get_info()
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold cyan]🌐 Last:[/] [green]{info['browser']}[/]"
+
+    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
 
 def interactive_main_menu():
@@ -175,6 +319,13 @@ def interactive_main_menu():
             ai_menu.show()
             current_view = "Dashboard"
             continue
+        elif current_view == "Browser":
+            new_view = browser_menu()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
+            continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")
             break
@@ -234,30 +385,67 @@ def show_dashboard_view():
     """Show the main dashboard with statistics and task management actions"""
     session = get_session()
 
+    # Profile filtering state
+    profile_filter_seniority = None
+    profile_filter_generation = None
+    profile_filter_company = None
+
     while True:
+        # Expire all cached objects to ensure we load fresh data from DB
+        session.expire_all()
+
         console.clear()
 
         # Show top navigation bar
         console.print(render_top_bar("Dashboard"))
         console.print()
 
-        # Action shortcuts top bar
-        actions_text = Text()
-        actions_text.append("[t] Add Task", style="green")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[c] Complete Task", style="blue")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[e] Edit Task", style="yellow")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[d] Delete Task", style="red")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[v] View All Tasks", style="cyan")
-        actions_text.append(" • ", style="dim")
-        actions_text.append("[r] Refresh", style="blue")
+        # Action shortcuts top bar - Tasks
+        tasks_actions = Text()
+        tasks_actions.append("[t] Add Task", style="green")
+        tasks_actions.append(" • ", style="dim")
+        tasks_actions.append("[c] Complete Task", style="blue")
+        tasks_actions.append(" • ", style="dim")
+        tasks_actions.append("[e] Edit Task", style="yellow")
+        tasks_actions.append(" • ", style="dim")
+        tasks_actions.append("[d] Delete Task", style="red")
+
+        # Action shortcuts top bar - Goals
+        goals_actions = Text()
+        goals_actions.append("[g] Add Goal", style="green")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[h] Edit Goal", style="yellow")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[l] Link to Goal", style="blue")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[p] Update Progress", style="cyan")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[x] Delete Goal", style="red")
+        goals_actions.append(" • ", style="dim")
+        goals_actions.append("[a] Achieved Goals", style="green bold")
+
+        # Action shortcuts top bar - Reminders
+        reminders_actions = Text()
+        reminders_actions.append("[m] Add Reminder", style="green")
+        reminders_actions.append(" • ", style="dim")
+        reminders_actions.append("[n] Complete Reminder", style="blue")
+
+        # Combine actions
+        combined_actions = Text()
+        combined_actions.append("Tasks: ", style="bold cyan")
+        combined_actions.append_text(tasks_actions)
+        combined_actions.append("\n", style="dim")
+        combined_actions.append("Goals: ", style="bold cyan")
+        combined_actions.append_text(goals_actions)
+        combined_actions.append("\n", style="dim")
+        combined_actions.append("Reminders: ", style="bold cyan")
+        combined_actions.append_text(reminders_actions)
+        combined_actions.append("\n", style="dim")
+        combined_actions.append("[r] Refresh • [v] View All • [Enter] Navigation", style="dim")
 
         console.print(Panel(
-            actions_text,
-            title="[bold yellow]📊 Dashboard[/]",
+            combined_actions,
+            title="[bold yellow]📊 Dashboard - Quick Actions[/]",
             border_style="yellow",
             box=box.SIMPLE
         ))
@@ -270,8 +458,18 @@ def show_dashboard_view():
         total_tasks = session.query(Task).count()
         pending_tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).count()
 
-        # Get recent profiles
-        recent_profiles = session.query(Profile).order_by(Profile.created_at.desc()).limit(5).all()
+        # Get recent profiles with filtering
+        profiles_query = session.query(Profile)
+
+        # Apply filters
+        if profile_filter_seniority:
+            profiles_query = profiles_query.filter(Profile.seniority == profile_filter_seniority)
+        if profile_filter_generation:
+            profiles_query = profiles_query.filter(Profile.generation == profile_filter_generation)
+        if profile_filter_company:
+            profiles_query = profiles_query.filter(Profile.company_id == profile_filter_company)
+
+        recent_profiles = profiles_query.order_by(Profile.created_at.desc()).limit(15).all()
 
         # Create statistics panel
         stats_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -283,8 +481,206 @@ def show_dashboard_view():
         stats_table.add_row("Tags:", str(total_tags))
         stats_table.add_row("Tasks:", f"{pending_tasks}/{total_tasks} pending")
 
-        console.print(Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow"))
-        console.print()
+        overview_panel = Panel(stats_table, title="[bold yellow]📊 Overview[/]", border_style="yellow")
+
+        # Reminders Section (will be displayed on the right)
+        from leadsauce.models.reminder import Reminder
+        upcoming_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date >= datetime.utcnow()
+        ).order_by(Reminder.reminder_date.asc()).limit(5).all()
+
+        overdue_reminders = session.query(Reminder).filter(
+            Reminder.completed == False,
+            Reminder.reminder_date < datetime.utcnow()
+        ).order_by(Reminder.reminder_date.desc()).limit(5).all()
+
+        all_upcoming = overdue_reminders + upcoming_reminders
+        all_upcoming = all_upcoming[:5]  # Limit to 5 total
+
+        if all_upcoming:
+            reminders_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1), border_style="magenta")
+            reminders_table.add_column("Reminder", style="magenta bold", width=25)
+            reminders_table.add_column("Due", style="yellow", width=12)
+            reminders_table.add_column("Priority", style="white", width=8)
+            reminders_table.add_column("Linked To", style="cyan", width=30)
+
+            for reminder in all_upcoming:
+                # Format due date
+                if reminder.reminder_date:
+                    days_until = (reminder.reminder_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        due_str = f"[red bold]{abs(days_until)}d ago ⚠[/]"
+                    elif days_until == 0:
+                        due_str = "[yellow bold]Today[/]"
+                    elif days_until == 1:
+                        due_str = "[yellow]Tomorrow[/]"
+                    else:
+                        due_str = f"{days_until}d"
+                else:
+                    due_str = "N/A"
+
+                # Format priority
+                priority_colors = {
+                    'low': 'blue',
+                    'medium': 'yellow',
+                    'high': 'red'
+                }
+                priority_color = priority_colors.get(reminder.priority.lower(), 'white')
+                priority_str = f"[{priority_color}]{reminder.priority.upper()}[/]"
+
+                # Get linked entity
+                entity_type, entity_name, entity_id = reminder.get_linked_entity_info()
+                if entity_type:
+                    entity_icons = {
+                        'profile': '👤',
+                        'company': '🏢',
+                        'task': '📋',
+                        'goal': '🎯'
+                    }
+                    icon = entity_icons.get(entity_type, '•')
+                    linked_str = f"{icon} {entity_name[:25]}"
+                else:
+                    linked_str = "[dim]None[/]"
+
+                # Truncate title if too long
+                title = reminder.title[:23] + "..." if len(reminder.title) > 23 else reminder.title
+
+                reminders_table.add_row(title, due_str, priority_str, linked_str)
+
+            total_reminders = session.query(Reminder).filter(Reminder.completed == False).count()
+            overdue_count = session.query(Reminder).filter(
+                Reminder.completed == False,
+                Reminder.reminder_date < datetime.utcnow()
+            ).count()
+
+            stats_text = f"[bold]Total:[/] {total_reminders} active"
+            if overdue_count > 0:
+                stats_text += f" | [red]Overdue:[/] {overdue_count}"
+
+            reminders_panel = Panel(
+                reminders_table,
+                title="[bold magenta]⏰ Reminders[/]",
+                subtitle=stats_text,
+                border_style="magenta"
+            )
+        else:
+            reminders_panel = Panel(
+                "[yellow]No upcoming reminders. Stay on track![/]",
+                title="[bold magenta]⏰ Reminders[/]",
+                border_style="magenta"
+            )
+
+        # Goals Section
+        total_goals = session.query(Goal).count()
+        active_goals = session.query(Goal).filter(Goal.status == 'active').count()
+        completed_goals = session.query(Goal).filter(Goal.status == 'completed').count()
+
+        # Get overdue goals
+        overdue_goals = session.query(Goal).filter(
+            Goal.status == 'active',
+            Goal.target_date < datetime.utcnow()
+        ).count()
+
+        # Get active goals with their progress
+        goals_in_progress = session.query(Goal).filter(
+            Goal.status == 'active'
+        ).order_by(Goal.target_date.asc()).limit(5).all()
+
+        if total_goals > 0:
+            goals_table = Table(show_header=True, box=box.SIMPLE_HEAD, padding=(0, 1), border_style="yellow")
+            goals_table.add_column("Goal", style="cyan bold", width=28)
+            goals_table.add_column("Status", style="white", width=10)
+            goals_table.add_column("Priority", style="white", width=8)
+            goals_table.add_column("Progress", style="green", width=16)
+            goals_table.add_column("Linked Tasks", style="magenta", width=28)
+            goals_table.add_column("Target", style="dim", width=10)
+
+            for goal in goals_in_progress:
+                # Format target date
+                if goal.target_date:
+                    days_until = (goal.target_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        target_str = f"[red]{abs(days_until)}d ago[/]"
+                    elif days_until == 0:
+                        target_str = "[yellow]Today[/]"
+                    elif days_until == 1:
+                        target_str = "[yellow]Tomorrow[/]"
+                    else:
+                        target_str = f"{days_until}d"
+                else:
+                    target_str = "N/A"
+
+                # Format progress bar
+                progress_blocks = int(goal.progress / 10)
+                progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+                progress_str = f"{progress_bar} {goal.progress:.0f}%"
+
+                # Task summary - show task names with status
+                if goal.tasks:
+                    task_items = []
+                    for task in goal.tasks[:2]:  # Show first 2 tasks
+                        status_icon = "✓" if task.status == 'completed' else "○"
+                        task_name = task.title[:15] + "..." if len(task.title) > 15 else task.title
+                        task_items.append(f"{status_icon} {task_name}")
+
+                    task_str = ", ".join(task_items)
+                    if len(goal.tasks) > 2:
+                        task_str += f" [dim]+{len(goal.tasks)-2}[/]"
+                else:
+                    task_str = "[dim]No tasks linked[/]"
+
+                # Truncate title if too long
+                title = goal.title[:28] + "..." if len(goal.title) > 28 else goal.title
+
+                # Add overdue warning to title if needed
+                if goal.is_overdue():
+                    title = f"[red]{title} ⚠[/]"
+
+                # Add description if available
+                if goal.description:
+                    desc_preview = goal.description[:40] + "..." if len(goal.description) > 40 else goal.description
+                    title = f"{title}\n[dim italic]{desc_preview}[/]"
+
+                # Format status with color
+                status_colors = {
+                    'active': 'yellow',
+                    'completed': 'green',
+                    'on_hold': 'blue',
+                    'cancelled': 'red'
+                }
+                status_color = status_colors.get(goal.status, 'white')
+                status_str = f"[{status_color}]{goal.status.replace('_', ' ').title()}[/]"
+
+                # Format priority with color
+                priority_colors = {
+                    'low': 'blue',
+                    'medium': 'yellow',
+                    'high': 'red'
+                }
+                priority_color = priority_colors.get(goal.priority.lower(), 'white')
+                priority_str = f"[{priority_color}]{goal.priority.upper()}[/]"
+
+                goals_table.add_row(title, status_str, priority_str, progress_str, task_str, target_str)
+
+            # Add stats subtitle
+            stats_text = f"[bold]Total:[/] {total_goals} | [green]Completed:[/] {completed_goals} | [yellow]Active:[/] {active_goals}"
+            if overdue_goals > 0:
+                stats_text += f" | [red]Overdue:[/] {overdue_goals}"
+
+            goals_panel = Panel(
+                goals_table,
+                title="[bold yellow]🎯 Goals[/]",
+                subtitle=stats_text,
+                border_style="yellow"
+            )
+        else:
+            # Show placeholder if no goals
+            goals_panel = Panel(
+                "[yellow]No goals yet. Goals show progress toward your objectives![/]",
+                title="[bold yellow]🎯 Goals[/]",
+                border_style="yellow"
+            )
 
         # Pending/Overdue Tasks
         from sqlalchemy.orm import joinedload
@@ -373,14 +769,12 @@ def show_dashboard_view():
                     linked_display
                 )
 
-            console.print(Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow"))
+            tasks_panel = Panel(tasks_table, title="[bold yellow]📋 Upcoming Tasks[/]", border_style="yellow")
         else:
-            console.print(Panel(
+            tasks_panel = Panel(
                 "[yellow]No pending tasks. Press [t] to add a new task![/]",
                 border_style="yellow"
-            ))
-
-        console.print()
+            )
 
         # Recent profiles
         if recent_profiles:
@@ -430,25 +824,73 @@ def show_dashboard_view():
                     tags_display
                 )
 
-            console.print(Panel(profiles_table, title="[bold cyan]Recent Profiles[/]", border_style="cyan"))
+            # Build filter subtitle
+            filter_parts = []
+            if profile_filter_seniority:
+                filter_parts.append(f"Seniority: {profile_filter_seniority.title()}")
+            if profile_filter_generation:
+                filter_parts.append(f"Generation: {profile_filter_generation.title()}")
+            if profile_filter_company:
+                company = session.query(Company).get(profile_filter_company)
+                if company:
+                    filter_parts.append(f"Company: {company.name}")
+
+            filter_subtitle = " | ".join(filter_parts) if filter_parts else "[s] Seniority • [G] Generation • [C] Company • [R] Reset"
+
+            profiles_panel = Panel(
+                profiles_table,
+                title="[bold cyan]Recent Profiles[/]",
+                subtitle=filter_subtitle,
+                border_style="cyan"
+            )
         else:
-            console.print(Panel(
+            profiles_panel = Panel(
                 "[yellow]No profiles yet. Press [2] to add your first contact![/]",
                 border_style="yellow"
-            ))
+            )
 
+        # Create two-column layout: Left (70%) and Right (30%)
+        # Use a table without borders to create columns
+        from rich.table import Table as LayoutTable
+
+        layout_table = LayoutTable(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False)
+        layout_table.add_column(ratio=7)  # 70% width
+        layout_table.add_column(ratio=3)  # 30% width
+
+        # Left column: Overview, Goals, Tasks stacked vertically
+        left_content = Group(
+            overview_panel,
+            Text(),  # Empty line
+            goals_panel,
+            Text(),  # Empty line
+            tasks_panel
+        )
+
+        # Add both columns to the layout table
+        layout_table.add_row(left_content, reminders_panel)
+
+        console.print(layout_table)
+        console.print()
+
+        # Recent Profiles at full width below the split layout
+        console.print(profiles_panel)
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9 for navigation, Enter to continue):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9/0 for navigation, Enter to continue):[/]")
         action = get_single_key()
+
+        # Handle double backspace quit
+        if action == 'DOUBLE_BACKSPACE_QUIT':
+            session.close()
+            return 'Exit'
 
         # Handle Enter key (returns '\r' or '\n')
         if action in ['\r', '\n', '']:
             session.close()
             return None
 
-        # Check if user wants to navigate to another menu (numbers 1-9 or q)
+        # Check if user wants to navigate to another menu (numbers 1-9, 0 for Browser, or q)
         # Map numbers to view names
         nav_map = {
             '1': 'Dashboard',
@@ -460,6 +902,7 @@ def show_dashboard_view():
             '7': 'Workshop',
             '8': 'Export',
             '9': 'Import',
+            '0': 'Browser',
             'q': 'Exit',
             'Q': 'Exit'
         }
@@ -515,8 +958,555 @@ def show_dashboard_view():
             tasks_menu()
         elif action.lower() == 'r':
             continue
+        # Goal management actions
+        elif action == 'g':  # Add Goal
+            add_goal_from_dashboard(session)
+        elif action == 'h':  # Edit Goal
+            if goals_in_progress or total_goals > 0:
+                edit_goal_from_dashboard(session)
+        elif action.lower() == 'l':  # Link to Goal
+            if upcoming_tasks and (goals_in_progress or total_goals > 0):
+                link_task_to_goal_from_dashboard(session, upcoming_tasks)
+        elif action.lower() == 'p':  # Update Progress
+            if goals_in_progress or total_goals > 0:
+                update_goal_progress_from_dashboard(session)
+        elif action.lower() == 'x':  # Delete Goal
+            if goals_in_progress or total_goals > 0:
+                delete_goal_from_dashboard(session)
+        elif action.lower() == 'a':  # Achieved Goals
+            achieved_goals_menu()
+        elif action.lower() == 'm':  # Add Reminder
+            add_reminder_from_dashboard(session)
+        elif action.lower() == 'n':  # Complete Reminder
+            if all_upcoming:
+                complete_reminder_from_dashboard(session, all_upcoming)
+        # Profile filtering actions
+        elif action == 's':  # Filter by Seniority
+            seniority_choices = ['junior', 'mid-level', 'senior', 'manager', 'director', 'vp', 'c-level', '← Clear Filter']
+            selected = safe_questionary_select(
+                "Filter by Seniority:",
+                choices=seniority_choices
+            )
+            if selected and selected != '← Clear Filter':
+                profile_filter_seniority = selected
+            elif selected == '← Clear Filter':
+                profile_filter_seniority = None
+        elif action == 'G':  # Filter by Generation (uppercase G)
+            generation_choices = ['gen-z', 'millennial', 'gen-x', 'boomer', 'silent', '← Clear Filter']
+            selected = safe_questionary_select(
+                "Filter by Generation:",
+                choices=generation_choices
+            )
+            if selected and selected != '← Clear Filter':
+                profile_filter_generation = selected
+            elif selected == '← Clear Filter':
+                profile_filter_generation = None
+        elif action == 'C':  # Filter by Company (uppercase C)
+            companies = session.query(Company).order_by(Company.name).all()
+            if companies:
+                company_choices = [f"#{c.id} - {c.name}" for c in companies] + ['← Clear Filter']
+                selected = safe_questionary_select(
+                    "Filter by Company:",
+                    choices=company_choices
+                )
+                if selected and selected != '← Clear Filter':
+                    profile_filter_company = int(selected.split("#")[1].split(" - ")[0])
+                elif selected == '← Clear Filter':
+                    profile_filter_company = None
+        elif action == 'R':  # Reset all filters (uppercase R)
+            profile_filter_seniority = None
+            profile_filter_generation = None
+            profile_filter_company = None
 
     session.close()
+
+
+def add_goal_from_dashboard(session):
+    """Add a new goal from dashboard"""
+    from leadsauce.utils.validators import validate_date
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+
+    console.print("\n[bold cyan]Create New Goal[/]\n")
+
+    title = safe_questionary_text(
+        "Goal Title:",
+        validate=lambda x: len(x) > 0 or "Title is required"
+    )
+
+    if not title:
+        return
+
+    description = safe_questionary_text(
+        "Description (optional):",
+        default=""
+    )
+
+    if description is None:  # User cancelled
+        return
+
+    priority = safe_questionary_select(
+        "Priority:",
+        choices=REMINDER_PRIORITIES
+    )
+
+    if not priority:  # User cancelled
+        return
+
+    target_date_str = safe_questionary_text(
+        "Target Date (YYYY-MM-DD or +30d, optional):",
+        default=""
+    )
+
+    if target_date_str is None:  # User cancelled
+        return
+
+    target_date = None
+    if target_date_str:
+        target_date = validate_date(target_date_str)
+        if not target_date:
+            console.print("[red]Invalid date format. Goal created without target date.[/]")
+
+    try:
+        new_goal = Goal(
+            title=title,
+            description=description if description else None,
+            priority=priority.lower(),
+            target_date=target_date
+        )
+
+        session.add(new_goal)
+        session.commit()
+
+        console.print(f"\n[green]✓ Goal created successfully! ID: {new_goal.id}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error creating goal: {str(e)}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def edit_goal_from_dashboard(session):
+    """Edit an existing goal from dashboard"""
+    from leadsauce.utils.validators import validate_date
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+
+    goals = session.query(Goal).filter(Goal.status != 'completed').all()
+    if not goals:
+        console.print("[yellow]No goals to edit.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+    selected = questionary.select(
+        "Select a goal to edit:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    goal_id = int(selected.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        console.print(f"\n[bold cyan]Edit Goal #{goal.id}[/]\n")
+
+        new_title = safe_questionary_text(
+            "Title:",
+            default=goal.title
+        )
+        if not new_title:
+            return
+
+        new_description = safe_questionary_text(
+            "Description:",
+            default=goal.description or ""
+        )
+        if new_description is None:
+            return
+
+        new_status = safe_questionary_select(
+            "Status:",
+            choices=["active", "completed", "on_hold", "cancelled"],
+            default=goal.status
+        )
+        if not new_status:
+            return
+
+        new_priority = safe_questionary_select(
+            "Priority:",
+            choices=REMINDER_PRIORITIES,
+            default=goal.priority
+        )
+        if not new_priority:
+            return
+
+        current_target = goal.target_date.strftime('%Y-%m-%d') if goal.target_date else ""
+        new_target_date_str = safe_questionary_text(
+            "Target Date (YYYY-MM-DD or +30d):",
+            default=current_target
+        )
+        if new_target_date_str is None:
+            return
+
+        new_target_date = goal.target_date
+        if new_target_date_str and new_target_date_str != current_target:
+            parsed = validate_date(new_target_date_str)
+            if parsed:
+                new_target_date = parsed
+            else:
+                console.print("[red]Invalid date format. Keeping current target date.[/]")
+
+        try:
+            goal.title = new_title
+            goal.description = new_description if new_description else None
+            goal.status = new_status
+            goal.priority = new_priority.lower()
+            goal.target_date = new_target_date
+
+            if new_status == 'completed':
+                goal.complete()
+
+            goal.update_progress()
+            session.commit()
+
+            console.print(f"\n[green]✓ Goal updated successfully![/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        except Exception as e:
+            session.rollback()
+            console.print(f"[red]Error updating goal: {str(e)}[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def link_task_to_goal_from_dashboard(session, upcoming_tasks):
+    """Link a task to a goal from dashboard"""
+
+    # Select task
+    task_choices = [f"#{t.id} - {t.title[:50]}" for t in upcoming_tasks]
+    selected_task = questionary.select(
+        "Select a task to link:",
+        choices=task_choices + ["← Cancel"]
+    ).ask()
+
+    if selected_task == "← Cancel":
+        return
+
+    task_id = int(selected_task.split("#")[1].split(" - ")[0])
+    task = session.query(Task).filter(Task.id == task_id).first()
+
+    if not task:
+        return
+
+    # Select goal
+    goals = session.query(Goal).filter(Goal.status == 'active').all()
+    if not goals:
+        console.print("[yellow]No active goals available.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+    selected_goal = questionary.select(
+        "Select a goal to link to:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected_goal == "← Cancel":
+        return
+
+    goal_id = int(selected_goal.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        try:
+            if task not in goal.tasks:
+                goal.tasks.append(task)
+                goal.update_progress()
+                session.commit()
+                console.print(f"[green]✓ Linked task '{task.title}' to goal '{goal.title}'[/]")
+                console.print(f"[cyan]Goal progress: {goal.progress}%[/]")
+            else:
+                console.print("[yellow]Task already linked to this goal.[/]")
+
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        except Exception as e:
+            session.rollback()
+            console.print(f"[red]Error linking task: {str(e)}[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def update_goal_progress_from_dashboard(session):
+    """Update progress for a goal from dashboard"""
+
+    goals = session.query(Goal).filter(Goal.status == 'active').all()
+    if not goals:
+        console.print("[yellow]No active goals available.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]} ({g.progress}%)" for g in goals]
+    selected = questionary.select(
+        "Select a goal to update progress:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    goal_id = int(selected.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        try:
+            old_progress = goal.progress
+            goal.update_progress()
+            session.commit()
+
+            console.print(f"\n[green]✓ Progress updated![/]")
+            console.print(f"[cyan]Previous: {old_progress:.0f}%[/]")
+            console.print(f"[cyan]Current: {goal.progress:.0f}%[/]")
+
+            if goal.status == 'completed':
+                console.print("[green bold]🎉 Goal completed![/]")
+
+            questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+        except Exception as e:
+            session.rollback()
+            console.print(f"[red]Error updating progress: {str(e)}[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def delete_goal_from_dashboard(session):
+    """Delete a goal from dashboard"""
+
+    goals = session.query(Goal).all()
+    if not goals:
+        console.print("[yellow]No goals to delete.[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+    selected = questionary.select(
+        "Select a goal to delete:",
+        choices=goal_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    goal_id = int(selected.split("#")[1].split(" - ")[0])
+    goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+    if goal:
+        confirm = questionary.confirm(
+            f"Are you sure you want to delete '{goal.title}'?",
+            default=False
+        ).ask()
+
+        if confirm:
+            try:
+                session.delete(goal)
+                session.commit()
+                console.print(f"[green]✓ Goal deleted successfully![/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            except Exception as e:
+                session.rollback()
+                console.print(f"[red]Error deleting goal: {str(e)}[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def add_reminder_from_dashboard(session):
+    """Add a new reminder from dashboard"""
+    from leadsauce.utils.validators import validate_date
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+    from leadsauce.models.reminder import Reminder
+
+    console.print("\n[bold magenta]Create New Reminder[/]\n")
+
+    title = safe_questionary_text(
+        "Reminder Title:",
+        validate=lambda x: len(x) > 0 or "Title is required"
+    )
+
+    if not title:
+        return
+
+    message = safe_questionary_text(
+        "Message (optional):",
+        default=""
+    )
+
+    if message is None:  # User cancelled
+        return
+
+    # Select entity type to link
+    entity_type = safe_questionary_select(
+        "Link reminder to:",
+        choices=["Profile", "Company", "Task", "Goal", "None"]
+    )
+
+    if not entity_type:  # User cancelled
+        return
+
+    profile_id = None
+    company_id = None
+    task_id = None
+    goal_id = None
+
+    if entity_type == "Profile":
+        profiles = session.query(Profile).order_by(Profile.name).all()
+        if profiles:
+            profile_choices = [f"#{p.id} - {p.name}" for p in profiles]
+            selected = safe_questionary_select(
+                "Select profile:",
+                choices=profile_choices + ["← Cancel"]
+            )
+            if selected and selected != "← Cancel":
+                profile_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
+        else:
+            console.print("[yellow]No profiles available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    elif entity_type == "Company":
+        companies = session.query(Company).order_by(Company.name).all()
+        if companies:
+            company_choices = [f"#{c.id} - {c.name}" for c in companies]
+            selected = safe_questionary_select(
+                "Select company:",
+                choices=company_choices + ["← Cancel"]
+            )
+            if selected and selected != "← Cancel":
+                company_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
+        else:
+            console.print("[yellow]No companies available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    elif entity_type == "Task":
+        tasks = session.query(Task).filter(Task.status.in_(['pending', 'in_progress'])).order_by(Task.title).all()
+        if tasks:
+            task_choices = [f"#{t.id} - {t.title}" for t in tasks]
+            selected = safe_questionary_select(
+                "Select task:",
+                choices=task_choices + ["← Cancel"]
+            )
+            if selected and selected != "← Cancel":
+                task_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
+        else:
+            console.print("[yellow]No active tasks available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    elif entity_type == "Goal":
+        goals = session.query(Goal).filter(Goal.status == 'active').order_by(Goal.title).all()
+        if goals:
+            goal_choices = [f"#{g.id} - {g.title}" for g in goals]
+            selected = safe_questionary_select(
+                "Select goal:",
+                choices=goal_choices + ["← Cancel"]
+            )
+            if selected and selected != "← Cancel":
+                goal_id = int(selected.split("#")[1].split(" - ")[0])
+            elif not selected:  # User cancelled
+                return
+        else:
+            console.print("[yellow]No active goals available.[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    # Date and time
+    reminder_date_str = safe_questionary_text(
+        "Reminder Date (YYYY-MM-DD or YYYY-MM-DD HH:MM):",
+        validate=lambda x: len(x) > 0 or "Date is required"
+    )
+
+    if not reminder_date_str:
+        return
+
+    try:
+        reminder_date = validate_date(reminder_date_str)
+    except ValueError as e:
+        console.print(f"[red]Invalid date: {e}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    priority = questionary.select(
+        "Priority:",
+        choices=REMINDER_PRIORITIES
+    ).ask()
+
+    category = questionary.select(
+        "Category:",
+        choices=["call", "email", "meeting", "follow-up", "birthday", "general"]
+    ).ask()
+
+    try:
+        reminder = Reminder(
+            title=title,
+            message=message if message else None,
+            reminder_date=reminder_date,
+            priority=priority.lower(),
+            category=category,
+            profile_id=profile_id,
+            company_id=company_id,
+            task_id=task_id,
+            goal_id=goal_id
+        )
+
+        session.add(reminder)
+        session.commit()
+
+        console.print(f"\n[green]✓ Reminder created successfully![/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error creating reminder: {str(e)}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def complete_reminder_from_dashboard(session, reminders):
+    """Complete a reminder from dashboard"""
+    from leadsauce.models.reminder import Reminder
+
+    console.print("[cyan]Select a reminder to complete:[/]")
+    reminder_choices = []
+    for idx, rem in enumerate(reminders, 1):
+        entity_type, entity_name, entity_id = rem.get_linked_entity_info()
+        linked_info = f" ({entity_name})" if entity_name else ""
+        reminder_choices.append(f"{idx}. {rem.title[:40]}{linked_info}")
+
+    selected = questionary.select(
+        "",
+        choices=reminder_choices + ["← Cancel"]
+    ).ask()
+
+    if selected == "← Cancel":
+        return
+
+    idx = int(selected.split(".")[0]) - 1
+    reminder = reminders[idx]
+
+    note = questionary.text(
+        "Completion note (optional):",
+        default=""
+    ).ask()
+
+    try:
+        reminder.complete(note if note else None)
+        session.commit()
+
+        console.print(f"\n[green]✓ Reminder '{reminder.title}' marked as completed![/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    except Exception as e:
+        session.rollback()
+        console.print(f"[red]Error completing reminder: {str(e)}[/]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
 def profiles_menu():
@@ -1999,23 +2989,28 @@ def add_profile_interactive():
     console.print()
 
     # Collect information
-    name = questionary.text("Name:", style=custom_style, validate=lambda x: len(x) > 0).ask()
+    name = safe_questionary_text("Name:", validate=lambda x: len(x) > 0 or "Name is required")
     if not name:
         return
 
-    seniority = questionary.select(
+    seniority = safe_questionary_select(
         "Seniority:",
-        choices=[s.title() for s in SENIORITY_LEVELS],
-        style=custom_style
-    ).ask()
+        choices=[s.title() for s in SENIORITY_LEVELS]
+    )
+    if not seniority:
+        return
 
-    email = questionary.text(
+    email = safe_questionary_text(
         "Email (optional):",
-        style=custom_style,
-        validate=lambda x: len(x) == 0 or validate_email(x)
-    ).ask()
+        default="",
+        validate=lambda x: len(x) == 0 or validate_email(x) or "Invalid email format"
+    )
+    if email is None:
+        return
 
-    phone = questionary.text("Phone (optional):", style=custom_style).ask()
+    phone = safe_questionary_text("Phone (optional):", default="")
+    if phone is None:
+        return
 
     # Company selection
     session = get_session()
@@ -2026,41 +3021,54 @@ def add_profile_interactive():
         company_choices.insert(0, {'name': '-- No Company --', 'value': None})
         company_choices.append({'name': '+ Create New Company', 'value': 'new'})
 
-        company_id = questionary.select(
+        company_id = safe_questionary_select(
             "Company:",
-            choices=company_choices,
-            style=custom_style
-        ).ask()
+            choices=company_choices
+        )
+        if company_id is None and company_id != '':  # None from cancellation, not from "No Company" choice
+            session.close()
+            return
 
         if company_id == 'new':
-            company_name = questionary.text("New company name:", style=custom_style).ask()
-            if company_name:
-                new_company = Company(name=company_name)
-                session.add(new_company)
-                session.flush()
-                company_id = new_company.id
-        elif company_id is None:
-            company_id = None
+            company_name = safe_questionary_text("New company name:")
+            if not company_name:
+                session.close()
+                return
+            new_company = Company(name=company_name)
+            session.add(new_company)
+            session.flush()
+            company_id = new_company.id
     else:
-        create_company = questionary.confirm("No companies found. Create one?", style=custom_style).ask()
+        create_company = safe_questionary_confirm("No companies found. Create one?", default=False)
+        if create_company is None:
+            session.close()
+            return
         if create_company:
-            company_name = questionary.text("Company name:", style=custom_style).ask()
-            if company_name:
-                new_company = Company(name=company_name)
-                session.add(new_company)
-                session.flush()
-                company_id = new_company.id
+            company_name = safe_questionary_text("Company name:")
+            if not company_name:
+                session.close()
+                return
+            new_company = Company(name=company_name)
+            session.add(new_company)
+            session.flush()
+            company_id = new_company.id
         else:
             company_id = None
 
     # Tags
-    tags_input = questionary.text(
+    tags_input = safe_questionary_text(
         "Tags (comma-separated, optional):",
-        style=custom_style
-    ).ask()
+        default=""
+    )
+    if tags_input is None:
+        session.close()
+        return
 
     # Additional info
-    add_more = questionary.confirm("Add more details?", style=custom_style, default=False).ask()
+    add_more = safe_questionary_confirm("Add more details?", default=False)
+    if add_more is None:
+        session.close()
+        return
 
     generation = None
     married = False
@@ -2069,18 +3077,35 @@ def add_profile_interactive():
     notes = None
 
     if add_more:
-        generation = questionary.select(
+        generation = safe_questionary_select(
             "Generation (optional):",
-            choices=['Skip'] + [g.title() for g in GENERATION_TYPES],
-            style=custom_style
-        ).ask()
+            choices=['Skip'] + [g.title() for g in GENERATION_TYPES]
+        )
+        if generation is None:  # Cancelled
+            session.close()
+            return
         if generation == 'Skip':
             generation = None
 
-        married = questionary.confirm("Married?", style=custom_style, default=False).ask()
-        has_children = questionary.confirm("Has children?", style=custom_style, default=False).ask()
-        skills = questionary.text("Skills (optional):", style=custom_style).ask()
-        notes = questionary.text("Notes (optional):", style=custom_style).ask()
+        married = safe_questionary_confirm("Married?", default=False)
+        if married is None:
+            session.close()
+            return
+
+        has_children = safe_questionary_confirm("Has children?", default=False)
+        if has_children is None:
+            session.close()
+            return
+
+        skills = safe_questionary_text("Skills (optional):", default="")
+        if skills is None:
+            session.close()
+            return
+
+        notes = safe_questionary_text("Notes (optional):", default="")
+        if notes is None:
+            session.close()
+            return
 
     # Create profile
     try:
@@ -2164,35 +3189,35 @@ def edit_profile_interactive(profile, session):
             "← Done Editing"
         ]
 
-        field = questionary.select(
+        field = safe_questionary_select(
             "What would you like to edit?",
-            choices=fields,
-            style=custom_style
-        ).ask()
+            choices=fields
+        )
 
         if not field or field == "← Done Editing":
             break
 
         if field == "Name":
-            new_value = questionary.text("Name:", default=profile.name, style=custom_style).ask()
+            new_value = safe_questionary_text("Name:", default=profile.name)
             if new_value:
                 profile.name = new_value
 
         elif field == "Email":
-            new_value = questionary.text("Email:", default=profile.email or "", style=custom_style).ask()
-            profile.email = new_value or None
+            new_value = safe_questionary_text("Email:", default=profile.email or "")
+            if new_value is not None:
+                profile.email = new_value or None
 
         elif field == "Phone":
-            new_value = questionary.text("Phone:", default=profile.phone or "", style=custom_style).ask()
-            profile.phone = new_value or None
+            new_value = safe_questionary_text("Phone:", default=profile.phone or "")
+            if new_value is not None:
+                profile.phone = new_value or None
 
         elif field == "Seniority":
-            new_value = questionary.select(
+            new_value = safe_questionary_select(
                 "Seniority:",
                 choices=[s.title() for s in SENIORITY_LEVELS],
-                default=profile.seniority.title(),
-                style=custom_style
-            ).ask()
+                default=profile.seniority.title()
+            )
             if new_value:
                 profile.seniority = new_value.lower()
 
@@ -2202,25 +3227,24 @@ def edit_profile_interactive(profile, session):
             company_choices.extend([{'name': c.name, 'value': c.id} for c in companies])
             company_choices.append({'name': '+ Create New', 'value': 'new'})
 
-            company_id = questionary.select(
+            company_id = safe_questionary_select(
                 "Company:",
-                choices=company_choices,
-                style=custom_style
-            ).ask()
+                choices=company_choices
+            )
 
             if company_id == 'new':
-                company_name = questionary.text("New company name:", style=custom_style).ask()
+                company_name = safe_questionary_text("New company name:")
                 if company_name:
                     new_company = Company(name=company_name)
                     session.add(new_company)
                     session.flush()
                     profile.company_id = new_company.id
-            else:
+            elif company_id is not None:
                 profile.company_id = company_id
 
         elif field == "Tags":
             current_tags = ", ".join([t.name for t in profile.tags])
-            new_value = questionary.text("Tags (comma-separated):", default=current_tags, style=custom_style).ask()
+            new_value = safe_questionary_text("Tags (comma-separated):", default=current_tags)
             if new_value is not None:
                 # Clear existing tags
                 profile.tags = []
@@ -2235,12 +3259,14 @@ def edit_profile_interactive(profile, session):
                     profile.tags.append(tag)
 
         elif field == "Skills":
-            new_value = questionary.text("Skills:", default=profile.good_at or "", style=custom_style).ask()
-            profile.good_at = new_value or None
+            new_value = safe_questionary_text("Skills:", default=profile.good_at or "")
+            if new_value is not None:
+                profile.good_at = new_value or None
 
         elif field == "Notes":
-            new_value = questionary.text("Notes:", default=profile.notes or "", style=custom_style).ask()
-            profile.notes = new_value or None
+            new_value = safe_questionary_text("Notes:", default=profile.notes or "")
+            if new_value is not None:
+                profile.notes = new_value or None
 
         # Commit after each field change
         session.commit()
@@ -2375,15 +3401,29 @@ def add_company_interactive():
     ))
     console.print()
 
-    name = questionary.text("Company name:", style=custom_style).ask()
+    name = safe_questionary_text("Company name:", validate=lambda x: len(x) > 0 or "Name is required")
     if not name:
         return
 
-    industry = questionary.text("Industry (optional):", style=custom_style).ask()
-    size = questionary.text("Size (optional):", style=custom_style).ask()
-    location = questionary.text("Location (optional):", style=custom_style).ask()
-    website = questionary.text("Website (optional):", style=custom_style).ask()
-    notes = questionary.text("Notes (optional):", style=custom_style).ask()
+    industry = safe_questionary_text("Industry (optional):", default="")
+    if industry is None:
+        return
+
+    size = safe_questionary_text("Size (optional):", default="")
+    if size is None:
+        return
+
+    location = safe_questionary_text("Location (optional):", default="")
+    if location is None:
+        return
+
+    website = safe_questionary_text("Website (optional):", default="")
+    if website is None:
+        return
+
+    notes = safe_questionary_text("Notes (optional):", default="")
+    if notes is None:
+        return
 
     session = get_session()
     try:
@@ -2531,34 +3571,38 @@ def edit_company_interactive(company, session):
             "← Done Editing"
         ]
 
-        field = questionary.select(
+        field = safe_questionary_select(
             "What would you like to edit?",
-            choices=fields,
-            style=custom_style
-        ).ask()
+            choices=fields
+        )
 
         if not field or field == "← Done Editing":
             break
 
         if field == "Name":
-            new_value = questionary.text("Company name:", default=company.name, style=custom_style).ask()
+            new_value = safe_questionary_text("Company name:", default=company.name)
             if new_value:
                 company.name = new_value
         elif field == "Industry":
-            new_value = questionary.text("Industry:", default=company.industry or "", style=custom_style).ask()
-            company.industry = new_value or None
+            new_value = safe_questionary_text("Industry:", default=company.industry or "")
+            if new_value is not None:
+                company.industry = new_value or None
         elif field == "Size":
-            new_value = questionary.text("Size:", default=company.size or "", style=custom_style).ask()
-            company.size = new_value or None
+            new_value = safe_questionary_text("Size:", default=company.size or "")
+            if new_value is not None:
+                company.size = new_value or None
         elif field == "Location":
-            new_value = questionary.text("Location:", default=company.location or "", style=custom_style).ask()
-            company.location = new_value or None
+            new_value = safe_questionary_text("Location:", default=company.location or "")
+            if new_value is not None:
+                company.location = new_value or None
         elif field == "Website":
-            new_value = questionary.text("Website:", default=company.website or "", style=custom_style).ask()
-            company.website = new_value or None
+            new_value = safe_questionary_text("Website:", default=company.website or "")
+            if new_value is not None:
+                company.website = new_value or None
         elif field == "Notes":
-            new_value = questionary.text("Notes:", default=company.notes or "", style=custom_style).ask()
-            company.notes = new_value or None
+            new_value = safe_questionary_text("Notes:", default=company.notes or "")
+            if new_value is not None:
+                company.notes = new_value or None
 
         # Commit after each field change
         session.commit()
@@ -4446,10 +5490,10 @@ def add_task_interactive():
         console.print()
 
         # Get task title
-        title = questionary.text(
+        title = safe_questionary_text(
             "Task title:",
-            style=custom_style
-        ).ask()
+            validate=lambda x: len(x) > 0 or "Title is required"
+        )
 
         if not title:
             console.print("[yellow]Task creation cancelled[/]")
@@ -4457,10 +5501,15 @@ def add_task_interactive():
             return
 
         # Get task description
-        description = questionary.text(
+        description = safe_questionary_text(
             "Description (optional):",
-            style=custom_style
-        ).ask()
+            default=""
+        )
+
+        if description is None:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         # Combine title and description for entity detection
         full_text = f"{title} {description or ''}"
@@ -4483,23 +5532,29 @@ def add_task_interactive():
             console.print()
 
         # Get priority
-        priority = questionary.select(
+        priority = safe_questionary_select(
             "Priority:",
             choices=["Low", "Medium", "High", "Urgent"],
-            default="Medium",
-            style=custom_style
-        ).ask()
+            default="Medium"
+        )
+        if not priority:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         # Get status
-        status = questionary.select(
+        status = safe_questionary_select(
             "Status:",
             choices=["Pending", "In Progress", "Completed", "Cancelled"],
-            default="Pending",
-            style=custom_style
-        ).ask()
+            default="Pending"
+        )
+        if not status:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         # Get due date
-        due_date_option = questionary.select(
+        due_date_option = safe_questionary_select(
             "Due date:",
             choices=[
                 "No due date",
@@ -4509,9 +5564,12 @@ def add_task_interactive():
                 "In 1 week",
                 "In 1 month",
                 "Custom"
-            ],
-            style=custom_style
-        ).ask()
+            ]
+        )
+        if not due_date_option:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
 
         due_date = None
         if due_date_option == "Today":
@@ -4525,10 +5583,14 @@ def add_task_interactive():
         elif due_date_option == "In 1 month":
             due_date = (datetime.now() + timedelta(days=30)).replace(hour=23, minute=59, second=59)
         elif due_date_option == "Custom":
-            date_str = questionary.text(
+            date_str = safe_questionary_text(
                 "Enter date (YYYY-MM-DD):",
-                style=custom_style
-            ).ask()
+                default=""
+            )
+            if date_str is None:
+                console.print("[yellow]Task creation cancelled[/]")
+                time.sleep(1)
+                return
             try:
                 due_date = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             except:
@@ -4549,11 +5611,17 @@ def add_task_interactive():
         task.tags.extend(detected_tags)
 
         # Ask if user wants to add more entities
-        if questionary.confirm(
+        add_more = safe_questionary_confirm(
             "Add more profiles/companies/tags?",
-            default=False,
-            style=custom_style
-        ).ask():
+            default=False
+        )
+
+        if add_more is None:
+            console.print("[yellow]Task creation cancelled[/]")
+            time.sleep(1)
+            return
+
+        if add_more:
 
             # Add more profiles
             all_profiles = session.query(Profile).all()
@@ -5487,6 +6555,866 @@ def export_menu():
     return None
 
 
+def goals_menu():
+    """Goals management menu with comprehensive CRUD operations"""
+    from leadsauce.utils.validators import validate_date, parse_tags
+    from leadsauce.utils.constants import REMINDER_PRIORITIES
+    from sqlalchemy import or_
+
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Goals"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[a] Add", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[v] View Details", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[l] Link Entity", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[u] Unlink Entity", style="magenta")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[p] Update Progress", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[d] Delete", style="red")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold cyan]🎯 Goals[/]",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Get goals
+        goals = session.query(Goal).order_by(Goal.created_at.desc()).all()
+
+        if goals:
+            # Display goals list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Title", style="cyan bold", width=30)
+            table.add_column("Status", style="blue", width=12)
+            table.add_column("Priority", style="yellow", width=8)
+            table.add_column("Progress", style="green", width=20)
+            table.add_column("Tasks", style="magenta", width=8)
+            table.add_column("Profiles", style="cyan", width=8)
+            table.add_column("Companies", style="blue", width=10)
+            table.add_column("Target", style="dim", width=12)
+
+            for idx, goal in enumerate(goals, 1):
+                summary = goal.get_summary()
+
+                # Format status with overdue warning
+                status_str = goal.status.title()
+                if goal.is_overdue():
+                    status_str = f"[red]{status_str} ⚠[/]"
+
+                # Progress bar
+                progress_blocks = int(goal.progress / 10)
+                progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+                progress_str = f"{progress_bar} {goal.progress:.0f}%"
+
+                # Task summary
+                tasks_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+
+                # Target date
+                if goal.target_date:
+                    days_until = (goal.target_date - datetime.utcnow()).days
+                    if days_until < 0:
+                        target_str = f"[red]{abs(days_until)}d ago[/]"
+                    elif days_until == 0:
+                        target_str = "[yellow]Today[/]"
+                    elif days_until == 1:
+                        target_str = "[yellow]Tomorrow[/]"
+                    else:
+                        target_str = f"{days_until}d"
+                else:
+                    target_str = "-"
+
+                # Truncate title if too long
+                title = goal.title[:28] + "..." if len(goal.title) > 28 else goal.title
+
+                table.add_row(
+                    str(idx),
+                    title,
+                    status_str,
+                    goal.priority.title(),
+                    progress_str,
+                    tasks_str,
+                    str(summary['total_profiles']),
+                    str(summary['total_companies']),
+                    target_str
+                )
+
+            console.print(table)
+            console.print()
+            console.print(f"[dim]Total: {len(goals)} goals[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No goals yet. Press [bold green]'a'[/] to create your first goal![/]",
+                border_style="yellow",
+                box=box.ROUNDED
+            ))
+
+        console.print()
+
+        # Get action
+        action = questionary.text(
+            "Action:",
+            style=custom_style
+        ).ask()
+
+        if action is None or action.strip() == "":
+            session.close()
+            return None
+
+        action = action.strip().lower()
+
+        # Handle actions
+        if action == 'a':
+            # Add new goal
+            console.print("\n[bold cyan]Create New Goal[/]\n")
+
+            title = questionary.text(
+                "Goal Title:",
+                validate=lambda x: len(x) > 0 or "Title is required"
+            ).ask()
+
+            if not title:
+                continue
+
+            description = questionary.text(
+                "Description (optional):",
+                default=""
+            ).ask()
+
+            priority = questionary.select(
+                "Priority:",
+                choices=REMINDER_PRIORITIES
+            ).ask()
+
+            target_date_str = questionary.text(
+                "Target Date (YYYY-MM-DD or +30d, optional):",
+                default=""
+            ).ask()
+
+            target_date = None
+            if target_date_str:
+                target_date = validate_date(target_date_str)
+                if not target_date:
+                    console.print("[red]Invalid date format. Goal created without target date.[/]")
+
+            try:
+                new_goal = Goal(
+                    title=title,
+                    description=description if description else None,
+                    priority=priority.lower(),
+                    target_date=target_date
+                )
+
+                session.add(new_goal)
+                session.commit()
+
+                console.print(f"\n[green]✓ Goal created successfully! ID: {new_goal.id}[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            except Exception as e:
+                session.rollback()
+                console.print(f"[red]Error creating goal: {str(e)}[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'v':
+            # View goal details
+            if not goals:
+                console.print("[yellow]No goals to view.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [
+                f"#{g.id} - {g.title[:50]}" for g in goals
+            ]
+
+            selected = questionary.select(
+                "Select a goal to view:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                console.clear()
+                console.print(render_top_bar("Goals"))
+                console.print()
+
+                summary = goal.get_summary()
+
+                # Goal details panel
+                details = Text()
+                details.append(f"\n🎯 Goal #{goal.id}\n", style="bold cyan")
+                details.append(f"\n{'─' * 60}\n", style="dim")
+                details.append(f"\nTitle: ", style="bold")
+                details.append(f"{goal.title}\n")
+                details.append(f"Description: ", style="bold")
+                details.append(f"{goal.description or 'N/A'}\n")
+                details.append(f"Status: ", style="bold")
+                details.append(f"{goal.status.title()}", style="green" if goal.status == "completed" else "yellow")
+                if goal.is_overdue():
+                    details.append(" ⚠ OVERDUE", style="bold red")
+                details.append("\n")
+                details.append(f"Priority: ", style="bold")
+                details.append(f"{goal.priority.title()}\n", style="yellow")
+                details.append(f"Progress: ", style="bold")
+
+                # Progress bar
+                progress_blocks = int(goal.progress / 10)
+                progress_bar = "█" * progress_blocks + "░" * (10 - progress_blocks)
+                details.append(f"{progress_bar} {goal.progress:.0f}%\n", style="green")
+
+                details.append(f"Target Date: ", style="bold")
+                if goal.target_date:
+                    details.append(f"{goal.target_date.strftime('%Y-%m-%d')}\n")
+                else:
+                    details.append("N/A\n")
+
+                details.append(f"\n{'─' * 60}\n", style="dim")
+                details.append(f"\nRelated Entities:\n", style="bold yellow")
+                details.append(f"\n📋 Tasks: {summary['total_tasks']} total\n", style="bold")
+                if goal.tasks:
+                    details.append(f"  ✓ Completed: {summary['completed_tasks']}\n", style="green")
+                    details.append(f"  ⟳ In Progress: {summary['in_progress_tasks']}\n", style="yellow")
+                    details.append(f"  ○ Pending: {summary['pending_tasks']}\n", style="cyan")
+                else:
+                    details.append("  No tasks linked\n", style="dim")
+
+                details.append(f"\n👥 Profiles: {summary['total_profiles']}\n", style="bold")
+                if goal.profiles:
+                    for p in goal.profiles[:5]:
+                        details.append(f"  • {p.name}\n", style="cyan")
+                    if len(goal.profiles) > 5:
+                        details.append(f"  ... and {len(goal.profiles) - 5} more\n", style="dim")
+                else:
+                    details.append("  No profiles linked\n", style="dim")
+
+                details.append(f"\n🏢 Companies: {summary['total_companies']}\n", style="bold")
+                if goal.companies:
+                    for c in goal.companies[:5]:
+                        details.append(f"  • {c.name}\n", style="blue")
+                    if len(goal.companies) > 5:
+                        details.append(f"  ... and {len(goal.companies) - 5} more\n", style="dim")
+                else:
+                    details.append("  No companies linked\n", style="dim")
+
+                details.append(f"\n🏷️ Tags: {summary['total_tags']}\n", style="bold")
+                if goal.tags:
+                    tag_names = ", ".join([t.name for t in goal.tags])
+                    details.append(f"  {tag_names}\n", style="yellow")
+                else:
+                    details.append("  No tags linked\n", style="dim")
+
+                details.append(f"\n{'─' * 60}\n", style="dim")
+                details.append(f"\nCreated: {goal.created_at.strftime('%Y-%m-%d %H:%M')}\n", style="dim")
+                details.append(f"Updated: {goal.updated_at.strftime('%Y-%m-%d %H:%M')}\n", style="dim")
+                if goal.completed_at:
+                    details.append(f"Completed: {goal.completed_at.strftime('%Y-%m-%d %H:%M')}\n", style="green")
+
+                console.print(Panel(details, border_style="cyan", box=box.ROUNDED))
+                questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+
+        elif action == 'e':
+            # Edit goal
+            if not goals:
+                console.print("[yellow]No goals to edit.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to edit:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                console.print(f"\n[bold cyan]Edit Goal #{goal.id}[/]\n")
+
+                # Show current values and ask for updates
+                new_title = questionary.text(
+                    "Title:",
+                    default=goal.title
+                ).ask()
+
+                new_description = questionary.text(
+                    "Description:",
+                    default=goal.description or ""
+                ).ask()
+
+                new_status = questionary.select(
+                    "Status:",
+                    choices=["active", "completed", "on_hold", "cancelled"],
+                    default=goal.status
+                ).ask()
+
+                new_priority = questionary.select(
+                    "Priority:",
+                    choices=REMINDER_PRIORITIES,
+                    default=goal.priority
+                ).ask()
+
+                current_target = goal.target_date.strftime('%Y-%m-%d') if goal.target_date else ""
+                new_target_date_str = questionary.text(
+                    "Target Date (YYYY-MM-DD or +30d):",
+                    default=current_target
+                ).ask()
+
+                new_target_date = goal.target_date
+                if new_target_date_str and new_target_date_str != current_target:
+                    parsed = validate_date(new_target_date_str)
+                    if parsed:
+                        new_target_date = parsed
+                    else:
+                        console.print("[red]Invalid date format. Keeping current target date.[/]")
+
+                try:
+                    goal.title = new_title
+                    goal.description = new_description if new_description else None
+                    goal.status = new_status
+                    goal.priority = new_priority.lower()
+                    goal.target_date = new_target_date
+
+                    if new_status == 'completed':
+                        goal.complete()
+
+                    goal.update_progress()
+                    session.commit()
+
+                    console.print(f"\n[green]✓ Goal updated successfully![/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error updating goal: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'l':
+            # Link entity
+            if not goals:
+                console.print("[yellow]No goals available.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to link entity to:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                entity_type = questionary.select(
+                    "What type of entity do you want to link?",
+                    choices=["Profile", "Company", "Task", "Tag", "← Back"]
+                ).ask()
+
+                if entity_type == "← Back":
+                    continue
+
+                try:
+                    if entity_type == "Profile":
+                        profiles = session.query(Profile).order_by(Profile.name).all()
+                        if not profiles:
+                            console.print("[yellow]No profiles available.[/]")
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                            continue
+
+                        profile_choices = [f"#{p.id} - {p.name}" for p in profiles]
+                        selected_profile = questionary.select(
+                            "Select a profile:",
+                            choices=profile_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_profile != "← Back":
+                            profile_id = int(selected_profile.split("#")[1].split(" - ")[0])
+                            profile = session.query(Profile).filter(Profile.id == profile_id).first()
+
+                            if profile and profile not in goal.profiles:
+                                goal.profiles.append(profile)
+                                session.commit()
+                                console.print(f"[green]✓ Linked profile: {profile.name}[/]")
+                            elif profile in goal.profiles:
+                                console.print("[yellow]Profile already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Company":
+                        companies = session.query(Company).order_by(Company.name).all()
+                        if not companies:
+                            console.print("[yellow]No companies available.[/]")
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                            continue
+
+                        company_choices = [f"#{c.id} - {c.name}" for c in companies]
+                        selected_company = questionary.select(
+                            "Select a company:",
+                            choices=company_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_company != "← Back":
+                            company_id = int(selected_company.split("#")[1].split(" - ")[0])
+                            company = session.query(Company).filter(Company.id == company_id).first()
+
+                            if company and company not in goal.companies:
+                                goal.companies.append(company)
+                                session.commit()
+                                console.print(f"[green]✓ Linked company: {company.name}[/]")
+                            elif company in goal.companies:
+                                console.print("[yellow]Company already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Task":
+                        tasks = session.query(Task).order_by(Task.created_at.desc()).all()
+                        if not tasks:
+                            console.print("[yellow]No tasks available.[/]")
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                            continue
+
+                        task_choices = [f"#{t.id} - {t.title[:50]} [{t.status}]" for t in tasks]
+                        selected_task = questionary.select(
+                            "Select a task:",
+                            choices=task_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_task != "← Back":
+                            task_id = int(selected_task.split("#")[1].split(" - ")[0])
+                            task = session.query(Task).filter(Task.id == task_id).first()
+
+                            if task and task not in goal.tasks:
+                                goal.tasks.append(task)
+                                goal.update_progress()
+                                session.commit()
+                                console.print(f"[green]✓ Linked task: {task.title}[/]")
+                                console.print(f"[cyan]Progress updated: {goal.progress}%[/]")
+                            elif task in goal.tasks:
+                                console.print("[yellow]Task already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Tag":
+                        tag_name = questionary.text(
+                            "Enter tag name:",
+                            validate=lambda x: len(x) > 0 or "Tag name is required"
+                        ).ask()
+
+                        if tag_name:
+                            tag = session.query(Tag).filter(Tag.name.ilike(tag_name)).first()
+                            if not tag:
+                                tag = Tag(name=tag_name)
+                                session.add(tag)
+                                session.flush()
+                                console.print(f"[cyan]Created new tag: {tag_name}[/]")
+
+                            if tag not in goal.tags:
+                                goal.tags.append(tag)
+                                session.commit()
+                                console.print(f"[green]✓ Linked tag: {tag.name}[/]")
+                            else:
+                                console.print("[yellow]Tag already linked to this goal.[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error linking entity: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'u':
+            # Unlink entity
+            if not goals:
+                console.print("[yellow]No goals available.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to unlink entity from:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                entity_type = questionary.select(
+                    "What type of entity do you want to unlink?",
+                    choices=["Profile", "Company", "Task", "Tag", "← Back"]
+                ).ask()
+
+                if entity_type == "← Back":
+                    continue
+
+                try:
+                    if entity_type == "Profile" and goal.profiles:
+                        profile_choices = [f"#{p.id} - {p.name}" for p in goal.profiles]
+                        selected_profile = questionary.select(
+                            "Select a profile to unlink:",
+                            choices=profile_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_profile != "← Back":
+                            profile_id = int(selected_profile.split("#")[1].split(" - ")[0])
+                            profile = session.query(Profile).filter(Profile.id == profile_id).first()
+
+                            if profile in goal.profiles:
+                                goal.profiles.remove(profile)
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked profile: {profile.name}[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Company" and goal.companies:
+                        company_choices = [f"#{c.id} - {c.name}" for c in goal.companies]
+                        selected_company = questionary.select(
+                            "Select a company to unlink:",
+                            choices=company_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_company != "← Back":
+                            company_id = int(selected_company.split("#")[1].split(" - ")[0])
+                            company = session.query(Company).filter(Company.id == company_id).first()
+
+                            if company in goal.companies:
+                                goal.companies.remove(company)
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked company: {company.name}[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Task" and goal.tasks:
+                        task_choices = [f"#{t.id} - {t.title[:50]}" for t in goal.tasks]
+                        selected_task = questionary.select(
+                            "Select a task to unlink:",
+                            choices=task_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_task != "← Back":
+                            task_id = int(selected_task.split("#")[1].split(" - ")[0])
+                            task = session.query(Task).filter(Task.id == task_id).first()
+
+                            if task in goal.tasks:
+                                goal.tasks.remove(task)
+                                goal.update_progress()
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked task: {task.title}[/]")
+                                console.print(f"[cyan]Progress updated: {goal.progress}%[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                    elif entity_type == "Tag" and goal.tags:
+                        tag_choices = [t.name for t in goal.tags]
+                        selected_tag = questionary.select(
+                            "Select a tag to unlink:",
+                            choices=tag_choices + ["← Back"]
+                        ).ask()
+
+                        if selected_tag != "← Back":
+                            tag = session.query(Tag).filter(Tag.name == selected_tag).first()
+
+                            if tag in goal.tags:
+                                goal.tags.remove(tag)
+                                session.commit()
+                                console.print(f"[green]✓ Unlinked tag: {tag.name}[/]")
+
+                            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                    else:
+                        console.print(f"[yellow]No {entity_type.lower()}s linked to this goal.[/]")
+                        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error unlinking entity: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'p':
+            # Update progress
+            if not goals:
+                console.print("[yellow]No goals available.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to update progress:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                try:
+                    old_progress = goal.progress
+                    goal.update_progress()
+                    session.commit()
+
+                    console.print(f"\n[green]✓ Progress updated![/]")
+                    console.print(f"[cyan]Previous: {old_progress:.0f}%[/]")
+                    console.print(f"[cyan]Current: {goal.progress:.0f}%[/]")
+
+                    if goal.status == 'completed':
+                        console.print("[green bold]🎉 Goal completed![/]")
+
+                    questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+                except Exception as e:
+                    session.rollback()
+                    console.print(f"[red]Error updating progress: {str(e)}[/]")
+                    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'd':
+            # Delete goal
+            if not goals:
+                console.print("[yellow]No goals to delete.[/]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                continue
+
+            goal_choices = [f"#{g.id} - {g.title[:50]}" for g in goals]
+
+            selected = questionary.select(
+                "Select a goal to delete:",
+                choices=goal_choices + ["← Back"]
+            ).ask()
+
+            if selected == "← Back":
+                continue
+
+            goal_id = int(selected.split("#")[1].split(" - ")[0])
+            goal = session.query(Goal).filter(Goal.id == goal_id).first()
+
+            if goal:
+                confirm = questionary.confirm(
+                    f"Are you sure you want to delete '{goal.title}'?",
+                    default=False
+                ).ask()
+
+                if confirm:
+                    try:
+                        session.delete(goal)
+                        session.commit()
+                        console.print(f"[green]✓ Goal deleted successfully![/]")
+                        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                    except Exception as e:
+                        session.rollback()
+                        console.print(f"[red]Error deleting goal: {str(e)}[/]")
+                        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+        elif action == 'r':
+            # Refresh - just continue the loop
+            continue
+
+    session.close()
+    return None
+
+
+def achieved_goals_menu():
+    """View all achieved (completed) goals"""
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Achieved Goals"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[v] View Details", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[r] Refresh", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold green]🏆 Achieved Goals[/]",
+            border_style="green",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Get completed goals
+        achieved_goals = session.query(Goal).filter(
+            Goal.status == 'completed'
+        ).order_by(Goal.completed_at.desc()).all()
+
+        if achieved_goals:
+            # Display achieved goals list
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="green")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Title", style="green bold", width=35)
+            table.add_column("Priority", style="yellow", width=8)
+            table.add_column("Tasks", style="magenta", width=8)
+            table.add_column("Profiles", style="cyan", width=8)
+            table.add_column("Companies", style="blue", width=10)
+            table.add_column("Completed", style="dim", width=12)
+
+            for idx, goal in enumerate(achieved_goals, 1):
+                summary = goal.get_summary()
+
+                # Task summary
+                tasks_str = f"{summary['completed_tasks']}/{summary['total_tasks']}"
+
+                # Completed date
+                if goal.completed_at:
+                    days_ago = (datetime.utcnow() - goal.completed_at).days
+                    if days_ago == 0:
+                        completed_str = "[green]Today[/]"
+                    elif days_ago == 1:
+                        completed_str = "Yesterday"
+                    else:
+                        completed_str = f"{days_ago}d ago"
+                else:
+                    completed_str = "-"
+
+                # Truncate title if too long
+                title = goal.title[:33] + "..." if len(goal.title) > 33 else goal.title
+
+                table.add_row(
+                    str(idx),
+                    title,
+                    goal.priority.title(),
+                    tasks_str,
+                    str(summary['total_profiles']),
+                    str(summary['total_companies']),
+                    completed_str
+                )
+
+            console.print(table)
+            console.print()
+            console.print(f"[green]Total Achieved: {len(achieved_goals)} goals[/]")
+        else:
+            console.print(Panel(
+                "[yellow]No achieved goals yet. Complete some goals to see them here![/]",
+                border_style="yellow",
+                box=box.ROUNDED
+            ))
+
+        console.print()
+
+        # Get action
+        action = questionary.text(
+            "Action:",
+            style=custom_style
+        ).ask()
+
+        if action is None or action.strip() == "":
+            session.close()
+            return None
+
+        action = action.strip().lower()
+
+        # Handle actions
+        if action == 'v':
+            # View goal details
+            if achieved_goals:
+                console.print("[cyan]Enter goal number to view details (or press Enter to cancel):[/]")
+                goal_num = questionary.text(
+                    "",
+                    style=custom_style
+                ).ask()
+
+                if goal_num:
+                    try:
+                        idx = int(goal_num) - 1
+                        if 0 <= idx < len(achieved_goals):
+                            goal = achieved_goals[idx]
+
+                            # Display goal details
+                            console.clear()
+                            console.print(f"\n[bold green]Goal Details[/]\n")
+
+                            details_table = Table(show_header=False, box=box.SIMPLE, border_style="green")
+                            details_table.add_column(style="cyan bold", width=15)
+                            details_table.add_column(style="white")
+
+                            details_table.add_row("Title:", goal.title)
+                            if goal.description:
+                                details_table.add_row("Description:", goal.description)
+                            details_table.add_row("Status:", f"[green]{goal.status.title()}[/]")
+                            details_table.add_row("Priority:", goal.priority.title())
+                            details_table.add_row("Progress:", f"{goal.progress:.0f}%")
+
+                            if goal.target_date:
+                                details_table.add_row("Target Date:", goal.target_date.strftime("%Y-%m-%d"))
+                            if goal.completed_at:
+                                details_table.add_row("Completed:", goal.completed_at.strftime("%Y-%m-%d %H:%M"))
+
+                            # Linked entities
+                            if goal.tasks:
+                                task_names = [f"• {t.title}" for t in goal.tasks[:5]]
+                                if len(goal.tasks) > 5:
+                                    task_names.append(f"... and {len(goal.tasks)-5} more")
+                                details_table.add_row("Tasks:", "\n".join(task_names))
+
+                            if goal.profiles:
+                                profile_names = [f"• {p.name}" for p in goal.profiles[:5]]
+                                if len(goal.profiles) > 5:
+                                    profile_names.append(f"... and {len(goal.profiles)-5} more")
+                                details_table.add_row("Profiles:", "\n".join(profile_names))
+
+                            if goal.companies:
+                                company_names = [f"• {c.name}" for c in goal.companies[:5]]
+                                if len(goal.companies) > 5:
+                                    company_names.append(f"... and {len(goal.companies)-5} more")
+                                details_table.add_row("Companies:", "\n".join(company_names))
+
+                            console.print(Panel(details_table, border_style="green"))
+                            questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+                    except ValueError:
+                        pass
+
+        elif action == 'r':
+            # Refresh - just continue the loop
+            continue
+
+    session.close()
+    return None
+
+
 def import_menu():
     """Import menu - Import data from CSV files"""
     from pathlib import Path
@@ -5752,3 +7680,754 @@ def import_menu():
 
     session.close()
     return None
+
+
+def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmux, separate_window):
+    """Helper function to launch browser with appropriate messages
+
+    Args:
+        browser_session: The BrowserSession instance
+        browser_cmd: Browser command to run
+        url: URL to open
+        use_tmux: Whether to use tmux window
+        in_tmux: Whether currently in tmux
+        separate_window: Whether to use separate terminal window
+    """
+    console.clear()
+    console.print(render_top_bar("Browser"))
+    console.print()
+
+    if separate_window:
+        console.print(Panel(
+            f"[bold green]Opening {browser_cmd.upper()} in new window...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[bold yellow]Browser opened in separate terminal window![/]\n\n"
+            "[dim]The browser is now running independently.[/]\n"
+            "[green]✓ You can navigate all menus while browsing[/]\n"
+            "[green]✓ Close the browser window when done[/]\n"
+            "[green]✓ Press [0] anytime to reopen same URL[/]",
+            border_style="green",
+            title="Browser Launched"
+        ))
+        console.print()
+
+        success = browser_session.launch(browser_cmd, url, separate_window=True)
+
+        if success:
+            time.sleep(2)
+        else:
+            console.print("[yellow]No terminal emulator found. Launching in this window instead...[/]")
+            time.sleep(2)
+            success = browser_session.launch(browser_cmd, url, use_tmux=False, separate_window=False)
+
+    elif use_tmux and in_tmux:
+        console.print(Panel(
+            f"[bold green]Opening {browser_cmd.upper()} in new tmux window...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[bold yellow]Browser opened in separate window![/]\n\n"
+            "[dim]Switch between windows:[/]\n"
+            "  • [yellow]Ctrl+b then window number[/] - Switch to specific window\n"
+            "  • [yellow]Ctrl+b n[/] - Next window\n"
+            "  • [yellow]Ctrl+b p[/] - Previous window\n"
+            "  • [yellow]Ctrl+b w[/] - List all windows\n\n"
+            "[bold green]You can now navigate menus while browsing![/]",
+            border_style="green",
+            title="Browser Launched"
+        ))
+        console.print()
+
+        success = browser_session.launch(browser_cmd, url, use_tmux=True)
+
+        if success:
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        else:
+            console.print("[red]Failed to launch browser in tmux window[/]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    else:
+        console.print(Panel(
+            f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[dim]Browser Controls:[/]\n"
+            "  • [yellow]q[/] - Quit browser and return to menu\n"
+            "  • [yellow]h[/] - Help (in most browsers)\n"
+            "  • [yellow]Arrow keys[/] - Navigate\n"
+            "  • [yellow]Enter[/] - Follow link\n\n"
+            "[bold yellow]Tip:[/] [dim]Session saved - press [0] anytime to quickly reopen[/]",
+            border_style="green",
+            title="Browser Starting"
+        ))
+        console.print()
+        time.sleep(1)
+
+        success = browser_session.launch(browser_cmd, url, use_tmux=False, separate_window=False)
+
+        if not success:
+            console.clear()
+            console.print(render_top_bar("Browser"))
+            console.print()
+            console.print(Panel(
+                "[bold red]Error launching browser![/]\n\n"
+                "The browser failed to start. Please check that it's properly installed.",
+                border_style="red",
+                title="Browser Error"
+            ))
+            console.print()
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def integrated_web_viewer():
+    """Integrated web viewer that displays content within the app"""
+    from leadsauce.utils.helpers import fetch_webpage_as_text, get_browser_session
+    from rich.text import Text
+    from rich.console import Group
+    import re
+    import textwrap
+    import shutil
+
+    browser_session = get_browser_session()
+
+    # Restore previous state if available
+    if browser_session.has_viewer_state():
+        current_url = browser_session.viewer_url
+        # Don't restore page_content - always fetch fresh to get Quick Links
+        page_content = None
+        scroll_position = browser_session.viewer_scroll_position
+    else:
+        current_url = "https://duckduckgo.com"
+        page_content = None
+        scroll_position = 0
+
+    while True:
+        console.clear()
+        console.print(render_top_bar("Browser"))
+        console.print()
+
+        # Get terminal size for responsive display
+        term_width, term_height = shutil.get_terminal_size(fallback=(80, 24))
+
+        # URL input bar with navigation shortcuts
+        console.print(Panel(
+            f"[bold cyan]Current URL:[/] {current_url}",
+            border_style="cyan",
+            title="🌐 Integrated Web Viewer"
+        ))
+        console.print()
+
+        # Compact shortcuts guide - always visible
+        shortcuts_compact = (
+            "[cyan]n/p[/] Next/Prev │ "
+            "[cyan]o[/] Open Link [a-z] │ "
+            "[cyan]g[/] Go URL │ "
+            "[cyan]r[/] Reload │ "
+            "[cyan]s[/] Search │ "
+            "[cyan]h[/] History │ "
+            "[cyan]1-9[/] Menus │ "
+            "[cyan]b[/] Back │ "
+            "[cyan]?[/] Help"
+        )
+        console.print(Panel(
+            shortcuts_compact,
+            border_style="dim",
+            padding=(0, 1)
+        ))
+        console.print()
+
+        # Fetch and display page if not loaded
+        if page_content is None:
+            console.print("[yellow]Loading page and extracting links...[/]")
+            page_content = fetch_webpage_as_text(current_url)
+
+            # Add quick links section at the top
+            from leadsauce.utils.helpers import fetch_webpage_links
+
+            try:
+                extracted_links = fetch_webpage_links(current_url)
+                console.print(f"[green]✓ Found {len(extracted_links)} links[/]")
+
+                if extracted_links and page_content:
+                    links_section = "\n[bold cyan]═══ Quick Links (Press 'o' then letter) ═══[/]\n\n"
+
+                    # Show first 26 links in compact format
+                    display_count = min(26, len(extracted_links))
+                    for idx in range(display_count):
+                        link_text, link_url = extracted_links[idx]
+                        letter = chr(ord('a') + idx)
+                        # Truncate long link text
+                        if len(link_text) > 60:
+                            link_text = link_text[:57] + "..."
+                        links_section += f"[cyan][{letter}][/] {link_text}\n"
+
+                    if len(extracted_links) > 26:
+                        links_section += f"\n[dim]... and {len(extracted_links) - 26} more links (press 'l' for full list)[/]\n"
+
+                    links_section += "\n[bold cyan]═══════════════════════════════════════[/]\n\n"
+
+                    # Prepend links section to content
+                    page_content = links_section + page_content
+                    console.print("[green]✓ Quick Links section added[/]")
+                else:
+                    console.print("[yellow]⚠ No links found or page failed to load[/]")
+            except Exception as e:
+                console.print(f"[red]✗ Error extracting links: {e}[/]")
+
+            # Small delay to see the messages
+            import time
+            time.sleep(1)
+
+            if page_content is None:
+                console.print(Panel(
+                    f"[bold red]Failed to load page![/]\n\n"
+                    f"[yellow]URL:[/] {current_url}\n\n"
+                    "[dim]Please check the URL and try again.[/]",
+                    border_style="red",
+                    title="Error"
+                ))
+                console.print()
+                action = questionary.select(
+                    "What would you like to do?",
+                    choices=[
+                        "Try different URL",
+                        "← Back to Browser Menu"
+                    ],
+                    style=custom_style
+                ).ask()
+
+                if action == "Try different URL":
+                    new_url = questionary.text(
+                        "Enter URL:",
+                        style=custom_style,
+                        default=current_url
+                    ).ask()
+
+                    if new_url:
+                        current_url = new_url
+                        page_content = None
+                        continue
+                else:
+                    return
+
+        # Display page content in scrollable area with pagination
+        # Note: Link shortcuts [a], [b], [c] are already embedded in the page content
+        # by fetch_webpage_as_text() function
+        if page_content:
+            # Save current state
+            browser_session.save_viewer_state(current_url, page_content, scroll_position)
+
+            # Calculate display parameters based on terminal size
+            # Account for: top bar (3 lines), URL panel (4 lines), shortcuts panel (3 lines),
+            # page info panel borders (4 lines), prompt line (2 lines) = ~16 lines overhead
+            usable_height = max(10, term_height - 16)
+            # Account for panel borders and padding in content width
+            content_width = max(40, term_width - 6)
+
+            # Get links from extracted_links (already fetched and appended to content)
+            from leadsauce.utils.helpers import fetch_webpage_links
+            extracted_links = fetch_webpage_links(current_url)
+            page_links = [url for text, url in extracted_links]
+
+            # Split content into lines and wrap long lines to fit terminal width
+            lines = page_content.split('\n')
+            wrapped_lines = []
+            for line in lines:
+                if len(line) <= content_width:
+                    wrapped_lines.append(line)
+                else:
+                    # Wrap long lines
+                    wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                    wrapped_lines.extend(wrapped if wrapped else [''])
+
+            lines_per_page = usable_height
+            total_pages = (len(wrapped_lines) + lines_per_page - 1) // lines_per_page if wrapped_lines else 1
+            current_page = scroll_position // lines_per_page + 1
+
+            start_line = scroll_position
+            end_line = min(start_line + lines_per_page, len(wrapped_lines))
+            display_lines = wrapped_lines[start_line:end_line]
+
+            content_text = '\n'.join(display_lines) if display_lines else '[dim]No content to display[/]'
+
+            # Add link count to page info
+            link_info = f" | {len(page_links)} links" if page_links else ""
+            page_info = f"Page {current_page}/{total_pages} | Lines {start_line+1}-{end_line} of {len(wrapped_lines)}{link_info}"
+            if current_page < total_pages:
+                page_info += " | [yellow]Press [n] for next page[/]"
+
+            console.print(Panel(
+                content_text,
+                border_style="green",
+                title=f"[bold green]📄 Page Content[/]",
+                subtitle=f"[dim]{page_info}[/]"
+            ))
+            console.print()
+
+        # Get single key press for quick actions
+        console.print("[dim]Press key for action (or Enter for menu):[/]")
+        from leadsauce.utils.interactive import get_single_key
+        key = get_single_key()
+
+        # Show shortcuts guide
+        if key == '?':
+            console.clear()
+            console.print(render_top_bar("Browser - Shortcuts Guide"))
+            console.print()
+
+            shortcuts_guide = """[bold cyan]🌐 Web Viewer Keyboard Shortcuts[/]
+
+[bold yellow]Navigation:[/]
+  [cyan]n[/]         Next page
+  [cyan]p[/]         Previous page
+  [cyan]g[/]         Go to new URL
+  [cyan]r[/]         Reload current page
+  [cyan]b[/] or [cyan]q[/]   Back to menu
+
+[bold yellow]Links & Content:[/]
+  [cyan]o[/]         Open link by letter (links shown as [a], [b], [c]...)
+  [cyan]s[/]         Search in current page
+  [cyan]l[/]         View all links list
+  [cyan]h[/]         View browsing history (last 10 URLs)
+
+[bold yellow]Quick Menu Navigation:[/]
+  [cyan]1[/]         Jump to Dashboard
+  [cyan]2[/]         Jump to Profiles
+  [cyan]3[/]         Jump to Companies
+  [cyan]4[/]         Jump to Network & Relationships
+  [cyan]5[/]         Jump to Search
+  [cyan]6[/]         Jump to Tags
+  [cyan]7[/]         Jump to Workshop
+  [cyan]8[/]         Jump to Export
+  [cyan]9[/]         Jump to Import
+
+[bold yellow]Other:[/]
+  [cyan]?[/]         Show this shortcuts guide
+  [cyan]Enter[/]     Show full action menu
+
+[bold green]✨ Tips:[/]
+• Links are automatically labeled in content: [cyan][a][/cyan], [cyan][b][/cyan], [cyan][c][/cyan], etc.
+• Press [cyan]o[/] then the letter to open a link instantly
+• Your browser state is saved when you switch menus
+• Press [cyan]0[/] from any menu to return to the browser!"""
+
+            console.print(Panel(
+                shortcuts_guide,
+                border_style="cyan",
+                title="[bold cyan]Keyboard Shortcuts Guide[/]",
+                padding=(1, 2)
+            ))
+            console.print()
+            questionary.press_any_key_to_continue("\nPress any key to return to browser...").ask()
+            continue
+
+        # Handle navigation shortcuts (1-9 for menus)
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            '8': 'Export',
+            '9': 'Import',
+        }
+
+        if key in nav_map:
+            # Save state and return to switch menu
+            if page_content:
+                browser_session.save_viewer_state(current_url, page_content, scroll_position)
+            return nav_map[key]
+
+        # Handle browsing actions
+        if key == 'n' and page_content:
+            # Next page - recalculate wrapped lines for navigation
+            lines = page_content.split('\n')
+            wrapped_lines_nav = []
+            for line in lines:
+                if len(line) <= content_width:
+                    wrapped_lines_nav.append(line)
+                else:
+                    wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                    wrapped_lines_nav.extend(wrapped if wrapped else [''])
+
+            if scroll_position + usable_height < len(wrapped_lines_nav):
+                scroll_position += usable_height
+            continue
+
+        elif key == 'p' and page_content:
+            # Previous page
+            if scroll_position >= usable_height:
+                scroll_position -= usable_height
+            else:
+                scroll_position = 0
+            continue
+
+        elif key == 's' and page_content:
+            # Search in page
+            search_term = questionary.text(
+                "Search for:",
+                style=custom_style
+            ).ask()
+
+            if search_term:
+                # Recalculate wrapped lines for search
+                lines = page_content.split('\n')
+                wrapped_lines_search = []
+                for line in lines:
+                    if len(line) <= content_width:
+                        wrapped_lines_search.append(line)
+                    else:
+                        wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                        wrapped_lines_search.extend(wrapped if wrapped else [''])
+
+                matches = [i for i, line in enumerate(wrapped_lines_search) if search_term.lower() in line.lower()]
+
+                if matches:
+                    console.print(f"[green]Found {len(matches)} matches[/]")
+                    # Jump to first match
+                    scroll_position = matches[0]
+                    time.sleep(1)
+                else:
+                    console.print("[yellow]No matches found[/]")
+                    time.sleep(1)
+            continue
+
+        elif key == 'h':
+            # Show history
+            if browser_session.viewer_history:
+                console.print("\n[bold cyan]Recent URLs:[/]")
+                for i, url in enumerate(reversed(browser_session.viewer_history[-10:]), 1):
+                    console.print(f"  {i}. {url}")
+                console.print()
+
+                choice = questionary.text(
+                    "Enter number to visit (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if choice and choice.isdigit():
+                    idx = int(choice) - 1
+                    recent_urls = list(reversed(browser_session.viewer_history[-10:]))
+                    if 0 <= idx < len(recent_urls):
+                        current_url = recent_urls[idx]
+                        page_content = None
+                        scroll_position = 0
+            else:
+                console.print("[yellow]No history yet[/]")
+                time.sleep(1)
+            continue
+
+        elif key == 'l' and page_content:
+            # Extract and show links from page
+            import urllib.parse
+
+            # Extract URLs using regex
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            found_urls = re.findall(url_pattern, page_content)
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_urls = []
+            for url in found_urls:
+                if url not in seen:
+                    seen.add(url)
+                    unique_urls.append(url)
+
+            if unique_urls:
+                console.print(f"\n[bold cyan]Found {len(unique_urls)} links on this page:[/]\n")
+
+                # Show first 20 links
+                display_count = min(20, len(unique_urls))
+                for i, url in enumerate(unique_urls[:display_count], 1):
+                    # Truncate long URLs for display
+                    display_url = url if len(url) <= 80 else url[:77] + "..."
+                    console.print(f"  [cyan]{i:2d}.[/] {display_url}")
+
+                if len(unique_urls) > 20:
+                    console.print(f"\n[dim]... and {len(unique_urls) - 20} more links[/]")
+
+                console.print()
+
+                choice = questionary.text(
+                    "Enter link number to visit (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if choice and choice.isdigit():
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(unique_urls):
+                        current_url = unique_urls[idx]
+                        page_content = None
+                        scroll_position = 0
+            else:
+                console.print("[yellow]No links found on this page[/]")
+                time.sleep(1)
+            continue
+
+        elif key == 'o' and page_content and page_links:
+            # Open link by letter (from inline labeling)
+            console.print(f"\n[cyan]Found {len(page_links)} labeled links on this page[/]")
+            console.print("[dim]Links are labeled: a, b, c, ..., z, aa, ab, ...[/]\n")
+
+            link_letter = questionary.text(
+                "Enter link letter to open (or Enter to cancel):",
+                style=custom_style
+            ).ask()
+
+            if link_letter:
+                link_letter = link_letter.lower().strip()
+
+                # Convert letter to index
+                if len(link_letter) == 1 and 'a' <= link_letter <= 'z':
+                    # Single letter: a-z
+                    idx = ord(link_letter) - ord('a')
+                elif len(link_letter) == 2 and 'a' <= link_letter[0] <= 'z' and 'a' <= link_letter[1] <= 'z':
+                    # Double letter: aa-zz
+                    first = ord(link_letter[0]) - ord('a') + 1
+                    second = ord(link_letter[1]) - ord('a')
+                    idx = first * 26 + second
+                else:
+                    idx = -1
+
+                if 0 <= idx < len(page_links):
+                    current_url = page_links[idx]
+                    page_content = None
+                    scroll_position = 0
+                else:
+                    console.print(f"[yellow]Invalid link letter. Please enter a valid letter (a-z, aa, ab, etc.)[/]")
+                    time.sleep(1)
+            continue
+
+        elif key == 'g':
+            # Go to URL
+            new_url = questionary.text(
+                "Enter URL:",
+                style=custom_style,
+                default="https://"
+            ).ask()
+
+            if new_url:
+                current_url = new_url
+                page_content = None
+                scroll_position = 0
+            continue
+
+        elif key == 'r':
+            # Reload page
+            page_content = None
+            scroll_position = 0
+            continue
+
+        elif key == 'b' or key == 'q':
+            # Back to menu
+            if page_content:
+                browser_session.save_viewer_state(current_url, page_content, scroll_position)
+            return None
+
+        # If Enter pressed, show full menu
+        elif key in ['\r', '\n', '']:
+            # Build menu choices based on whether links are available
+            menu_choices = [
+                "🔗 Go to new URL",
+                "🔄 Reload page",
+                "🔍 Search in page",
+            ]
+
+            if page_links:
+                menu_choices.append("🔵 Open link by letter [a-z]")
+
+            menu_choices.extend([
+                "🌐 View all links list",
+                "📜 View history",
+                "⬇️  Next page",
+                "⬆️  Previous page",
+                "← Back to Browser Menu"
+            ])
+
+            action = questionary.select(
+                "Choose an action:",
+                choices=menu_choices,
+                style=custom_style
+            ).ask()
+
+            if not action or action == "← Back to Browser Menu":
+                if page_content:
+                    browser_session.save_viewer_state(current_url, page_content, scroll_position)
+                return None
+
+            if action.startswith("🔗"):
+                new_url = questionary.text(
+                    "Enter URL:",
+                    style=custom_style,
+                    default="https://"
+                ).ask()
+
+                if new_url:
+                    current_url = new_url
+                    page_content = None
+                    scroll_position = 0
+
+            elif action.startswith("🔄"):
+                page_content = None
+                scroll_position = 0
+
+            elif action.startswith("🔍"):
+                search_term = questionary.text(
+                    "Search for:",
+                    style=custom_style
+                ).ask()
+
+                if search_term:
+                    # Recalculate wrapped lines for search
+                    lines = page_content.split('\n')
+                    wrapped_lines_search = []
+                    for line in lines:
+                        if len(line) <= content_width:
+                            wrapped_lines_search.append(line)
+                        else:
+                            wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                            wrapped_lines_search.extend(wrapped if wrapped else [''])
+
+                    matches = [i for i, line in enumerate(wrapped_lines_search) if search_term.lower() in line.lower()]
+
+                    if matches:
+                        console.print(f"[green]Found {len(matches)} matches[/]")
+                        scroll_position = matches[0]
+                        time.sleep(1)
+                    else:
+                        console.print("[yellow]No matches found[/]")
+                        time.sleep(1)
+
+            elif action.startswith("🔵"):
+                # Open link by letter
+                console.print(f"\n[cyan]Found {len(page_links)} labeled links on this page[/]")
+                console.print("[dim]Links are labeled: a, b, c, ..., z, aa, ab, ...[/]\n")
+
+                link_letter = questionary.text(
+                    "Enter link letter to open (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if link_letter:
+                    link_letter = link_letter.lower().strip()
+
+                    # Convert letter to index
+                    if len(link_letter) == 1 and 'a' <= link_letter <= 'z':
+                        idx = ord(link_letter) - ord('a')
+                    elif len(link_letter) == 2 and 'a' <= link_letter[0] <= 'z' and 'a' <= link_letter[1] <= 'z':
+                        first = ord(link_letter[0]) - ord('a') + 1
+                        second = ord(link_letter[1]) - ord('a')
+                        idx = first * 26 + second
+                    else:
+                        idx = -1
+
+                    if 0 <= idx < len(page_links):
+                        current_url = page_links[idx]
+                        page_content = None
+                        scroll_position = 0
+                    else:
+                        console.print(f"[yellow]Invalid link letter[/]")
+                        time.sleep(1)
+
+            elif action.startswith("🌐"):
+                # View links on page
+                import urllib.parse
+
+                # Extract URLs using regex
+                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                found_urls = re.findall(url_pattern, page_content)
+
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_urls = []
+                for url in found_urls:
+                    if url not in seen:
+                        seen.add(url)
+                        unique_urls.append(url)
+
+                if unique_urls:
+                    console.print(f"\n[bold cyan]Found {len(unique_urls)} links on this page:[/]\n")
+
+                    # Show first 20 links
+                    display_count = min(20, len(unique_urls))
+                    for i, url in enumerate(unique_urls[:display_count], 1):
+                        # Truncate long URLs for display
+                        display_url = url if len(url) <= 80 else url[:77] + "..."
+                        console.print(f"  [cyan]{i:2d}.[/] {display_url}")
+
+                    if len(unique_urls) > 20:
+                        console.print(f"\n[dim]... and {len(unique_urls) - 20} more links[/]")
+
+                    console.print()
+
+                    choice = questionary.text(
+                        "Enter link number to visit (or Enter to cancel):",
+                        style=custom_style
+                    ).ask()
+
+                    if choice and choice.isdigit():
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(unique_urls):
+                            current_url = unique_urls[idx]
+                            page_content = None
+                            scroll_position = 0
+                else:
+                    console.print("[yellow]No links found on this page[/]")
+                    time.sleep(1)
+
+            elif action.startswith("📜"):
+                if browser_session.viewer_history:
+                    console.print("\n[bold cyan]Recent URLs:[/]")
+                    for i, url in enumerate(reversed(browser_session.viewer_history[-10:]), 1):
+                        console.print(f"  {i}. {url}")
+                    console.print()
+
+                    choice = questionary.text(
+                        "Enter number to visit (or Enter to cancel):",
+                        style=custom_style
+                    ).ask()
+
+                    if choice and choice.isdigit():
+                        idx = int(choice) - 1
+                        recent_urls = list(reversed(browser_session.viewer_history[-10:]))
+                        if 0 <= idx < len(recent_urls):
+                            current_url = recent_urls[idx]
+                            page_content = None
+                            scroll_position = 0
+                else:
+                    console.print("[yellow]No history yet[/]")
+                    time.sleep(1)
+
+            elif action.startswith("⬇️"):
+                # Next page - recalculate wrapped lines
+                lines = page_content.split('\n')
+                wrapped_lines_nav = []
+                for line in lines:
+                    if len(line) <= content_width:
+                        wrapped_lines_nav.append(line)
+                    else:
+                        wrapped = textwrap.wrap(line, width=content_width, break_long_words=True, break_on_hyphens=False)
+                        wrapped_lines_nav.extend(wrapped if wrapped else [''])
+
+                if scroll_position + usable_height < len(wrapped_lines_nav):
+                    scroll_position += usable_height
+
+            elif action.startswith("⬆️"):
+                # Previous page
+                if scroll_position >= usable_height:
+                    scroll_position -= usable_height
+                else:
+                    scroll_position = 0
+
+
+def browser_menu():
+    """Terminal web browser menu with integrated viewer"""
+    from leadsauce.utils.helpers import get_browser_session
+
+    browser_session = get_browser_session()
+
+    while True:
+        # Launch integrated web viewer directly
+        result = integrated_web_viewer()
+        # If viewer returns a menu name, navigate there
+        if result:
+            return result
+        # Otherwise, loop back to viewer (in case user wants to browse more)
