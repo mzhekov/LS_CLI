@@ -17,7 +17,7 @@ from leadsauce.models.company import Company
 from leadsauce.models.interaction import Interaction
 from leadsauce.models.reminder import Reminder
 from leadsauce.models.tag import Tag
-from leadsauce.models.relationship import Relationship
+from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
 
 
 class SystemExecutor:
@@ -359,9 +359,9 @@ class SystemExecutor:
         if not target:
             return False, f"Target profile #{target_id} not found", None
 
-        relationship = Relationship(
-            source_profile_id=source_id,
-            target_profile_id=target_id,
+        relationship = ProfileRelationship(
+            from_profile_id=source_id,
+            to_profile_id=target_id,
             relationship_type=rel_type
         )
 
@@ -427,7 +427,7 @@ class SystemExecutor:
             'total_reminders': session.query(Reminder).count(),
             'interactions': session.query(Interaction).count(),
             'tags': session.query(Tag).count(),
-            'relationships': session.query(Relationship).count()
+            'relationships': session.query(ProfileRelationship).count() + session.query(CompanyRelationship).count()
         }
 
         return True, "System statistics", stats
