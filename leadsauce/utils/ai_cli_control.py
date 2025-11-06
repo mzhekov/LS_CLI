@@ -298,8 +298,9 @@ You respond with:
         """
         try:
             # Query AI with status display
+            self.console.print(f"\n[bold yellow]⚡ TIP: Press Ctrl+C anytime to cancel and switch menus[/bold yellow]\n")
             with self.console.status(
-                f"[bold cyan]{self.service.get_tool_info(self.tool)['name']} processing... [dim](Press Ctrl+C to cancel)[/dim][/bold cyan]",
+                f"[bold cyan]🤖 {self.service.get_tool_info(self.tool)['name']} processing...[/bold cyan]",
                 spinner="dots"
             ):
                 response = self.service.query(
@@ -320,8 +321,11 @@ You respond with:
             self._execute_commands_from_response(response)
 
         except KeyboardInterrupt:
-            self.console.print("\n[yellow]⚠️  Operation cancelled[/yellow]")
-            self.console.print("[dim]Returning to prompt... (type /menu to switch sections or /exit to quit)[/dim]")
+            self.console.print("\n[bold green]✓ Operation cancelled[/bold green]")
+            self.console.print("[bold]You can now:[/bold]")
+            self.console.print("  • Type another command")
+            self.console.print("  • Type [cyan]/menu[/cyan] to switch to another section")
+            self.console.print("  • Type [cyan]/exit[/cyan] to return to dashboard\n")
             raise  # Re-raise to be caught by outer handler
 
         except (ToolNotInstalledError, ToolTimeoutError, AICLIError) as e:
