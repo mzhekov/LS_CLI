@@ -71,8 +71,7 @@ NAV_ITEMS = [
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
     ("AI Assistant", "🤖", "0"),
-    ("Export", "📤", "8"),
-    ("Import", "📥", "9"),
+    ("Import/Export", "📦", "9"),
     ("Exit", "❌", "q")
 ]
 
@@ -157,15 +156,8 @@ def interactive_main_menu():
             else:
                 current_view = "Dashboard"
             continue
-        elif current_view == "Export":
-            new_view = export_menu()
-            if new_view:
-                current_view = new_view
-            else:
-                current_view = "Dashboard"
-            continue
-        elif current_view == "Import":
-            new_view = import_menu()
+        elif current_view == "Import/Export":
+            new_view = import_export_menu()
             if new_view:
                 current_view = new_view
             else:
@@ -183,7 +175,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-9) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-7, 9, 0) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
@@ -5122,6 +5114,104 @@ def delete_task_interactive(task_id):
         time.sleep(2)
     finally:
         session.close()
+
+
+def import_export_menu():
+    """Combined Import/Export menu - Choose between importing or exporting data"""
+    session = get_session()
+
+    while True:
+        console.clear()
+
+        # Show top navigation bar
+        console.print(render_top_bar("Import/Export"))
+        console.print()
+
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[1] Export Data", style="bold cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[2] Import Data", style="bold green")
+        console.print(Panel(actions_text, title="📦 Import/Export Operations", border_style="cyan"))
+        console.print()
+
+        # Statistics
+        try:
+            profile_count = session.query(Profile).count()
+            company_count = session.query(Company).count()
+            task_count = session.query(Task).count()
+            interaction_count = session.query(Interaction).count()
+
+            stats_table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
+            stats_table.add_column("Entity Type", style="cyan", width=25)
+            stats_table.add_column("Count", style="green", justify="right", width=15)
+
+            stats_table.add_row("👥 Profiles", str(profile_count))
+            stats_table.add_row("🏢 Companies", str(company_count))
+            stats_table.add_row("✅ Tasks", str(task_count))
+            stats_table.add_row("💬 Interactions", str(interaction_count))
+
+            console.print(stats_table)
+            console.print()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not load statistics: {e}[/]")
+            console.print()
+
+        # Information panel
+        console.print(Panel(
+            "[bold cyan]Export:[/bold cyan] Save your LeadSauce data to CSV files\n"
+            "  • Backup your data\n"
+            "  • Share with other tools\n"
+            "  • Analyze in spreadsheets\n\n"
+            "[bold green]Import:[/bold green] Load data from CSV files into LeadSauce\n"
+            "  • Restore from backup\n"
+            "  • Migrate from other systems\n"
+            "  • Bulk add contacts",
+            title="ℹ️  About Import/Export",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Create menu choices
+        choices = [
+            "📤 [1] Export Data → Save to CSV files",
+            "📥 [2] Import Data → Load from CSV files",
+            "🔙 Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action:
+            session.close()
+            return None  # User cancelled (Ctrl+C)
+
+        if "Back to Dashboard" in action:
+            session.close()
+            return None
+
+        elif "Export Data" in action:
+            # Close current session before calling export_menu
+            session.close()
+            # Call export menu
+            result = export_menu()
+            # Re-open session for next iteration
+            session = get_session()
+            if result:
+                return result
+
+        elif "Import Data" in action:
+            # Close current session before calling import_menu
+            session.close()
+            # Call import menu
+            result = import_menu()
+            # Re-open session for next iteration
+            session = get_session()
+            if result:
+                return result
 
 
 def export_menu():
