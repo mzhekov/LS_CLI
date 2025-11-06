@@ -78,6 +78,8 @@ NAV_ITEMS = [
 
 def render_top_bar(current_view="Dashboard"):
     """Render the interactive top navigation bar with keyboard shortcuts"""
+    from leadsauce.utils.helpers import get_browser_session
+
     nav_text = Text()
 
     for i, (name, icon, key) in enumerate(NAV_ITEMS):
@@ -93,7 +95,14 @@ def render_top_bar(current_view="Dashboard"):
             nav_text.append(f"[{key}]", style="dim yellow")
             nav_text.append(f" {name}", style="white")
 
-    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle="[dim]Press number keys to navigate[/]")
+    # Check for active browser session and add indicator
+    browser_session = get_browser_session()
+    subtitle = "[dim]Press number keys to navigate[/]"
+    if browser_session.is_active():
+        info = browser_session.get_info()
+        subtitle = f"[dim]Press number keys to navigate[/] │ [bold green]🌐 Browser running:[/] [cyan]{info['browser']}[/]"
+
+    return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
 
 def interactive_main_menu():
@@ -5659,11 +5668,13 @@ def import_menu():
 
 
 def browser_menu():
-    """Terminal web browser menu"""
+    """Terminal web browser menu with background session support"""
     import subprocess
     import shutil
-    from leadsauce.utils.helpers import get_available_browsers, launch_browser
+    from leadsauce.utils.helpers import get_available_browsers, get_browser_session
     from rich.text import Text
+
+    browser_session = get_browser_session()
 
     while True:
         console.clear()
@@ -5688,10 +5699,69 @@ def browser_menu():
             questionary.press_any_key_to_continue("Press any key to return to Dashboard...").ask()
             return "Dashboard"
 
+        # Check if there's an active browser session
+        if browser_session.is_active():
+            info = browser_session.get_info()
+            running_minutes = int(info['running_time'].total_seconds() / 60) if info.get('running_time') else 0
+
+            console.print(Panel(
+                f"[bold green]Active Browser Session[/]\n\n"
+                f"[cyan]Browser:[/] {info['browser'].upper()}\n"
+                f"[cyan]URL:[/] {info['url']}\n"
+                f"[cyan]PID:[/] {info['pid']}\n"
+                f"[cyan]Running time:[/] {running_minutes} minute{'s' if running_minutes != 1 else ''}",
+                border_style="green",
+                title="Browser Running"
+            ))
+            console.print()
+
+            choices = [
+                "🔄 Resume Browser Session",
+                "🗑️  Close Browser & Start New",
+                "← Back to Dashboard"
+            ]
+
+            action = questionary.select(
+                "What would you like to do?",
+                choices=choices,
+                style=custom_style
+            ).ask()
+
+            if not action or action == "← Back to Dashboard":
+                return "Dashboard"
+
+            if action == "🔄 Resume Browser Session":
+                console.clear()
+                console.print(render_top_bar("Browser"))
+                console.print()
+                console.print(Panel(
+                    f"[bold green]Resuming {info['browser'].upper()}...[/]\n\n"
+                    f"[cyan]URL:[/] {info['url']}\n\n"
+                    "[dim]Browser Controls:[/]\n"
+                    "  • [yellow]q[/] - Quit browser and close session\n"
+                    "  • [yellow]Ctrl+Z[/] - Suspend browser (return to menu)\n"
+                    "  • [yellow]h[/] - Help (in most browsers)\n"
+                    "  • [yellow]Arrow keys[/] - Navigate\n"
+                    "  • [yellow]Enter[/] - Follow link",
+                    border_style="green",
+                    title="Resuming Browser"
+                ))
+                console.print()
+                time.sleep(1)
+
+                # Resume the browser session
+                browser_session.resume()
+                continue
+
+            elif action == "🗑️  Close Browser & Start New":
+                browser_session.cleanup()
+                # Continue to browser selection below
+
         # Display available browsers
         console.print(Panel(
             "[bold cyan]Terminal Web Browser[/]\n\n"
-            "[dim]Browse the web directly from your terminal.[/]",
+            "[dim]Browse the web directly from your terminal.\n"
+            "Browser runs in background - you can switch to other menus and come back.[/]",
             border_style="cyan",
             title="Web Browser"
         ))
@@ -5762,7 +5832,7 @@ def browser_menu():
             # User cancelled (Ctrl+C)
             continue
 
-        # Launch browser
+        # Launch browser in background
         try:
             console.clear()
             console.print(render_top_bar("Browser"))
@@ -5771,23 +5841,25 @@ def browser_menu():
                 f"[bold green]Launching {browser_cmd.upper()}...[/]\n\n"
                 f"[cyan]URL:[/] {url if url.strip() else 'Home page'}\n\n"
                 "[dim]Browser Controls:[/]\n"
-                "  • [yellow]q[/] - Quit browser\n"
+                "  • [yellow]q[/] - Quit browser and close session\n"
+                "  • [yellow]Ctrl+Z[/] - Suspend browser (return to menu)\n"
                 "  • [yellow]h[/] - Help (in most browsers)\n"
                 "  • [yellow]Arrow keys[/] - Navigate\n"
-                "  • [yellow]Enter[/] - Follow link",
+                "  • [yellow]Enter[/] - Follow link\n\n"
+                "[bold yellow]Tip:[/] [dim]Use Ctrl+Z to return to menu while keeping browser open[/]",
                 border_style="green",
                 title="Browser Starting"
             ))
             console.print()
 
             # Small delay to let user read the instructions
-            time.sleep(1)
+            time.sleep(2)
 
-            # Launch the browser
-            if url.strip():
-                subprocess.run([browser_cmd, url.strip()], check=False)
-            else:
-                subprocess.run([browser_cmd], check=False)
+            # Start browser session in background
+            browser_session.start(browser_cmd, url)
+
+            # Wait for the browser (bringing it to foreground)
+            browser_session.resume()
 
         except Exception as e:
             console.clear()
