@@ -387,6 +387,174 @@ def switch_to_tmux_window(window_name: str) -> bool:
         return False
 
 
+def fetch_webpage_as_text(url: str) -> Optional[str]:
+    """Fetch a webpage and convert to readable text
+
+    Args:
+        url: URL to fetch
+
+    Returns:
+        Text content of the page or None on error
+    """
+    import subprocess
+    import shutil
+
+    # Try different methods in order of preference
+    # 1. Try w3m -dump (best formatting)
+    if shutil.which('w3m'):
+        try:
+            result = subprocess.run(
+                ['w3m', '-dump', url],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+        except Exception:
+            pass
+
+    # 2. Try lynx -dump
+    if shutil.which('lynx'):
+        try:
+            result = subprocess.run(
+                ['lynx', '-dump', '-nolist', url],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+        except Exception:
+            pass
+
+    # 3. Try links -dump
+    if shutil.which('links'):
+        try:
+            result = subprocess.run(
+                ['links', '-dump', url],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+        except Exception:
+            pass
+
+    # 4. Fallback to basic requests + BeautifulSoup if available
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+
+        response = requests.get(url, timeout=30, headers={
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'
+        })
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Remove script and style elements
+        for script in soup(["script", "style"]):
+            script.decompose()
+
+        # Get text
+        text = soup.get_text()
+
+        # Break into lines and remove leading/trailing space
+        lines = (line.strip() for line in text.splitlines())
+        # Break multi-headlines into a line each
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        # Drop blank lines
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+
+        return text
+    except Exception:
+        pass
+
+    return None
+
+
+def get_available_terminal_emulators() -> Dict[str, Optional[str]]:
+    """Detect available terminal emulators
+
+    Returns:
+        Dictionary mapping terminal names to their paths
+    """
+    import shutil
+
+    terminals = {
+        'gnome-terminal': shutil.which('gnome-terminal'),
+        'konsole': shutil.which('konsole'),
+        'xfce4-terminal': shutil.which('xfce4-terminal'),
+        'mate-terminal': shutil.which('mate-terminal'),
+        'xterm': shutil.which('xterm'),
+        'rxvt': shutil.which('rxvt'),
+        'urxvt': shutil.which('urxvt'),
+        'alacritty': shutil.which('alacritty'),
+        'kitty': shutil.which('kitty'),
+        'terminator': shutil.which('terminator'),
+    }
+    return {k: v for k, v in terminals.items() if v}
+
+
+def launch_in_new_terminal(browser: str, url: str = None) -> bool:
+    """Launch browser in a new terminal window
+
+    Args:
+        browser: Browser command to run
+        url: Optional URL to open
+
+    Returns:
+        True if launched successfully
+    """
+    import subprocess
+
+    available_terminals = get_available_terminal_emulators()
+
+    if not available_terminals:
+        return False
+
+    # Build browser command
+    browser_cmd = browser
+    if url and url.strip():
+        browser_cmd = f"{browser} {url.strip()}"
+
+    # Try terminals in priority order
+    terminal_commands = {
+        'gnome-terminal': ['gnome-terminal', '--', 'sh', '-c', browser_cmd],
+        'konsole': ['konsole', '-e', 'sh', '-c', browser_cmd],
+        'xfce4-terminal': ['xfce4-terminal', '-e', f'sh -c "{browser_cmd}"'],
+        'mate-terminal': ['mate-terminal', '-e', f'sh -c "{browser_cmd}"'],
+        'xterm': ['xterm', '-e', 'sh', '-c', browser_cmd],
+        'rxvt': ['rxvt', '-e', 'sh', '-c', browser_cmd],
+        'urxvt': ['urxvt', '-e', 'sh', '-c', browser_cmd],
+        'alacritty': ['alacritty', '-e', 'sh', '-c', browser_cmd],
+        'kitty': ['kitty', 'sh', '-c', browser_cmd],
+        'terminator': ['terminator', '-e', f'sh -c "{browser_cmd}"'],
+    }
+
+    # Try each available terminal
+    for term_name in ['gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal',
+                      'alacritty', 'kitty', 'terminator', 'xterm', 'rxvt', 'urxvt']:
+        if term_name in available_terminals:
+            try:
+                subprocess.Popen(
+                    terminal_commands[term_name],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                return True
+            except Exception:
+                continue
+
+    return False
+
+
 class BrowserSession:
     """Manages browser session state with quick-resume support"""
 
@@ -395,6 +563,7 @@ class BrowserSession:
         self.url = None
         self.last_used_time = None
         self.tmux_window = None
+        self.in_separate_window = False
 
     def has_recent_session(self) -> bool:
         """Check if there's a recent browser session (within last 2 hours)"""
@@ -413,19 +582,34 @@ class BrowserSession:
         active_windows = get_tmux_browser_windows()
         return self.tmux_window in active_windows
 
-    def launch(self, browser: str, url: str = None, use_tmux: bool = False) -> bool:
-        """Launch browser in foreground or tmux window
+    def launch(self, browser: str, url: str = None, use_tmux: bool = False,
+               separate_window: bool = False) -> bool:
+        """Launch browser in foreground, tmux, or separate terminal window
 
         Args:
             browser: Browser command to run
             url: Optional URL to open
             use_tmux: If True and tmux is available, launch in new tmux window
+            separate_window: If True, launch in new terminal window
 
         Returns:
             True if browser launched successfully
         """
         import subprocess
         from datetime import datetime
+
+        # Try separate window launch if requested
+        if separate_window:
+            if launch_in_new_terminal(browser, url):
+                self.browser = browser
+                self.url = url if url and url.strip() else "Home page"
+                self.last_used_time = datetime.now()
+                self.in_separate_window = True
+                self.tmux_window = None
+                return True
+            else:
+                # Fall back to regular launch if no terminal emulator available
+                separate_window = False
 
         # Try tmux launch if requested and available
         if use_tmux and is_in_tmux():
@@ -434,6 +618,7 @@ class BrowserSession:
                 self.url = url if url and url.strip() else "Home page"
                 self.last_used_time = datetime.now()
                 self.tmux_window = f"browser-{browser}"
+                self.in_separate_window = False
                 return True
 
         # Launch in foreground (blocking)
@@ -450,6 +635,7 @@ class BrowserSession:
             self.url = url if url and url.strip() else "Home page"
             self.last_used_time = datetime.now()
             self.tmux_window = None
+            self.in_separate_window = False
             return True
         except Exception:
             return False
@@ -471,6 +657,7 @@ class BrowserSession:
         self.url = None
         self.last_used_time = None
         self.tmux_window = None
+        self.in_separate_window = False
 
     def get_info(self) -> Dict[str, Any]:
         """Get browser session information
@@ -485,7 +672,8 @@ class BrowserSession:
             'url': self.url,
             'last_used': self.last_used_time,
             'in_tmux': self.tmux_window is not None,
-            'tmux_active': self.has_active_tmux_window()
+            'tmux_active': self.has_active_tmux_window(),
+            'in_separate_window': self.in_separate_window
         }
 
         if self.last_used_time:

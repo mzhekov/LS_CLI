@@ -5672,7 +5672,7 @@ def import_menu():
     return None
 
 
-def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmux):
+def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmux, separate_window):
     """Helper function to launch browser with appropriate messages
 
     Args:
@@ -5681,12 +5681,36 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
         url: URL to open
         use_tmux: Whether to use tmux window
         in_tmux: Whether currently in tmux
+        separate_window: Whether to use separate terminal window
     """
     console.clear()
     console.print(render_top_bar("Browser"))
     console.print()
 
-    if use_tmux and in_tmux:
+    if separate_window:
+        console.print(Panel(
+            f"[bold green]Opening {browser_cmd.upper()} in new window...[/]\n\n"
+            f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
+            "[bold yellow]Browser opened in separate terminal window![/]\n\n"
+            "[dim]The browser is now running independently.[/]\n"
+            "[green]✓ You can navigate all menus while browsing[/]\n"
+            "[green]✓ Close the browser window when done[/]\n"
+            "[green]✓ Press [0] anytime to reopen same URL[/]",
+            border_style="green",
+            title="Browser Launched"
+        ))
+        console.print()
+
+        success = browser_session.launch(browser_cmd, url, separate_window=True)
+
+        if success:
+            time.sleep(2)
+        else:
+            console.print("[yellow]No terminal emulator found. Launching in this window instead...[/]")
+            time.sleep(2)
+            success = browser_session.launch(browser_cmd, url, use_tmux=False, separate_window=False)
+
+    elif use_tmux and in_tmux:
         console.print(Panel(
             f"[bold green]Opening {browser_cmd.upper()} in new tmux window...[/]\n\n"
             f"[cyan]URL:[/] {url if url and url.strip() else 'Home page'}\n\n"
@@ -5725,7 +5749,7 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
         console.print()
         time.sleep(1)
 
-        success = browser_session.launch(browser_cmd, url, use_tmux=False)
+        success = browser_session.launch(browser_cmd, url, use_tmux=False, separate_window=False)
 
         if not success:
             console.clear()
@@ -5741,8 +5765,116 @@ def launch_browser_with_info(browser_session, browser_cmd, url, use_tmux, in_tmu
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
+def integrated_web_viewer():
+    """Integrated web viewer that displays content within the app"""
+    from leadsauce.utils.helpers import fetch_webpage_as_text
+    from rich.text import Text
+    from rich.console import Group
+    import re
+
+    current_url = "https://duckduckgo.com"
+    page_content = None
+
+    while True:
+        console.clear()
+        console.print(render_top_bar("Browser"))
+        console.print()
+
+        # URL input bar
+        console.print(Panel(
+            f"[bold cyan]Current URL:[/] {current_url}\n\n"
+            "[dim]Commands: [g] Go to URL | [r] Reload | [b] Back to menu[/]",
+            border_style="cyan",
+            title="Integrated Web Viewer"
+        ))
+        console.print()
+
+        # Fetch and display page if not loaded
+        if page_content is None:
+            console.print("[yellow]Loading page...[/]")
+            page_content = fetch_webpage_as_text(current_url)
+
+            if page_content is None:
+                console.print(Panel(
+                    f"[bold red]Failed to load page![/]\n\n"
+                    f"[yellow]URL:[/] {current_url}\n\n"
+                    "[dim]Please check the URL and try again.[/]",
+                    border_style="red",
+                    title="Error"
+                ))
+                console.print()
+                action = questionary.select(
+                    "What would you like to do?",
+                    choices=[
+                        "Try different URL",
+                        "← Back to Browser Menu"
+                    ],
+                    style=custom_style
+                ).ask()
+
+                if action == "Try different URL":
+                    new_url = questionary.text(
+                        "Enter URL:",
+                        style=custom_style,
+                        default=current_url
+                    ).ask()
+
+                    if new_url:
+                        current_url = new_url
+                        page_content = None
+                        continue
+                else:
+                    return
+
+        # Display page content in scrollable area
+        if page_content:
+            # Split content into lines and limit display
+            lines = page_content.split('\n')
+            display_lines = lines[:100]  # Show first 100 lines
+
+            content_text = '\n'.join(display_lines)
+            if len(lines) > 100:
+                content_text += f"\n\n[dim]... ({len(lines) - 100} more lines)[/]"
+
+            console.print(Panel(
+                content_text,
+                border_style="green",
+                title=f"[bold green]Page Content[/] (Showing {min(100, len(lines))} of {len(lines)} lines)",
+                subtitle="[dim]Scroll up to see full content[/]"
+            ))
+            console.print()
+
+        # Action menu
+        action = questionary.select(
+            "Choose an action:",
+            choices=[
+                "🔗 Go to new URL",
+                "🔄 Reload page",
+                "← Back to Browser Menu"
+            ],
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Browser Menu":
+            return
+
+        if action.startswith("🔗"):
+            new_url = questionary.text(
+                "Enter URL:",
+                style=custom_style,
+                default="https://"
+            ).ask()
+
+            if new_url:
+                current_url = new_url
+                page_content = None  # Trigger reload
+
+        elif action.startswith("🔄"):
+            page_content = None  # Trigger reload
+
+
 def browser_menu():
-    """Terminal web browser menu with session memory and tmux support"""
+    """Terminal web browser menu with integrated viewer"""
     import subprocess
     import shutil
     from leadsauce.utils.helpers import (
@@ -5760,6 +5892,37 @@ def browser_menu():
         console.print(render_top_bar("Browser"))
         console.print()
 
+        # Main browser selection menu
+        console.print(Panel(
+            "[bold cyan]Web Browsing Options[/]\n\n"
+            "[green]✓ Integrated viewer - Browse within this app (Recommended)[/]\n"
+            "[yellow]○ External browser - Full-featured terminal browser[/]",
+            border_style="cyan",
+            title="Web Browser"
+        ))
+        console.print()
+
+        choices = [
+            "🌐 Integrated Web Viewer (Browse within app)",
+            "🖥️  External Terminal Browser",
+            "← Back to Dashboard"
+        ]
+
+        action = questionary.select(
+            "Choose browsing mode:",
+            choices=choices,
+            style=custom_style
+        ).ask()
+
+        if not action or action == "← Back to Dashboard":
+            return "Dashboard"
+
+        if action.startswith("🌐"):
+            # Launch integrated web viewer
+            integrated_web_viewer()
+            continue
+
+        # External browser option
         # Check for available browsers
         available_browsers = get_available_browsers()
 
@@ -5770,13 +5933,14 @@ def browser_menu():
                 "  • Ubuntu/Debian: [cyan]sudo apt install w3m lynx links[/]\n"
                 "  • Fedora/RHEL: [cyan]sudo dnf install w3m lynx links[/]\n"
                 "  • Arch Linux: [cyan]sudo pacman -S w3m lynx links[/]\n"
-                "  • macOS: [cyan]brew install w3m lynx links[/]",
+                "  • macOS: [cyan]brew install w3m lynx links[/]\n\n"
+                "[dim]Tip: Use the Integrated Web Viewer instead![/]",
                 border_style="red",
                 title="Browser Not Found"
             ))
             console.print()
-            questionary.press_any_key_to_continue("Press any key to return to Dashboard...").ask()
-            return "Dashboard"
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            continue
 
         # Check if there's an active tmux browser window
         if browser_session.has_active_tmux_window():
@@ -5958,26 +6122,39 @@ def browser_menu():
             # User cancelled (Ctrl+C)
             continue
 
-        # Ask about launch mode if in tmux
+        # Ask about launch mode
         use_tmux_window = False
+        use_separate_window = False
+        from leadsauce.utils.helpers import get_available_terminal_emulators
+
+        terminal_emulators_available = bool(get_available_terminal_emulators())
+
+        # Build mode choices based on what's available
+        mode_choices = []
+
+        if terminal_emulators_available:
+            mode_choices.append("🪟 In separate window (allows menu navigation) - Recommended")
 
         if in_tmux:
+            mode_choices.append("🔄 In tmux window (for tmux users)")
+
+        mode_choices.append("📺 In this window (fullscreen)")
+
+        if len(mode_choices) > 1:
             mode_choice = questionary.select(
                 "How would you like to open the browser?",
-                choices=[
-                    "🪟 In separate tmux window (allows menu navigation)",
-                    "📺 In this window (fullscreen)"
-                ],
+                choices=mode_choices,
                 style=custom_style
             ).ask()
 
             if not mode_choice:
                 continue
 
-            use_tmux_window = mode_choice.startswith("🪟")
+            use_separate_window = mode_choice.startswith("🪟")
+            use_tmux_window = mode_choice.startswith("🔄")
 
         # Launch the browser
-        launch_browser_with_info(browser_session, browser_cmd, url, use_tmux_window, in_tmux)
+        launch_browser_with_info(browser_session, browser_cmd, url, use_tmux_window, in_tmux, use_separate_window)
 
         # Return to browser menu after launching
         continue
