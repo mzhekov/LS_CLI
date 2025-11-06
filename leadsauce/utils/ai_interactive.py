@@ -74,19 +74,18 @@ Welcome to the LeadSauce AI Assistant! You can:
 • **Debug issues** and get suggestions
 • **Analyze** your database schema
 {system_mode_text}
-**Quick Navigation:**
-- Press `1`-`9` or `0` for instant menu switching
+**Quick Navigation (Single Keypress):**
+- Press `1`-`9` or `0` for instant menu switching (no Enter needed!)
   - [1] Dashboard  [2] Profiles  [3] Companies  [4] Network & Relationships
   - [5] Search  [6] Tags  [7] Workshop  [8] Import/Export
   - [9] AI CLI Control  [0] Browser
+- Press `?` for help  •  Press `q` to exit
 
-**Commands:**
-- Type your question or prompt and press Enter
-- Type `/help` for all commands
-- Type `/menu` to switch to another section
-- Type `/context` to add files as context
-- Type `/clear` to clear conversation history
-- Type `/exit` or `/quit` to return to main menu
+**Usage:**
+- Press `Enter` then type your AI query
+- Or start typing directly - first character begins your query
+- Type `/help` for all commands  •  Type `/menu` for menu dialog
+- Type `/context` to add files  •  Type `/clear` to clear history
 
 **Working Directory:** `{self.working_dir}`
         """
@@ -131,33 +130,64 @@ Welcome to the LeadSauce AI Assistant! You can:
                                 self.console.print(f"\n[bold green]✅ Task completed:[/bold green] {task.description}")
                                 self.console.print(f"[dim]Use /results to view, or continue asking questions[/dim]\n")
 
-                    # Get user input
+                    # Get single key for quick navigation or Enter for full input
                     self.console.print()
-                    user_input = Prompt.ask(
-                        "[bold green]You[/bold green]",
-                        console=self.console
-                    ).strip()
+                    self.console.print("[dim]Press 1-9/0 for menu, Enter to ask AI, or ? for help:[/]")
+
+                    from leadsauce.utils.interactive import get_single_key
+                    key = get_single_key()
+
+                    # Handle single-key menu navigation (1-9, 0)
+                    nav_map = {
+                        '1': 'Dashboard',
+                        '2': 'Profiles',
+                        '3': 'Companies',
+                        '4': 'Network & Relationships',
+                        '5': 'Search',
+                        '6': 'Tags',
+                        '7': 'Workshop',
+                        '8': 'Import/Export',
+                        '9': 'AI CLI Control',
+                        '0': 'Browser',
+                    }
+
+                    if key in nav_map:
+                        self.console.print(f"[dim]Switching to {nav_map[key]}...[/]")
+                        return nav_map[key]
+
+                    # Handle help
+                    if key == '?':
+                        self._show_help()
+                        continue
+
+                    # Handle quit/exit keys
+                    if key in ['q', 'Q']:
+                        running = task_manager.get_running_tasks()
+                        if running:
+                            confirm = questionary.confirm(
+                                f"{len(running)} task(s) still running. Exit anyway?",
+                                default=False
+                            ).ask()
+                            if not confirm:
+                                continue
+                        self.console.print("[dim]Exiting AI Assistant...[/dim]")
+                        return None
+
+                    # If Enter or any other key, get full text input
+                    if key in ['\n', '\r']:
+                        # Just Enter pressed - prompt for full input
+                        user_input = Prompt.ask(
+                            "[bold green]You[/bold green]",
+                            console=self.console
+                        ).strip()
+                    else:
+                        # Some other character - include it in the prompt
+                        self.console.print(f"[bold green]You[/bold green] {key}", end="")
+                        remaining = Prompt.ask("", console=self.console).strip()
+                        user_input = (key + remaining).strip()
 
                     if not user_input:
                         continue
-
-                    # Check for single-key menu navigation (1-9, 0)
-                    if len(user_input) == 1 and user_input in '1234567890':
-                        nav_map = {
-                            '1': 'Dashboard',
-                            '2': 'Profiles',
-                            '3': 'Companies',
-                            '4': 'Network & Relationships',
-                            '5': 'Search',
-                            '6': 'Tags',
-                            '7': 'Workshop',
-                            '8': 'Import/Export',
-                            '9': 'AI CLI Control',
-                            '0': 'Browser',
-                        }
-                        if user_input in nav_map:
-                            self.console.print(f"[dim]Switching to {nav_map[user_input]}...[/dim]")
-                            return nav_map[user_input]
 
                     # Check for /bg prefix to run in background
                     run_in_bg = False
@@ -410,11 +440,18 @@ Welcome to the LeadSauce AI Assistant! You can:
 
     def _show_help(self):
         """Display help information"""
-        help_table = Table(title="AI Assistant Commands", show_header=True, header_style="bold cyan")
-        help_table.add_column("Command", style="cyan", width=20)
+        help_table = Table(title="AI Assistant Commands & Shortcuts", show_header=True, header_style="bold cyan")
+        help_table.add_column("Key/Command", style="cyan", width=20)
         help_table.add_column("Description", style="white")
 
         commands = [
+            ("", "[bold yellow]Single Key Actions[/]"),
+            ("1-9, 0", "Instant menu navigation (no Enter)"),
+            ("?", "Show this help"),
+            ("q", "Quick exit from AI Assistant"),
+            ("Enter", "Start typing AI query"),
+            ("", ""),
+            ("", "[bold yellow]Slash Commands[/]"),
             ("/help", "Show this help message"),
             ("/bg <prompt>", "Run query in background immediately"),
             ("/context", "Add files as context for the AI"),
@@ -423,10 +460,9 @@ Welcome to the LeadSauce AI Assistant! You can:
             ("/status", "Show AI tool status"),
             ("/tasks", "Show running background tasks"),
             ("/results", "View completed task results"),
-            ("/menu", "Switch to another main menu"),
+            ("/menu", "Show menu selection dialog"),
             ("/exit, /quit, /q", "Exit AI Assistant"),
             ("", ""),
-            ("1-9, 0", "Quick menu navigation (instant switch)"),
             ("Ctrl+C while waiting", "Send current query to background"),
         ]
 
