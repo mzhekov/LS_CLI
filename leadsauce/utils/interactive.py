@@ -2438,96 +2438,179 @@ def network_and_relationships_menu():
                                 'bidirectional': False
                             })
 
-                # Compact circular layout
-                width = 80
-                height = 20
-                center_x = width // 2
-                center_y = height // 2
-                radius = min(width // 2 - 12, height // 2 - 2)
+                # Box-drawing layout with hierarchical structure
 
-                # Position nodes
-                positions = []
-                angles = []
-                for i, node in enumerate(nodes):
-                    angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
-                    x = int(center_x + radius * math.cos(angle))
-                    y = int(center_y + radius * math.sin(angle))
-                    positions.append((x, y))
-                    angles.append(angle)
+                def shorten_name(name, max_len=12):
+                    """Shorten name to fit in box (e.g., 'John Smith' -> 'John S.')"""
+                    if len(name) <= max_len:
+                        return name
+                    parts = name.split()
+                    if len(parts) > 1:
+                        return f"{parts[0]} {parts[-1][0]}."[:max_len]
+                    return name[:max_len]
 
-                # Create canvas
-                canvas = [[' ' for _ in range(width)] for _ in range(height)]
+                def create_box(text, width=None):
+                    """Create a box around text using box-drawing characters"""
+                    if width is None:
+                        width = len(text) + 2
+                    else:
+                        width = max(width, len(text) + 2)
 
-                # Draw edges
-                for edge in edges:
-                    from_pos = positions[edge['from']]
-                    to_pos = positions[edge['to']]
+                    padding = (width - 2 - len(text)) // 2
+                    text_line = f"║ {' ' * padding}{text}{' ' * (width - 2 - len(text) - padding)} ║"
 
-                    x0, y0 = from_pos
-                    x1, y1 = to_pos
+                    top = f"╔{'═' * (width - 2)}╗"
+                    bottom = f"╚{'═' * (width - 2)}╝"
 
-                    dx = abs(x1 - x0)
-                    dy = abs(y1 - y0)
-                    sx = 1 if x0 < x1 else -1
-                    sy = 1 if y0 < y1 else -1
-                    err = dx - dy
+                    return [top, text_line, bottom]
 
-                    x, y = x0, y0
-                    steps = 0
-                    max_steps = width + height
+                # Group profiles by company
+                company_groups = {}
+                profiles_without_company = []
 
-                    while steps < max_steps:
-                        if 0 <= y < height and 0 <= x < width:
-                            if edge['type'] == 'works_at':
-                                char = '·'
-                            elif edge['bidirectional']:
-                                char = '═'
-                            else:
-                                char = '─'
+                for profile in profiles:
+                    if profile.company_id and profile.company_id in [c.id for c in companies]:
+                        if profile.company_id not in company_groups:
+                            company_groups[profile.company_id] = []
+                        company_groups[profile.company_id].append(profile)
+                    else:
+                        profiles_without_company.append(profile)
 
-                            if canvas[y][x] == ' ' or canvas[y][x] in ['·', '─']:
-                                canvas[y][x] = char
-
-                        if x == x1 and y == y1:
-                            break
-
-                        e2 = 2 * err
-                        if e2 > -dy:
-                            err -= dy
-                            x += sx
-                        if e2 < dx:
-                            err += dx
-                            y += sy
-
-                        steps += 1
-
-                # Draw nodes
-                for i, (pos, node) in enumerate(zip(positions, nodes)):
-                    x, y = pos
-                    if 0 <= y < height and 0 <= x < width:
-                        icon = '👥' if node['type'] == 'profile' else '🏢'
-                        # For emoji, just place the icon (it takes 2 char width)
-                        if x < width:
-                            canvas[y][x] = icon
-
-                # Render canvas
+                # Build the hierarchical map output
                 map_lines = []
-                for row in canvas:
-                    map_lines.append(''.join(row))
+
+                # Draw companies and their employees
+                for company in companies:
+                    company_name = shorten_name(company.name, 15)
+                    company_box = create_box(f"🏢 {company_name}", 20)
+
+                    # Center the company box
+                    for line in company_box:
+                        map_lines.append(line.center(80))
+
+                    # Get employees for this company
+                    employees = company_groups.get(company.id, [])
+
+                    if employees:
+                        # Draw connection lines to employees
+                        if len(employees) == 1:
+                            map_lines.append("│".center(80))
+                        else:
+                            # Multiple employees - draw branching
+                            branch_width = min(len(employees) * 20, 70)
+                            map_lines.append("│".center(80))
+
+                            # Draw horizontal connector
+                            left_pos = 40 - branch_width // 2
+                            right_pos = 40 + branch_width // 2
+                            line = ' ' * 80
+                            line_list = list(line)
+
+                            # Place branches
+                            step = branch_width // len(employees)
+                            for i in range(len(employees)):
+                                pos = left_pos + i * step + step // 2
+                                if pos < 80:
+                                    line_list[pos] = '│'
+
+                            # Connect with horizontal line
+                            if len(employees) > 1:
+                                first_branch = left_pos + step // 2
+                                last_branch = left_pos + (len(employees) - 1) * step + step // 2
+                                for i in range(first_branch, min(last_branch + 1, 80)):
+                                    if line_list[i] == ' ':
+                                        line_list[i] = '─'
+                                line_list[first_branch] = '┌' if first_branch > 0 else '─'
+                                if last_branch < 80:
+                                    line_list[last_branch] = '┐'
+                                line_list[40] = '┴'
+
+                            map_lines.append(''.join(line_list))
+
+                        # Draw employee boxes
+                        emp_boxes = []
+                        for emp in employees:
+                            emp_name = shorten_name(emp.name, 12)
+                            emp_box = create_box(f"👥 {emp_name}", 16)
+                            emp_boxes.append(emp_box)
+
+                        # Position employee boxes side by side
+                        if len(emp_boxes) == 1:
+                            for line in emp_boxes[0]:
+                                map_lines.append(line.center(80))
+                        else:
+                            # Multiple employees - place side by side
+                            for line_idx in range(3):  # Each box has 3 lines
+                                line_parts = []
+                                step = 70 // len(emp_boxes)
+
+                                for i, emp_box in enumerate(emp_boxes):
+                                    line_parts.append(emp_box[line_idx])
+
+                                # Join with spacing
+                                combined = '  '.join(line_parts)
+                                map_lines.append(combined.center(80))
+
+                    map_lines.append("")  # Spacing between companies
+
+                # Draw profiles without companies
+                if profiles_without_company:
+                    map_lines.append("")
+                    map_lines.append("── Independent Profiles ──".center(80))
+                    map_lines.append("")
+
+                    for i in range(0, len(profiles_without_company), 3):
+                        # Show up to 3 profiles per row
+                        batch = profiles_without_company[i:i+3]
+                        profile_boxes = []
+
+                        for profile in batch:
+                            prof_name = shorten_name(profile.name, 12)
+                            prof_box = create_box(f"👥 {prof_name}", 16)
+                            profile_boxes.append(prof_box)
+
+                        # Draw boxes side by side
+                        for line_idx in range(3):
+                            parts = [box[line_idx] for box in profile_boxes]
+                            combined = '  '.join(parts)
+                            map_lines.append(combined.center(80))
+
+                        map_lines.append("")
+
+                # Show relationship connections
+                if profile_relationships or company_relationships:
+                    map_lines.append("")
+                    map_lines.append("── Key Relationships ──".center(80))
+                    map_lines.append("")
+
+                    # Show a few key relationships
+                    rel_count = 0
+                    max_rels_to_show = 5
+
+                    for rel in profile_relationships[:max_rels_to_show]:
+                        from_name = shorten_name(rel.from_profile.name, 12)
+                        to_name = shorten_name(rel.to_profile.name, 12)
+                        arrow = "═══" if rel.bidirectional else "───"
+                        rel_type = rel.relationship_type[:10]
+
+                        rel_line = f"{from_name} {arrow}[{rel_type}]{arrow}> {to_name}"
+                        map_lines.append(rel_line.center(80))
+                        rel_count += 1
+
+                    if len(profile_relationships) > max_rels_to_show:
+                        map_lines.append(f"... and {len(profile_relationships) - max_rels_to_show} more".center(80))
 
                 map_text = '\n'.join(map_lines)
 
                 # Add legend
                 legend = Text()
-                legend.append("👥 Profile", style="cyan")
-                legend.append("  ", style="dim")
                 legend.append("🏢 Company", style="green")
                 legend.append("  ", style="dim")
-                legend.append("─ Connection", style="dim")
+                legend.append("👥 Profile", style="cyan")
                 legend.append("  ", style="dim")
-                legend.append("═ Bidirectional", style="dim")
+                legend.append("─── Direct", style="dim")
                 legend.append("  ", style="dim")
-                legend.append("· Works at", style="dim")
+                legend.append("═══ Bidirectional", style="dim")
 
                 console.print(Panel(
                     map_text,
