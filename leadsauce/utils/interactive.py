@@ -22,6 +22,7 @@ from leadsauce.models.tag import Tag
 from leadsauce.models.task import Task
 from leadsauce.utils.constants import SENIORITY_LEVELS, GENERATION_TYPES
 from leadsauce.utils.validators import validate_email, validate_phone, parse_tags
+from leadsauce.utils.ai_interactive import AIAssistantMenu
 from datetime import datetime, timedelta
 
 console = Console()
@@ -69,6 +70,7 @@ NAV_ITEMS = [
     ("Search", "🔍", "5"),
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
+    ("AI Assistant", "🤖", "0"),
     ("Export", "📤", "8"),
     ("Import", "📥", "9"),
     ("Exit", "❌", "q")
@@ -168,6 +170,11 @@ def interactive_main_menu():
                 current_view = new_view
             else:
                 current_view = "Dashboard"
+            continue
+        elif current_view == "AI Assistant":
+            ai_menu = AIAssistantMenu()
+            ai_menu.show()
+            current_view = "Dashboard"
             continue
         elif current_view == "Exit":
             console.print("\n[cyan]Goodbye! 👋[/]\n")

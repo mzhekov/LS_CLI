@@ -169,6 +169,25 @@ DEFAULT_CONFIG = {
         "model": "gpt-4",
         "max_tokens": 500
     },
+    "ai": {
+        "enabled": True,
+        "default_tool": "claude",
+        "timeout": 300,
+        "tools": {
+            "claude": {
+                "command": "claude",
+                "enabled": True
+            },
+            "codex": {
+                "command": "codex",
+                "enabled": True
+            },
+            "aider": {
+                "command": "aider",
+                "enabled": True
+            }
+        }
+    },
     "subscription": {
         "tier": "free",
         "features": {
