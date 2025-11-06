@@ -116,23 +116,66 @@ Welcome to the LeadSauce AI Assistant! You can:
                 self.console.input("\nPress Enter to continue...")
                 return None
 
-            self.show_welcome()
             context_files = []
 
             while True:
                 try:
-                    # Check for newly completed tasks
+                    # Clear screen and show top bar (like web viewer)
+                    self.console.clear()
+                    from leadsauce.utils.interactive import render_top_bar
+                    self.console.print(render_top_bar("AI Assistant"))
+                    self.console.print()
+
+                    # Build status panel with current context
+                    tool_info = self.service.get_tool_info(self.tool)
+                    status_lines = []
+                    status_lines.append(f"[bold cyan]🤖 {tool_info['name']}[/]")
+
+                    # Conversation stats
+                    msg_count = len(self.conversation_history) // 2  # Pairs of user/assistant
+                    status_lines.append(f"[dim]Messages:[/] {msg_count}")
+
+                    # Context files
+                    if context_files:
+                        status_lines.append(f"[dim]Context files:[/] {len(context_files)}")
+
+                    # Running tasks
+                    running_tasks = task_manager.get_running_tasks()
+                    if running_tasks:
+                        status_lines.append(f"[yellow]⏳ {len(running_tasks)} task(s) running[/]")
+
+                    # Completed tasks waiting for review
                     pending_results = task_manager.get_pending_results()
                     if pending_results:
-                        for task_id in pending_results:
-                            task = task_manager.get_task(task_id)
-                            if task and task.status == TaskStatus.COMPLETED:
-                                self.console.print(f"\n[bold green]✅ Task completed:[/bold green] {task.description}")
-                                self.console.print(f"[dim]Use /results to view, or continue asking questions[/dim]\n")
+                        status_lines.append(f"[green]✅ {len(pending_results)} task(s) completed[/] [dim](use /results)[/]")
+
+                    # System-aware mode indicator
+                    if self.system_aware:
+                        status_lines.append(f"[bold green]🎯 System-Aware Mode[/] [dim](can execute commands)[/]")
+
+                    status_text = " │ ".join(status_lines)
+                    self.console.print(Panel(
+                        status_text,
+                        border_style="cyan",
+                        title="[cyan]Session Info[/]"
+                    ))
+                    self.console.print()
+
+                    # Show condensed shortcuts guide
+                    shortcuts = (
+                        "[bold cyan]Quick Actions:[/]\n"
+                        "[cyan]1-9/0[/] Jump to menu  │  "
+                        "[cyan]?[/] Help  │  "
+                        "[cyan]q[/] Quit  │  "
+                        "[cyan]Enter[/] Ask AI  │  "
+                        "[cyan]/menu[/] Menu dialog  │  "
+                        "[cyan]/help[/] All commands"
+                    )
+                    self.console.print(shortcuts)
+                    self.console.print()
 
                     # Get single key for quick navigation or Enter for full input
-                    self.console.print()
-                    self.console.print("[dim]Press 1-9/0 for menu, Enter to ask AI, or ? for help:[/]")
+                    self.console.print("[dim]Press key for action (or Enter to ask AI):[/]")
 
                     from leadsauce.utils.interactive import get_single_key
                     key = get_single_key()
@@ -158,6 +201,8 @@ Welcome to the LeadSauce AI Assistant! You can:
                     # Handle help
                     if key == '?':
                         self._show_help()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     # Handle quit/exit keys
@@ -211,6 +256,8 @@ Welcome to the LeadSauce AI Assistant! You can:
 
                     elif user_input.lower() == '/help':
                         self._show_help()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     elif user_input.lower() == '/menu':
@@ -224,26 +271,38 @@ Welcome to the LeadSauce AI Assistant! You can:
                         self.conversation_history.clear()
                         context_files.clear()
                         self.console.print("[green]✓[/green] Conversation history cleared")
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     elif user_input.lower() == '/context':
                         context_files = self._add_context_files()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     elif user_input.lower() == '/history':
                         self._show_history()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     elif user_input.lower() == '/status':
                         self._show_status()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     elif user_input.lower() == '/tasks':
                         self._show_background_tasks()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     elif user_input.lower() == '/results':
                         self._show_results()
+                        self.console.print()
+                        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
                         continue
 
                     # Send query to AI
@@ -362,12 +421,18 @@ Welcome to the LeadSauce AI Assistant! You can:
                 if self.system_aware:
                     self._execute_commands_from_response(response)
 
+                # Pause before returning to menu (like web viewer)
+                self.console.print()
+                questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+
             elif task and task.status == TaskStatus.FAILED:
                 self.console.print(Panel(
                     f"[red]Error: {task.error}[/red]",
                     title="AI Error",
                     border_style="red"
                 ))
+                self.console.print()
+                questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
 
         except KeyboardInterrupt:
             # Task continues in background
