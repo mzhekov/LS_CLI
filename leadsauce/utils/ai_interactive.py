@@ -23,27 +23,43 @@ from rich.table import Table
 import questionary
 
 from leadsauce.services.ai_cli import AICLIService, ToolNotInstalledError, ToolTimeoutError, AICLIError
+from leadsauce.services.system_context import SystemContextProvider
+from leadsauce.services.system_executor import SystemExecutor
 
 
 class InteractiveAISession:
     """Manage interactive AI assistant sessions in the TUI"""
 
-    def __init__(self, tool: str = 'claude', working_dir: Optional[str] = None):
+    def __init__(self, tool: str = 'claude', working_dir: Optional[str] = None, system_aware: bool = True):
         """Initialize interactive AI session
 
         Args:
             tool: AI tool to use (claude, codex, aider)
             working_dir: Working directory for context
+            system_aware: If True, AI can execute LeadSauce system operations
         """
         self.tool = tool
         self.working_dir = working_dir or str(Path.cwd())
         self.console = Console()
         self.service = AICLIService(default_tool=tool)
         self.conversation_history: List[Dict[str, str]] = []
+        self.system_aware = system_aware
+        self.system_context_sent = False
 
     def show_welcome(self):
         """Display welcome message"""
         tool_info = self.service.get_tool_info(self.tool)
+
+        system_mode_text = ""
+        if self.system_aware:
+            system_mode_text = """
+**🎯 SYSTEM-AWARE MODE ENABLED:**
+The AI can actually perform operations in LeadSauce!
+• **Create reminders, profiles, companies, tags**
+• **Log interactions and relationships**
+• **Search and retrieve data**
+• Ask naturally - e.g., "Remind me to call John tomorrow"
+"""
 
         welcome_text = f"""
 # 🤖 AI Assistant - {tool_info['name']}
@@ -55,7 +71,7 @@ Welcome to the LeadSauce AI Assistant! You can:
 • **Generate code** snippets and scripts
 • **Debug issues** and get suggestions
 • **Analyze** your database schema
-
+{system_mode_text}
 **Commands:**
 - Type your question or prompt and press Enter
 - Type `/help` for more commands
@@ -152,6 +168,13 @@ Welcome to the LeadSauce AI Assistant! You can:
             prompt: User's question/prompt
             context_files: Optional list of files for context
         """
+        # Prepend system context on first message if system-aware mode
+        full_prompt = prompt
+        if self.system_aware and not self.system_context_sent:
+            system_context = SystemContextProvider.get_contextualized_prompt()
+            full_prompt = f"{system_context}\n\n---\n\nUser: {prompt}"
+            self.system_context_sent = True
+
         # Show loading indicator
         with self.console.status(
             f"[bold cyan]Asking {self.service.get_tool_info(self.tool)['name']}...[/bold cyan]",
@@ -159,13 +182,13 @@ Welcome to the LeadSauce AI Assistant! You can:
         ):
             try:
                 response = self.service.query(
-                    prompt=prompt,
+                    prompt=full_prompt,
                     tool=self.tool,
                     files=context_files,
                     working_dir=self.working_dir
                 )
 
-                # Store in history
+                # Store in history (store original prompt, not full with context)
                 self.conversation_history.append({
                     'role': 'user',
                     'content': prompt,
@@ -185,6 +208,10 @@ Welcome to the LeadSauce AI Assistant! You can:
                     border_style="cyan",
                     padding=(1, 2)
                 ))
+
+                # If system-aware mode, check for and execute commands
+                if self.system_aware:
+                    self._execute_commands_from_response(response)
 
             except ToolNotInstalledError as e:
                 self.console.print(Panel(
@@ -210,6 +237,69 @@ Welcome to the LeadSauce AI Assistant! You can:
                     title="AI Error",
                     border_style="red"
                 ))
+
+    def _execute_commands_from_response(self, response: str):
+        """Extract and execute commands from AI response
+
+        Args:
+            response: AI response text
+        """
+        commands = SystemExecutor.extract_commands(response)
+
+        if not commands:
+            return
+
+        self.console.print()
+        self.console.print(f"[bold yellow]⚡ Found {len(commands)} command(s) to execute[/bold yellow]")
+
+        for i, command in enumerate(commands, 1):
+            action = command.get('action', 'UNKNOWN')
+
+            # Show command details
+            self.console.print()
+            self.console.print(Panel(
+                f"[bold]Action:[/bold] {action}\n" +
+                f"[bold]Parameters:[/bold]\n" +
+                "\n".join(f"  • {k}: {v}" for k, v in command.get('params', {}).items()),
+                title=f"[cyan]Command {i}/{len(commands)}[/cyan]",
+                border_style="yellow"
+            ))
+
+            # Ask for confirmation
+            execute = questionary.confirm(
+                f"Execute this {action} command?",
+                default=True
+            ).ask()
+
+            if execute:
+                with self.console.status(f"[yellow]Executing {action}...[/yellow]", spinner="dots"):
+                    success, message, result = SystemExecutor.execute_command(command)
+
+                if success:
+                    self.console.print(f"[green]{message}[/green]")
+
+                    # Show result details if available
+                    if result:
+                        if isinstance(result, dict):
+                            result_text = "\n".join(f"  • {k}: {v}" for k, v in result.items())
+                        elif isinstance(result, list):
+                            result_text = f"  • {len(result)} items returned"
+                            if result and len(result) <= 5:
+                                for item in result:
+                                    if isinstance(item, dict):
+                                        result_text += f"\n    - {item.get('name') or item.get('title') or str(item)}"
+                        else:
+                            result_text = str(result)
+
+                        self.console.print(Panel(
+                            result_text,
+                            title="[green]Result[/green]",
+                            border_style="green"
+                        ))
+                else:
+                    self.console.print(f"[red]✗ {message}[/red]")
+            else:
+                self.console.print("[dim]Command skipped[/dim]")
 
     def _show_help(self):
         """Display help information"""

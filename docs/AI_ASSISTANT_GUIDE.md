@@ -12,6 +12,98 @@ LeadSauce CLI now includes an integrated AI Assistant that brings AI-powered cod
 🔧 **Multi-Tool Support** - Works with Claude Code, Codex CLI, and Aider
 📊 **Status Dashboard** - See which AI tools are installed
 💬 **Beautiful TUI** - Seamless integration with LeadSauce's Rich terminal UI
+⚡ **System-Aware Mode** - AI can actually perform operations in LeadSauce (NEW!)
+
+## 🎯 System-Aware Mode (Game Changer!)
+
+The AI Assistant isn't just for advice anymore - it can **actually perform operations** in your LeadSauce system!
+
+### What This Means
+
+When you ask the AI to:
+- **"Remind me to call John tomorrow"** → It creates an actual reminder in your system
+- **"Add Alice from Acme Corp as a contact"** → It creates the profile in your database
+- **"Log that I met with Bob today"** → It creates an interaction record
+- **"Create a tag called hot-leads"** → It creates the tag
+
+The AI understands your intent, generates the appropriate command, asks for your confirmation, and executes it!
+
+### How It Works
+
+1. **You ask naturally**: "Remind me to email Sarah next Friday about the proposal"
+2. **AI understands and responds**: "I'll create a reminder for you..."
+3. **AI shows the command** it will execute (in a nice format)
+4. **You confirm**: Yes/No to execute
+5. **System executes**: Reminder is created in your database
+6. **You get feedback**: "✓ Created reminder #15: Email Sarah (due 2025-11-15)"
+
+### Available Operations
+
+The AI can perform these operations in LeadSauce:
+
+| Operation | Example Request |
+|-----------|----------------|
+| **Create Reminder** | "Remind me to call the CEO tomorrow" |
+| **Create Profile** | "Add John Smith from TechCorp as a senior engineer" |
+| **Create Company** | "Add Microsoft to my companies" |
+| **Log Interaction** | "Log that I met with Alice today to discuss the contract" |
+| **Create Tag** | "Create a tag called 'hot-leads'" |
+| **Create Relationship** | "Mark Bob as my manager" |
+| **Search Profiles** | "Find all profiles at Google" |
+| **Get Stats** | "Show me my system statistics" |
+
+### Natural Language Dates
+
+The AI understands natural language for dates:
+- "tomorrow" → next day
+- "next week" → 7 days from now
+- "in 3 days" → 3 days from now
+- "next Friday" → upcoming Friday
+- "2025-11-15" → specific date
+
+### Example Session
+
+```
+You: Remind me to follow up with Sarah about the Q4 proposal next Tuesday
+
+AI: I'll create a reminder for you to follow up with Sarah next Tuesday.
+
+⚡ Found 1 command(s) to execute
+
+┌─ Command 1/1 ────────────────────┐
+│ Action: CREATE_REMINDER          │
+│ Parameters:                      │
+│   • title: Follow up with Sarah  │
+│     about Q4 proposal            │
+│   • due_date: next Tuesday       │
+│   • priority: medium             │
+│   • category: follow-up          │
+└──────────────────────────────────┘
+
+? Execute this CREATE_REMINDER command? Yes
+
+✓ Created reminder #42: Follow up with Sarah about Q4 proposal (due 2025-11-12)
+
+┌─ Result ─────────────────────────┐
+│   • id: 42                       │
+│   • title: Follow up with Sarah  │
+│     about Q4 proposal            │
+│   • due_date: 2025-11-12 09:00   │
+│   • priority: medium             │
+│   • category: follow-up          │
+└──────────────────────────────────┘
+```
+
+### Safety & Confirmation
+
+- **Every command requires confirmation** - You must approve before execution
+- **Clear command display** - See exactly what will be executed
+- **Detailed feedback** - Know what was created/modified
+- **Error handling** - Helpful messages if something goes wrong
+
+### Disabling System-Aware Mode
+
+If you prefer the AI to only provide advice without executing commands, you can disable this in the future (currently enabled by default).
 
 ## Accessing the AI Assistant
 
