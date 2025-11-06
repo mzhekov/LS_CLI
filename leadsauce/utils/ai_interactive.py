@@ -615,6 +615,9 @@ Welcome to the LeadSauce AI Assistant! You can:
 class AIAssistantMenu:
     """AI Assistant menu for the TUI"""
 
+    # Store active sessions per tool
+    _active_sessions: Dict[str, 'InteractiveAISession'] = {}
+
     def __init__(self):
         """Initialize AI assistant menu"""
         self.console = Console()
@@ -881,8 +884,43 @@ When you're done, press Ctrl+D or type 'exit' to return to the LeadSauce menu.
 
             tool = next(t['id'] for t in installed_tools if t['name'] in tool_choice)
 
-        # Start session
-        session = InteractiveAISession(tool=tool)
+        # Check if session already exists for this tool
+        if tool in self._active_sessions:
+            session = self._active_sessions[tool]
+            history_count = len(session.conversation_history)
+            running_tasks = len(task_manager.get_running_tasks())
+
+            self.console.print(f"\n[bold cyan]Found existing session![/bold cyan]")
+            self.console.print(f"  • {history_count} messages in history")
+            if running_tasks > 0:
+                self.console.print(f"  • {running_tasks} task(s) running in background")
+            self.console.print()
+
+            action = questionary.select(
+                "What would you like to do?",
+                choices=[
+                    "Resume existing session",
+                    "Start fresh session (clears history)",
+                    "← Back"
+                ],
+                style=questionary.Style([
+                    ('selected', 'fg:cyan bold'),
+                    ('pointer', 'fg:cyan bold'),
+                ])
+            ).ask()
+
+            if action == "← Back":
+                return None
+            elif action == "Start fresh session (clears history)":
+                # Create new session
+                session = InteractiveAISession(tool=tool)
+                self._active_sessions[tool] = session
+            # else: resume existing session (already assigned)
+        else:
+            # Create new session
+            session = InteractiveAISession(tool=tool)
+            self._active_sessions[tool] = session
+
         return session.run()
 
     def _show_status(self):
