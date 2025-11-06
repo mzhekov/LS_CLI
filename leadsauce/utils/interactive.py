@@ -898,8 +898,8 @@ def show_dashboard_view():
             '5': 'Search',
             '6': 'Tags',
             '7': 'Workshop',
-            '8': 'Export',
-            '9': 'Import',
+            '8': 'Import/Export',
+            '9': 'AI CLI Control',
             '0': 'Browser',
             'q': 'Exit',
             'Q': 'Exit'
