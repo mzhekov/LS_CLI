@@ -5796,10 +5796,28 @@ def integrated_web_viewer():
 
         # URL input bar with navigation shortcuts
         console.print(Panel(
-            f"[bold cyan]Current URL:[/] {current_url}\n\n"
-            "[dim]Press [?] for shortcuts guide | [Enter] for menu | [b] to go back[/]",
+            f"[bold cyan]Current URL:[/] {current_url}",
             border_style="cyan",
             title="🌐 Integrated Web Viewer"
+        ))
+        console.print()
+
+        # Compact shortcuts guide - always visible
+        shortcuts_compact = (
+            "[cyan]n/p[/] Next/Prev │ "
+            "[cyan]g[/] Go to URL │ "
+            "[cyan]r[/] Reload │ "
+            "[cyan]s[/] Search │ "
+            "[cyan]l[/] Links │ "
+            "[cyan]h[/] History │ "
+            "[cyan]1-9[/] Menus │ "
+            "[cyan]b[/] Back │ "
+            "[cyan]?[/] Help"
+        )
+        console.print(Panel(
+            shortcuts_compact,
+            border_style="dim",
+            padding=(0, 1)
         ))
         console.print()
 
@@ -5846,9 +5864,9 @@ def integrated_web_viewer():
             browser_session.save_viewer_state(current_url, page_content, scroll_position)
 
             # Calculate display parameters based on terminal size
-            # Account for: top bar (3 lines), URL panel (5 lines), page info panel borders (4 lines),
-            # prompt line (2 lines) = ~14 lines overhead
-            usable_height = max(10, term_height - 14)
+            # Account for: top bar (3 lines), URL panel (4 lines), shortcuts panel (3 lines),
+            # page info panel borders (4 lines), prompt line (2 lines) = ~16 lines overhead
+            usable_height = max(10, term_height - 16)
             # Account for panel borders and padding in content width
             content_width = max(40, term_width - 6)
 
@@ -5905,8 +5923,9 @@ def integrated_web_viewer():
   [cyan]r[/]         Reload current page
   [cyan]b[/] or [cyan]q[/]   Back to menu
 
-[bold yellow]Search & History:[/]
+[bold yellow]Content & Links:[/]
   [cyan]s[/]         Search in current page
+  [cyan]l[/]         View and open links on page (extracts all URLs)
   [cyan]h[/]         View browsing history (last 10 URLs)
 
 [bold yellow]Quick Menu Navigation:[/]
@@ -6035,6 +6054,53 @@ saved when you switch to other menus. Press [cyan]0[/] from any menu to return t
                 time.sleep(1)
             continue
 
+        elif key == 'l' and page_content:
+            # Extract and show links from page
+            import urllib.parse
+
+            # Extract URLs using regex
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            found_urls = re.findall(url_pattern, page_content)
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_urls = []
+            for url in found_urls:
+                if url not in seen:
+                    seen.add(url)
+                    unique_urls.append(url)
+
+            if unique_urls:
+                console.print(f"\n[bold cyan]Found {len(unique_urls)} links on this page:[/]\n")
+
+                # Show first 20 links
+                display_count = min(20, len(unique_urls))
+                for i, url in enumerate(unique_urls[:display_count], 1):
+                    # Truncate long URLs for display
+                    display_url = url if len(url) <= 80 else url[:77] + "..."
+                    console.print(f"  [cyan]{i:2d}.[/] {display_url}")
+
+                if len(unique_urls) > 20:
+                    console.print(f"\n[dim]... and {len(unique_urls) - 20} more links[/]")
+
+                console.print()
+
+                choice = questionary.text(
+                    "Enter link number to visit (or Enter to cancel):",
+                    style=custom_style
+                ).ask()
+
+                if choice and choice.isdigit():
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(unique_urls):
+                        current_url = unique_urls[idx]
+                        page_content = None
+                        scroll_position = 0
+            else:
+                console.print("[yellow]No links found on this page[/]")
+                time.sleep(1)
+            continue
+
         elif key == 'g':
             # Go to URL
             new_url = questionary.text(
@@ -6069,6 +6135,7 @@ saved when you switch to other menus. Press [cyan]0[/] from any menu to return t
                     "🔗 Go to new URL",
                     "🔄 Reload page",
                     "🔍 Search in page",
+                    "🌐 View links on page",
                     "📜 View history",
                     "⬇️  Next page",
                     "⬆️  Previous page",
@@ -6124,6 +6191,52 @@ saved when you switch to other menus. Press [cyan]0[/] from any menu to return t
                     else:
                         console.print("[yellow]No matches found[/]")
                         time.sleep(1)
+
+            elif action.startswith("🌐"):
+                # View links on page
+                import urllib.parse
+
+                # Extract URLs using regex
+                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                found_urls = re.findall(url_pattern, page_content)
+
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_urls = []
+                for url in found_urls:
+                    if url not in seen:
+                        seen.add(url)
+                        unique_urls.append(url)
+
+                if unique_urls:
+                    console.print(f"\n[bold cyan]Found {len(unique_urls)} links on this page:[/]\n")
+
+                    # Show first 20 links
+                    display_count = min(20, len(unique_urls))
+                    for i, url in enumerate(unique_urls[:display_count], 1):
+                        # Truncate long URLs for display
+                        display_url = url if len(url) <= 80 else url[:77] + "..."
+                        console.print(f"  [cyan]{i:2d}.[/] {display_url}")
+
+                    if len(unique_urls) > 20:
+                        console.print(f"\n[dim]... and {len(unique_urls) - 20} more links[/]")
+
+                    console.print()
+
+                    choice = questionary.text(
+                        "Enter link number to visit (or Enter to cancel):",
+                        style=custom_style
+                    ).ask()
+
+                    if choice and choice.isdigit():
+                        idx = int(choice) - 1
+                        if 0 <= idx < len(unique_urls):
+                            current_url = unique_urls[idx]
+                            page_content = None
+                            scroll_position = 0
+                else:
+                    console.print("[yellow]No links found on this page[/]")
+                    time.sleep(1)
 
             elif action.startswith("📜"):
                 if browser_session.viewer_history:
