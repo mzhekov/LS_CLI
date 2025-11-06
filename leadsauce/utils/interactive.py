@@ -70,8 +70,8 @@ NAV_ITEMS = [
     ("Search", "🔍", "5"),
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
+    ("Import/Export", "📦", "8"),
     ("AI Assistant", "🤖", "0"),
-    ("Import/Export", "📦", "9"),
     ("Exit", "❌", "q")
 ]
 
@@ -175,7 +175,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-7, 9, 0) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-8, 0) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
