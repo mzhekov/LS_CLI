@@ -2492,130 +2492,113 @@ def network_and_relationships_menu():
                     ))
                     console.print()
                 else:
-                    # Group profiles by company
-                    company_groups = {}
-                    profiles_without_company = []
-
-                    for profile in filtered_profiles:
-                        if profile.company_id and profile.company_id in [c.id for c in filtered_companies]:
-                            if profile.company_id not in company_groups:
-                                company_groups[profile.company_id] = []
-                            company_groups[profile.company_id].append(profile)
-                        else:
-                            profiles_without_company.append(profile)
-
-                    # Build the hierarchical map output
+                    # Build visual relationship map
                     map_lines = []
 
-                    # Draw companies and their employees
-                    for company in filtered_companies:
-                        company_name = shorten_name(company.name, 15)
-                        company_box = create_box(f"🏢 {company_name}", 20)
+                    # Show Profile Relationships
+                    if profile_relationships:
+                        for rel in profile_relationships:
+                            from_name = shorten_name(rel.from_profile.name, 15)
+                            to_name = shorten_name(rel.to_profile.name, 15)
+                            rel_type = rel.relationship_type[:12]
 
-                        # Center the company box
-                        for line in company_box:
-                            map_lines.append(line.center(80))
-
-                        # Get employees for this company
-                        employees = company_groups.get(company.id, [])
-
-                        if employees:
-                            # Draw connection lines to employees
-                            if len(employees) == 1:
-                                map_lines.append("│".center(80))
+                            # Determine arrow and status indicator
+                            if rel.bidirectional:
+                                arrow = "═══"
+                                connector = "═══"
                             else:
-                                # Multiple employees - draw branching
-                                branch_width = min(len(employees) * 20, 70)
-                                map_lines.append("│".center(80))
+                                arrow = "───"
+                                connector = "───>"
 
-                                # Draw horizontal connector
-                                left_pos = 40 - branch_width // 2
-                                right_pos = 40 + branch_width // 2
-                                line = ' ' * 80
-                                line_list = list(line)
-
-                                # Place branches
-                                step = branch_width // len(employees)
-                                for i in range(len(employees)):
-                                    pos = left_pos + i * step + step // 2
-                                    if pos < 80:
-                                        line_list[pos] = '│'
-
-                                # Connect with horizontal line
-                                if len(employees) > 1:
-                                    first_branch = left_pos + step // 2
-                                    last_branch = left_pos + (len(employees) - 1) * step + step // 2
-                                    for i in range(first_branch, min(last_branch + 1, 80)):
-                                        if line_list[i] == ' ':
-                                            line_list[i] = '─'
-                                    line_list[first_branch] = '┌' if first_branch > 0 else '─'
-                                    if last_branch < 80:
-                                        line_list[last_branch] = '┐'
-                                    line_list[40] = '┴'
-
-                                map_lines.append(''.join(line_list))
-
-                            # Draw employee boxes
-                            emp_boxes = []
-                            for emp in employees:
-                                emp_name = shorten_name(emp.name, 12)
-                                emp_box = create_box(f"👥 {emp_name}", 16)
-                                emp_boxes.append(emp_box)
-
-                            # Position employee boxes side by side
-                            if len(emp_boxes) == 1:
-                                for line in emp_boxes[0]:
-                                    map_lines.append(line.center(80))
+                            # Status indicator
+                            if rel.status == "Bad":
+                                status_mark = "✗"
+                            elif rel.status == "Good":
+                                status_mark = "✓"
                             else:
-                                # Multiple employees - place side by side
-                                for line_idx in range(3):  # Each box has 3 lines
-                                    line_parts = []
-                                    step = 70 // len(emp_boxes)
+                                status_mark = "○"
 
-                                    for i, emp_box in enumerate(emp_boxes):
-                                        line_parts.append(emp_box[line_idx])
+                            # Draw FROM box
+                            from_box = create_box(f"👥 {from_name}", 20)
+                            for line in from_box:
+                                map_lines.append(line.center(100))
 
-                                    # Join with spacing
-                                    combined = '  '.join(line_parts)
-                                    map_lines.append(combined.center(80))
+                            # Draw relationship connection
+                            if rel.bidirectional:
+                                rel_line = f"{arrow}[{rel_type} {status_mark}]{arrow}"
+                            else:
+                                rel_line = f"{connector}[{rel_type} {status_mark}]"
+                            map_lines.append(rel_line.center(100))
 
-                        map_lines.append("")  # Spacing between companies
+                            # Draw TO box
+                            to_box = create_box(f"👥 {to_name}", 20)
+                            for line in to_box:
+                                map_lines.append(line.center(100))
 
-                    # Draw profiles without companies
-                    if profiles_without_company:
-                        map_lines.append("")
-                        map_lines.append("── Independent Profiles ──".center(80))
-                        map_lines.append("")
+                            map_lines.append("")  # Spacing between relationships
 
-                        for i in range(0, len(profiles_without_company), 3):
-                            # Show up to 3 profiles per row
-                            batch = profiles_without_company[i:i+3]
-                            profile_boxes = []
-
-                            for profile in batch:
-                                prof_name = shorten_name(profile.name, 12)
-                                prof_box = create_box(f"👥 {prof_name}", 16)
-                                profile_boxes.append(prof_box)
-
-                            # Draw boxes side by side
-                            for line_idx in range(3):
-                                parts = [box[line_idx] for box in profile_boxes]
-                                combined = '  '.join(parts)
-                                map_lines.append(combined.center(80))
-
+                    # Show Company Relationships
+                    if company_relationships:
+                        if profile_relationships:
                             map_lines.append("")
+                            map_lines.append("─── Company Relationships ───".center(100))
+                            map_lines.append("")
+
+                        for rel in company_relationships:
+                            from_name = shorten_name(rel.from_company.name, 15)
+                            to_name = shorten_name(rel.to_company.name, 15)
+                            rel_type = rel.relationship_type[:12]
+
+                            # Determine arrow and status
+                            if rel.bidirectional:
+                                arrow = "═══"
+                                connector = "═══"
+                            else:
+                                arrow = "───"
+                                connector = "───>"
+
+                            # Status indicator
+                            if rel.status == "Bad":
+                                status_mark = "✗"
+                            elif rel.status == "Good":
+                                status_mark = "✓"
+                            else:
+                                status_mark = "○"
+
+                            # Draw FROM box
+                            from_box = create_box(f"🏢 {from_name}", 20)
+                            for line in from_box:
+                                map_lines.append(line.center(100))
+
+                            # Draw relationship connection
+                            if rel.bidirectional:
+                                rel_line = f"{arrow}[{rel_type} {status_mark}]{arrow}"
+                            else:
+                                rel_line = f"{connector}[{rel_type} {status_mark}]"
+                            map_lines.append(rel_line.center(100))
+
+                            # Draw TO box
+                            to_box = create_box(f"🏢 {to_name}", 20)
+                            for line in to_box:
+                                map_lines.append(line.center(100))
+
+                            map_lines.append("")  # Spacing
 
                     map_text = '\n'.join(map_lines)
 
                     # Add legend
                     legend = Text()
-                    legend.append("🏢 Company", style="green")
-                    legend.append("  ", style="dim")
                     legend.append("👥 Profile", style="cyan")
                     legend.append("  ", style="dim")
-                    legend.append("─── Direct", style="dim")
+                    legend.append("🏢 Company", style="green")
+                    legend.append("  ", style="dim")
+                    legend.append("───> Direct", style="dim")
                     legend.append("  ", style="dim")
                     legend.append("═══ Bidirectional", style="dim")
+                    legend.append("  ", style="dim")
+                    legend.append("✓ Good", style="green")
+                    legend.append("  ", style="dim")
+                    legend.append("✗ Bad", style="red")
 
                     console.print(Panel(
                         map_text,
