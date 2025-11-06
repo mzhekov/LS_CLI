@@ -74,7 +74,8 @@ Welcome to the LeadSauce AI Assistant! You can:
 {system_mode_text}
 **Commands:**
 - Type your question or prompt and press Enter
-- Type `/help` for more commands
+- Type `/help` for all commands
+- Type `/menu` to switch to another section
 - Type `/context` to add files as context
 - Type `/clear` to clear conversation history
 - Type `/exit` or `/quit` to return to main menu
@@ -88,8 +89,12 @@ Welcome to the LeadSauce AI Assistant! You can:
             border_style="cyan"
         ))
 
-    def run(self):
-        """Run the interactive AI session"""
+    def run(self) -> Optional[str]:
+        """Run the interactive AI session
+
+        Returns:
+            Menu name to navigate to, or None to return to previous menu
+        """
         try:
             # Check if tool is installed
             if not self.service.is_installed(self.tool):
@@ -102,7 +107,7 @@ Welcome to the LeadSauce AI Assistant! You can:
                     border_style="red"
                 ))
                 self.console.input("\nPress Enter to continue...")
-                return
+                return None
 
             self.show_welcome()
             context_files = []
@@ -122,10 +127,17 @@ Welcome to the LeadSauce AI Assistant! You can:
                     # Handle special commands
                     if user_input.lower() in ['/exit', '/quit', '/q']:
                         self.console.print("[dim]Exiting AI Assistant...[/dim]")
-                        break
+                        return None
 
                     elif user_input.lower() == '/help':
                         self._show_help()
+                        continue
+
+                    elif user_input.lower() == '/menu':
+                        menu_choice = self._show_menu_navigation()
+                        if menu_choice:
+                            self.console.print(f"[dim]Switching to {menu_choice}...[/dim]")
+                            return menu_choice
                         continue
 
                     elif user_input.lower() == '/clear':
@@ -160,6 +172,7 @@ Welcome to the LeadSauce AI Assistant! You can:
         except Exception as e:
             self.console.print(f"[bold red]Fatal error: {str(e)}[/bold red]")
             self.console.input("\nPress Enter to continue...")
+            return None
 
     def _send_query(self, prompt: str, context_files: Optional[List[str]] = None):
         """Send query to AI and display response
@@ -313,6 +326,7 @@ Welcome to the LeadSauce AI Assistant! You can:
             ("/clear", "Clear conversation history"),
             ("/history", "Show conversation history"),
             ("/status", "Show AI tool status"),
+            ("/menu", "Switch to another main menu"),
             ("/exit, /quit, /q", "Exit AI assistant"),
         ]
 
@@ -320,6 +334,42 @@ Welcome to the LeadSauce AI Assistant! You can:
             help_table.add_row(cmd, desc)
 
         self.console.print(help_table)
+
+    def _show_menu_navigation(self) -> Optional[str]:
+        """Show menu navigation options and return selected menu
+
+        Returns:
+            Selected menu name or None if cancelled
+        """
+        menu_options = [
+            "Dashboard",
+            "Profiles",
+            "Companies",
+            "Network & Relationships",
+            "Tags",
+            "Search",
+            "Workshop",
+            "Tasks",
+            "Goals",
+            "Import/Export",
+            "Browser",
+            "AI CLI Control",
+            "← Stay in AI Assistant",
+        ]
+
+        choice = questionary.select(
+            "Switch to which menu?",
+            choices=menu_options,
+            style=questionary.Style([
+                ('selected', 'fg:cyan bold'),
+                ('pointer', 'fg:cyan bold'),
+                ('question', 'fg:cyan bold'),
+            ])
+        ).ask()
+
+        if choice and choice != "← Stay in AI Assistant":
+            return choice
+        return None
 
     def _add_context_files(self) -> List[str]:
         """Add files as context for AI queries
@@ -426,8 +476,12 @@ class AIAssistantMenu:
         self.console = Console()
         self.service = AICLIService()
 
-    def show(self):
-        """Show AI assistant menu"""
+    def show(self) -> Optional[str]:
+        """Show AI assistant menu
+
+        Returns:
+            Menu name to navigate to, or None to return to previous menu
+        """
         while True:
             # Get installed tools
             installed_tools = self.service.get_installed_tools()
@@ -458,13 +512,15 @@ class AIAssistantMenu:
             ).ask()
 
             if choice == "← Back to Main Menu":
-                break
+                return None
 
             elif choice == "💬 Quick Ask (one question)":
                 self._quick_ask(installed)
 
             elif choice == "🔄 Start Interactive Session":
-                self._start_interactive_session(installed)
+                menu_choice = self._start_interactive_session(installed)
+                if menu_choice:
+                    return menu_choice
 
             elif choice == "📊 View AI Tools Status":
                 self._show_status()
@@ -516,11 +572,14 @@ class AIAssistantMenu:
 
         console.input("\nPress Enter to continue...")
 
-    def _start_interactive_session(self, installed_tools: List[Dict]):
+    def _start_interactive_session(self, installed_tools: List[Dict]) -> Optional[str]:
         """Start interactive AI session
 
         Args:
             installed_tools: List of installed AI tools
+
+        Returns:
+            Menu name to navigate to, or None to stay
         """
         # Select tool
         if len(installed_tools) == 1:
@@ -532,13 +591,13 @@ class AIAssistantMenu:
             ).ask()
 
             if not tool_choice:
-                return
+                return None
 
             tool = next(t['id'] for t in installed_tools if t['name'] in tool_choice)
 
         # Start session
         session = InteractiveAISession(tool=tool)
-        session.run()
+        return session.run()
 
     def _show_status(self):
         """Show AI tools status"""

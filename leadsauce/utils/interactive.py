@@ -311,13 +311,19 @@ def interactive_main_menu():
             continue
         elif current_view == "AI CLI Control":
             ai_control_menu = AICLIControlMenu()
-            ai_control_menu.show()
-            current_view = "Dashboard"
+            new_view = ai_control_menu.show()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "AI Assistant":
             ai_menu = AIAssistantMenu()
-            ai_menu.show()
-            current_view = "Dashboard"
+            new_view = ai_menu.show()
+            if new_view:
+                current_view = new_view
+            else:
+                current_view = "Dashboard"
             continue
         elif current_view == "Browser":
             new_view = browser_menu()
