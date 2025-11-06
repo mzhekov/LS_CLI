@@ -23,6 +23,7 @@ from leadsauce.models.task import Task
 from leadsauce.utils.constants import SENIORITY_LEVELS, GENERATION_TYPES
 from leadsauce.utils.validators import validate_email, validate_phone, parse_tags
 from leadsauce.utils.ai_interactive import AIAssistantMenu
+from leadsauce.utils.ai_cli_control import AICLIControlMenu
 from datetime import datetime, timedelta
 
 console = Console()
@@ -71,6 +72,7 @@ NAV_ITEMS = [
     ("Tags", "🏷️", "6"),
     ("Workshop", "🔧", "7"),
     ("Import/Export", "📦", "8"),
+    ("AI CLI Control", "🎮", "9"),
     ("AI Assistant", "🤖", "0"),
     ("Exit", "❌", "q")
 ]
@@ -163,6 +165,11 @@ def interactive_main_menu():
             else:
                 current_view = "Dashboard"
             continue
+        elif current_view == "AI CLI Control":
+            ai_control_menu = AICLIControlMenu()
+            ai_control_menu.show()
+            current_view = "Dashboard"
+            continue
         elif current_view == "AI Assistant":
             ai_menu = AIAssistantMenu()
             ai_menu.show()
@@ -175,7 +182,7 @@ def interactive_main_menu():
         # Navigation menu at bottom - allow both keyboard shortcuts and arrow key selection
         console.print()
         console.print("[dim]Navigation:[/]")
-        console.print("[dim]  • Type a number (1-8, 0) or 'q' to quit[/]")
+        console.print("[dim]  • Type a number (1-9, 0) or 'q' to quit[/]")
         console.print("[dim]  • Press Enter (empty) to use arrow keys[/]")
         console.print()
 
