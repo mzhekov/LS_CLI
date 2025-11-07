@@ -2438,105 +2438,261 @@ def network_and_relationships_menu():
                                 'bidirectional': False
                             })
 
-                # Compact circular layout
-                width = 80
-                height = 20
-                center_x = width // 2
-                center_y = height // 2
-                radius = min(width // 2 - 12, height // 2 - 2)
+                # Box-drawing layout with hierarchical structure
 
-                # Position nodes
-                positions = []
-                angles = []
-                for i, node in enumerate(nodes):
-                    angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
-                    x = int(center_x + radius * math.cos(angle))
-                    y = int(center_y + radius * math.sin(angle))
-                    positions.append((x, y))
-                    angles.append(angle)
+                def shorten_name(name, max_len=12):
+                    """Shorten name to fit in box (e.g., 'John Smith' -> 'John S.')"""
+                    if len(name) <= max_len:
+                        return name
+                    parts = name.split()
+                    if len(parts) > 1:
+                        return f"{parts[0]} {parts[-1][0]}."[:max_len]
+                    return name[:max_len]
 
-                # Create canvas
-                canvas = [[' ' for _ in range(width)] for _ in range(height)]
+                def create_box(text, width=None):
+                    """Create a box around text using box-drawing characters"""
+                    if width is None:
+                        width = len(text) + 2
+                    else:
+                        width = max(width, len(text) + 2)
 
-                # Draw edges
-                for edge in edges:
-                    from_pos = positions[edge['from']]
-                    to_pos = positions[edge['to']]
+                    padding = (width - 2 - len(text)) // 2
+                    text_line = f"║ {' ' * padding}{text}{' ' * (width - 2 - len(text) - padding)} ║"
 
-                    x0, y0 = from_pos
-                    x1, y1 = to_pos
+                    top = f"╔{'═' * (width - 2)}╗"
+                    bottom = f"╚{'═' * (width - 2)}╝"
 
-                    dx = abs(x1 - x0)
-                    dy = abs(y1 - y0)
-                    sx = 1 if x0 < x1 else -1
-                    sy = 1 if y0 < y1 else -1
-                    err = dx - dy
+                    return [top, text_line, bottom]
 
-                    x, y = x0, y0
-                    steps = 0
-                    max_steps = width + height
+                # Filter to only show profiles and companies with active connections
+                connected_profile_ids = set()
+                connected_company_ids = set()
 
-                    while steps < max_steps:
-                        if 0 <= y < height and 0 <= x < width:
-                            if edge['type'] == 'works_at':
-                                char = '·'
-                            elif edge['bidirectional']:
-                                char = '═'
+                # ONLY add profiles with explicit profile-to-profile relationships
+                for rel in profile_relationships:
+                    connected_profile_ids.add(rel.from_profile_id)
+                    connected_profile_ids.add(rel.to_profile_id)
+
+                # ONLY add companies with explicit company-to-company relationships
+                for rel in company_relationships:
+                    connected_company_ids.add(rel.from_company_id)
+                    connected_company_ids.add(rel.to_company_id)
+
+                # Filter profiles and companies to only connected ones
+                filtered_profiles = [p for p in profiles if p.id in connected_profile_ids]
+                filtered_companies = [c for c in companies if c.id in connected_company_ids]
+
+                # Check if there are any connected entities
+                if not filtered_profiles and not filtered_companies:
+                    # No connections exist - show message
+                    console.print(Panel(
+                        "[yellow]No relationships found. Press 'a' to create your first relationship![/]",
+                        border_style="yellow",
+                        title="[bold cyan]Network Map[/]"
+                    ))
+                    console.print()
+                else:
+                    # Enhanced circular layout with labels
+                    width = 120
+                    height = 35
+                    center_x = width // 2
+                    center_y = height // 2
+                    radius = 14
+
+                    # Build node list from relationships
+                    nodes = []
+                    node_map = {}
+
+                    # Add profile nodes from relationships
+                    for rel in profile_relationships:
+                        # Add from_profile
+                        if rel.from_profile_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[rel.from_profile_id] = node_idx
+                            nodes.append({
+                                'id': rel.from_profile_id,
+                                'name': shorten_name(rel.from_profile.name, 10),
+                                'type': 'profile',
+                                'icon': '👥'
+                            })
+                        # Add to_profile
+                        if rel.to_profile_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[rel.to_profile_id] = node_idx
+                            nodes.append({
+                                'id': rel.to_profile_id,
+                                'name': shorten_name(rel.to_profile.name, 10),
+                                'type': 'profile',
+                                'icon': '👥'
+                            })
+
+                    # Add company nodes from relationships
+                    for rel in company_relationships:
+                        # Add from_company
+                        company_id = f"c_{rel.from_company_id}"
+                        if company_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[company_id] = node_idx
+                            nodes.append({
+                                'id': company_id,
+                                'name': shorten_name(rel.from_company.name, 10),
+                                'type': 'company',
+                                'icon': '🏢'
+                            })
+                        # Add to_company
+                        company_id = f"c_{rel.to_company_id}"
+                        if company_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[company_id] = node_idx
+                            nodes.append({
+                                'id': company_id,
+                                'name': shorten_name(rel.to_company.name, 10),
+                                'type': 'company',
+                                'icon': '🏢'
+                            })
+
+                    # Position nodes in circle
+                    positions = []
+                    label_positions = []
+
+                    for i, node in enumerate(nodes):
+                        angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
+
+                        # Node position (on circle)
+                        x = int(center_x + radius * math.cos(angle))
+                        y = int(center_y + radius * math.sin(angle))
+                        positions.append((x, y))
+
+                        # Label position (further out for readability)
+                        label_radius = radius + 8
+                        label_x = int(center_x + label_radius * math.cos(angle))
+                        label_y = int(center_y + label_radius * math.sin(angle))
+                        label_positions.append((label_x, label_y))
+
+                    # Create canvas
+                    canvas = [[' ' for _ in range(width)] for _ in range(height)]
+
+                    # Draw edges first (in background)
+                    edges = []
+
+                    # Add profile relationship edges
+                    for rel in profile_relationships:
+                        from_idx = node_map.get(rel.from_profile_id)
+                        to_idx = node_map.get(rel.to_profile_id)
+                        if from_idx is not None and to_idx is not None:
+                            edges.append({
+                                'from': from_idx,
+                                'to': to_idx,
+                                'type': 'profile',
+                                'bidirectional': rel.bidirectional
+                            })
+
+                    # Add company relationship edges
+                    for rel in company_relationships:
+                        from_idx = node_map.get(f"c_{rel.from_company_id}")
+                        to_idx = node_map.get(f"c_{rel.to_company_id}")
+                        if from_idx is not None and to_idx is not None:
+                            edges.append({
+                                'from': from_idx,
+                                'to': to_idx,
+                                'type': 'company',
+                                'bidirectional': rel.bidirectional
+                            })
+
+                    # Draw edges using Bresenham's line algorithm
+                    for edge in edges:
+                        x0, y0 = positions[edge['from']]
+                        x1, y1 = positions[edge['to']]
+
+                        dx = abs(x1 - x0)
+                        dy = abs(y1 - y0)
+                        sx = 1 if x0 < x1 else -1
+                        sy = 1 if y0 < y1 else -1
+                        err = dx - dy
+
+                        x, y = x0, y0
+                        steps = 0
+                        max_steps = 200
+
+                        # Choose character based on relationship type
+                        if edge['bidirectional']:
+                            char = '═'
+                        else:
+                            char = '─'
+
+                        while steps < max_steps:
+                            if 0 <= y < height and 0 <= x < width:
+                                if canvas[y][x] == ' ':
+                                    canvas[y][x] = char
+
+                            if x == x1 and y == y1:
+                                break
+
+                            e2 = 2 * err
+                            if e2 > -dy:
+                                err -= dy
+                                x += sx
+                            if e2 < dx:
+                                err += dx
+                                y += sy
+
+                            steps += 1
+
+                    # Draw nodes (icons on circle)
+                    for i, (pos, node) in enumerate(zip(positions, nodes)):
+                        x, y = pos
+                        if 0 <= y < height and x < width - 1:
+                            canvas[y][x] = node['icon']
+
+                    # Draw labels (names outside circle)
+                    for i, (label_pos, node) in enumerate(zip(label_positions, nodes)):
+                        x, y = label_pos
+                        name = node['name']
+
+                        # Center the name around the label position
+                        start_x = x - len(name) // 2
+
+                        if 0 <= y < height:
+                            for j, char in enumerate(name):
+                                char_x = start_x + j
+                                if 0 <= char_x < width and canvas[y][char_x] == ' ':
+                                    canvas[y][char_x] = char
+
+                    # Render canvas with colors
+                    map_lines = []
+                    for row in canvas:
+                        line_parts = []
+                        for char in row:
+                            if char == '👥':
+                                line_parts.append(f"[cyan]{char}[/cyan]")
+                            elif char == '🏢':
+                                line_parts.append(f"[green]{char}[/green]")
+                            elif char in '═─':
+                                line_parts.append(f"[dim yellow]{char}[/dim yellow]")
                             else:
-                                char = '─'
+                                line_parts.append(char)
+                        map_lines.append(''.join(line_parts))
 
-                            if canvas[y][x] == ' ' or canvas[y][x] in ['·', '─']:
-                                canvas[y][x] = char
+                    map_text = '\n'.join(map_lines)
 
-                        if x == x1 and y == y1:
-                            break
+                    # Add legend
+                    legend = Text()
+                    legend.append("👥 Profile", style="cyan")
+                    legend.append("  ", style="dim")
+                    legend.append("🏢 Company", style="green")
+                    legend.append("  ", style="dim")
+                    legend.append("─ Direct", style="dim yellow")
+                    legend.append("  ", style="dim")
+                    legend.append("═ Bidirectional", style="dim yellow")
 
-                        e2 = 2 * err
-                        if e2 > -dy:
-                            err -= dy
-                            x += sx
-                        if e2 < dx:
-                            err += dx
-                            y += sy
-
-                        steps += 1
-
-                # Draw nodes
-                for i, (pos, node) in enumerate(zip(positions, nodes)):
-                    x, y = pos
-                    if 0 <= y < height and 0 <= x < width:
-                        icon = '👥' if node['type'] == 'profile' else '🏢'
-                        # For emoji, just place the icon (it takes 2 char width)
-                        if x < width:
-                            canvas[y][x] = icon
-
-                # Render canvas
-                map_lines = []
-                for row in canvas:
-                    map_lines.append(''.join(row))
-
-                map_text = '\n'.join(map_lines)
-
-                # Add legend
-                legend = Text()
-                legend.append("👥 Profile", style="cyan")
-                legend.append("  ", style="dim")
-                legend.append("🏢 Company", style="green")
-                legend.append("  ", style="dim")
-                legend.append("─ Connection", style="dim")
-                legend.append("  ", style="dim")
-                legend.append("═ Bidirectional", style="dim")
-                legend.append("  ", style="dim")
-                legend.append("· Works at", style="dim")
-
-                console.print(Panel(
-                    map_text,
-                    title="[bold cyan]Network Map[/]",
-                    subtitle=legend,
-                    border_style="cyan",
-                    box=box.SIMPLE
-                ))
-                console.print()
+                    console.print(Panel(
+                        map_text,
+                        title="[bold cyan]Network Map[/]",
+                        subtitle=legend,
+                        border_style="cyan",
+                        box=box.SIMPLE
+                    ))
+                    console.print()
 
         # Get relationships
         profile_rels = session.query(ProfileRelationship).all()
@@ -4562,6 +4718,280 @@ def edit_company_relationship():
                 return
 
     session.close()
+
+
+def create_relationship_interactive():
+    """Interactive menu to create a new relationship (profile or company)"""
+    console.clear()
+    console.print(Panel(
+        "[bold cyan]➕ Create Relationship[/]\n"
+        "[dim]What type of relationship would you like to create?[/]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    # Ask user to choose type
+    rel_type = questionary.select(
+        "Relationship type:",
+        choices=[
+            {'name': '👥 Profile Relationship (Person to Person)', 'value': 'profile'},
+            {'name': '🏢 Company Relationship (Organization to Organization)', 'value': 'company'},
+            {'name': '← Cancel', 'value': None}
+        ],
+        style=custom_style
+    ).ask()
+
+    if rel_type == 'profile':
+        add_profile_relationship()
+    elif rel_type == 'company':
+        add_company_relationship()
+
+
+def edit_profile_relationship_interactive(rel_id):
+    """Edit a specific profile relationship by ID"""
+    from leadsauce.models.relationship import ProfileRelationship, PROFILE_RELATIONSHIP_TYPES, RELATIONSHIP_STATUS
+
+    session = get_session()
+    relationship = session.query(ProfileRelationship).filter(ProfileRelationship.id == rel_id).first()
+
+    if not relationship:
+        console.print("\n[red]Relationship not found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Edit loop
+    while True:
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]Editing Relationship[/]\n"
+            f"[white]{relationship.from_profile.name}[/] → [white]{relationship.to_profile.name}[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Show current values
+        arrow = "↔" if relationship.bidirectional else "→"
+        status_color = "green" if relationship.status == "Good" else "red" if relationship.status == "Bad" else "dim"
+
+        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table.add_column(style="cyan bold", justify="right")
+        info_table.add_column(style="white")
+
+        info_table.add_row("Type:", relationship.relationship_type)
+        info_table.add_row("Status:", f"[{status_color}]{relationship.status}[/]")
+        info_table.add_row("Bidirectional:", f"{arrow} {'Yes' if relationship.bidirectional else 'No'}")
+        info_table.add_row("Description:", relationship.description or "-")
+
+        console.print(info_table)
+        console.print()
+
+        # Edit options
+        edit_choices = [
+            "Relationship Type",
+            "Status",
+            "Bidirectional",
+            "Description",
+            "🗑️  Delete Relationship",
+            "← Done Editing"
+        ]
+
+        field = questionary.select(
+            "What would you like to edit?",
+            choices=edit_choices,
+            style=custom_style
+        ).ask()
+
+        if not field or field == "← Done Editing":
+            break
+
+        if field == "Relationship Type":
+            new_type = questionary.select(
+                "Relationship type:",
+                choices=PROFILE_RELATIONSHIP_TYPES,
+                style=custom_style,
+                default=relationship.relationship_type if relationship.relationship_type in PROFILE_RELATIONSHIP_TYPES else None
+            ).ask()
+            if new_type:
+                relationship.relationship_type = new_type
+                session.commit()
+                console.print(f"\n[green]✓ Updated relationship type to '{new_type}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Status":
+            new_status = questionary.select(
+                "Relationship status:",
+                choices=RELATIONSHIP_STATUS,
+                style=custom_style,
+                default=relationship.status if relationship.status in RELATIONSHIP_STATUS else "Good"
+            ).ask()
+            if new_status:
+                relationship.status = new_status
+                session.commit()
+                console.print(f"\n[green]✓ Updated status to '{new_status}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Bidirectional":
+            new_bidirectional = questionary.confirm(
+                "Is this a two-way relationship?",
+                style=custom_style,
+                default=relationship.bidirectional
+            ).ask()
+            relationship.bidirectional = new_bidirectional
+            session.commit()
+            console.print(f"\n[green]✓ Updated bidirectional to {'Yes' if new_bidirectional else 'No'}[/]\n")
+            time.sleep(0.5)
+
+        elif field == "Description":
+            new_description = questionary.text(
+                "Description (leave empty to clear):",
+                style=custom_style,
+                default=relationship.description or ""
+            ).ask()
+            relationship.description = new_description or None
+            session.commit()
+            console.print(f"\n[green]✓ Updated description[/]\n")
+            time.sleep(0.5)
+
+        elif field == "🗑️  Delete Relationship":
+            confirm = questionary.confirm(
+                f"Are you sure you want to delete this relationship?",
+                style=custom_style,
+                default=False
+            ).ask()
+            if confirm:
+                session.delete(relationship)
+                session.commit()
+                console.print(f"\n[green]✓ Relationship deleted[/]\n")
+                questionary.press_any_key_to_continue().ask()
+                session.close()
+                return
+
+    session.close()
+
+
+def edit_company_relationship_interactive(rel_id):
+    """Edit a specific company relationship by ID"""
+    from leadsauce.models.relationship import CompanyRelationship, COMPANY_RELATIONSHIP_TYPES, RELATIONSHIP_STATUS
+
+    session = get_session()
+    relationship = session.query(CompanyRelationship).filter(CompanyRelationship.id == rel_id).first()
+
+    if not relationship:
+        console.print("\n[red]Relationship not found.[/]\n")
+        questionary.press_any_key_to_continue().ask()
+        session.close()
+        return
+
+    # Edit loop
+    while True:
+        console.clear()
+        console.print(Panel(
+            f"[bold cyan]Editing Relationship[/]\n"
+            f"[white]{relationship.from_company.name}[/] → [white]{relationship.to_company.name}[/]",
+            border_style="cyan"
+        ))
+        console.print()
+
+        # Show current values
+        arrow = "↔" if relationship.bidirectional else "→"
+        status_color = "green" if relationship.status == "Good" else "red" if relationship.status == "Bad" else "dim"
+
+        info_table = Table(show_header=False, box=None, padding=(0, 2))
+        info_table.add_column(style="cyan bold", justify="right")
+        info_table.add_column(style="white")
+
+        info_table.add_row("Type:", relationship.relationship_type)
+        info_table.add_row("Status:", f"[{status_color}]{relationship.status}[/]")
+        info_table.add_row("Bidirectional:", f"{arrow} {'Yes' if relationship.bidirectional else 'No'}")
+        info_table.add_row("Description:", relationship.description or "-")
+
+        console.print(info_table)
+        console.print()
+
+        # Edit options
+        edit_choices = [
+            "Relationship Type",
+            "Status",
+            "Bidirectional",
+            "Description",
+            "🗑️  Delete Relationship",
+            "← Done Editing"
+        ]
+
+        field = questionary.select(
+            "What would you like to edit?",
+            choices=edit_choices,
+            style=custom_style
+        ).ask()
+
+        if not field or field == "← Done Editing":
+            break
+
+        if field == "Relationship Type":
+            new_type = questionary.select(
+                "Relationship type:",
+                choices=COMPANY_RELATIONSHIP_TYPES,
+                style=custom_style,
+                default=relationship.relationship_type if relationship.relationship_type in COMPANY_RELATIONSHIP_TYPES else None
+            ).ask()
+            if new_type:
+                relationship.relationship_type = new_type
+                session.commit()
+                console.print(f"\n[green]✓ Updated relationship type to '{new_type}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Status":
+            new_status = questionary.select(
+                "Relationship status:",
+                choices=RELATIONSHIP_STATUS,
+                style=custom_style,
+                default=relationship.status if relationship.status in RELATIONSHIP_STATUS else "Good"
+            ).ask()
+            if new_status:
+                relationship.status = new_status
+                session.commit()
+                console.print(f"\n[green]✓ Updated status to '{new_status}'[/]\n")
+                time.sleep(0.5)
+
+        elif field == "Bidirectional":
+            new_bidirectional = questionary.confirm(
+                "Is this a two-way relationship?",
+                style=custom_style,
+                default=relationship.bidirectional
+            ).ask()
+            relationship.bidirectional = new_bidirectional
+            session.commit()
+            console.print(f"\n[green]✓ Updated bidirectional to {'Yes' if new_bidirectional else 'No'}[/]\n")
+            time.sleep(0.5)
+
+        elif field == "Description":
+            new_description = questionary.text(
+                "Description (leave empty to clear):",
+                style=custom_style,
+                default=relationship.description or ""
+            ).ask()
+            relationship.description = new_description or None
+            session.commit()
+            console.print(f"\n[green]✓ Updated description[/]\n")
+            time.sleep(0.5)
+
+        elif field == "🗑️  Delete Relationship":
+            confirm = questionary.confirm(
+                f"Are you sure you want to delete this relationship?",
+                style=custom_style,
+                default=False
+            ).ask()
+            if confirm:
+                session.delete(relationship)
+                session.commit()
+                console.print(f"\n[green]✓ Relationship deleted[/]\n")
+                questionary.press_any_key_to_continue().ask()
+                session.close()
+                return
+
+    session.close()
+
 
 def delete_profile_relationship():
     """Delete a profile relationship"""
