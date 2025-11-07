@@ -210,6 +210,46 @@ class ClaudeAssistantService:
                 break
         self._save_all_tasks(tasks)
 
+    def mark_completed(self, ticket_id: int):
+        """Mark a task as completed"""
+        tasks = self.get_tasks()
+        for task in tasks:
+            if task.ticket_id == ticket_id:
+                task.status = "completed"
+                break
+        self._save_all_tasks(tasks)
+
+    def mark_failed(self, ticket_id: int):
+        """Mark a task as failed"""
+        tasks = self.get_tasks()
+        for task in tasks:
+            if task.ticket_id == ticket_id:
+                task.status = "failed"
+                break
+        self._save_all_tasks(tasks)
+
+    def cancel_task(self, ticket_id: int):
+        """Cancel/remove a task"""
+        tasks = self.get_tasks()
+        tasks = [task for task in tasks if task.ticket_id != ticket_id]
+        self._save_all_tasks(tasks)
+
+    def clear_stuck_tasks(self, hours: int = 1):
+        """Clear tasks that have been running for too long (likely stuck)"""
+        tasks = self.get_tasks()
+        cutoff = time.time() - (hours * 3600)
+        updated = False
+
+        for task in tasks:
+            if task.status == "running" and task.timestamp < cutoff:
+                task.status = "failed"
+                updated = True
+
+        if updated:
+            self._save_all_tasks(tasks)
+
+        return updated
+
     def clear_old_tasks(self, hours: int = 24):
         """Clear tasks older than specified hours"""
         tasks = self.get_tasks()
@@ -280,7 +320,7 @@ class ClaudeAssistantService:
         return ticket_id
 
     def show_results(self):
-        """Show Claude results viewer"""
+        """Show Claude results viewer with task management options"""
 
         tasks = self.get_tasks()
 
@@ -335,6 +375,14 @@ class ClaudeAssistantService:
         console.print(table)
         console.print()
 
+        # Check for stuck tasks and offer to clear them
+        stuck_count = sum(1 for t in tasks if t.status == "running" and
+                         (time.time() - t.timestamp) > 3600)  # 1 hour
+
+        if stuck_count > 0:
+            console.print(f"[yellow]⚠ {stuck_count} task(s) running for over 1 hour (likely stuck)[/yellow]")
+            console.print()
+
         # Show session info
         if self.session_exists():
             console.print("[green]● Claude session running[/green] [dim](tmux session active)[/dim]")
@@ -346,6 +394,14 @@ class ClaudeAssistantService:
         console.print("  • View Claude session: [cyan]tmux attach -t leadsauce-claude-assistant[/cyan]")
         console.print("  • Detach from session: [cyan]Ctrl+B then D[/cyan]")
         console.print("  • Send new task: [cyan]Ctrl+K[/cyan]")
+
+        if stuck_count > 0:
+            console.print()
+            console.print("[yellow]To manage stuck tasks:[/yellow]")
+            console.print("  • From Python: [cyan]from leadsauce.utils.claude_assistant import get_claude_assistant[/cyan]")
+            console.print("  • Clear stuck:  [cyan]get_claude_assistant().clear_stuck_tasks()[/cyan]")
+            console.print("  • Cancel task:  [cyan]get_claude_assistant().cancel_task(ticket_id)[/cyan]")
+
         console.print()
 
 
