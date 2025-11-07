@@ -2492,97 +2492,186 @@ def network_and_relationships_menu():
                     ))
                     console.print()
                 else:
-                    # Build visual relationship map
+                    # Enhanced circular layout with labels
+                    width = 120
+                    height = 35
+                    center_x = width // 2
+                    center_y = height // 2
+                    radius = 14
+
+                    # Build node list from relationships
+                    nodes = []
+                    node_map = {}
+
+                    # Add profile nodes from relationships
+                    for rel in profile_relationships:
+                        # Add from_profile
+                        if rel.from_profile_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[rel.from_profile_id] = node_idx
+                            nodes.append({
+                                'id': rel.from_profile_id,
+                                'name': shorten_name(rel.from_profile.name, 10),
+                                'type': 'profile',
+                                'icon': '👥'
+                            })
+                        # Add to_profile
+                        if rel.to_profile_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[rel.to_profile_id] = node_idx
+                            nodes.append({
+                                'id': rel.to_profile_id,
+                                'name': shorten_name(rel.to_profile.name, 10),
+                                'type': 'profile',
+                                'icon': '👥'
+                            })
+
+                    # Add company nodes from relationships
+                    for rel in company_relationships:
+                        # Add from_company
+                        company_id = f"c_{rel.from_company_id}"
+                        if company_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[company_id] = node_idx
+                            nodes.append({
+                                'id': company_id,
+                                'name': shorten_name(rel.from_company.name, 10),
+                                'type': 'company',
+                                'icon': '🏢'
+                            })
+                        # Add to_company
+                        company_id = f"c_{rel.to_company_id}"
+                        if company_id not in node_map:
+                            node_idx = len(nodes)
+                            node_map[company_id] = node_idx
+                            nodes.append({
+                                'id': company_id,
+                                'name': shorten_name(rel.to_company.name, 10),
+                                'type': 'company',
+                                'icon': '🏢'
+                            })
+
+                    # Position nodes in circle
+                    positions = []
+                    label_positions = []
+
+                    for i, node in enumerate(nodes):
+                        angle = (2 * math.pi * i) / len(nodes) if len(nodes) > 0 else 0
+
+                        # Node position (on circle)
+                        x = int(center_x + radius * math.cos(angle))
+                        y = int(center_y + radius * math.sin(angle))
+                        positions.append((x, y))
+
+                        # Label position (further out for readability)
+                        label_radius = radius + 8
+                        label_x = int(center_x + label_radius * math.cos(angle))
+                        label_y = int(center_y + label_radius * math.sin(angle))
+                        label_positions.append((label_x, label_y))
+
+                    # Create canvas
+                    canvas = [[' ' for _ in range(width)] for _ in range(height)]
+
+                    # Draw edges first (in background)
+                    edges = []
+
+                    # Add profile relationship edges
+                    for rel in profile_relationships:
+                        from_idx = node_map.get(rel.from_profile_id)
+                        to_idx = node_map.get(rel.to_profile_id)
+                        if from_idx is not None and to_idx is not None:
+                            edges.append({
+                                'from': from_idx,
+                                'to': to_idx,
+                                'type': 'profile',
+                                'bidirectional': rel.bidirectional
+                            })
+
+                    # Add company relationship edges
+                    for rel in company_relationships:
+                        from_idx = node_map.get(f"c_{rel.from_company_id}")
+                        to_idx = node_map.get(f"c_{rel.to_company_id}")
+                        if from_idx is not None and to_idx is not None:
+                            edges.append({
+                                'from': from_idx,
+                                'to': to_idx,
+                                'type': 'company',
+                                'bidirectional': rel.bidirectional
+                            })
+
+                    # Draw edges using Bresenham's line algorithm
+                    for edge in edges:
+                        x0, y0 = positions[edge['from']]
+                        x1, y1 = positions[edge['to']]
+
+                        dx = abs(x1 - x0)
+                        dy = abs(y1 - y0)
+                        sx = 1 if x0 < x1 else -1
+                        sy = 1 if y0 < y1 else -1
+                        err = dx - dy
+
+                        x, y = x0, y0
+                        steps = 0
+                        max_steps = 200
+
+                        # Choose character based on relationship type
+                        if edge['bidirectional']:
+                            char = '═'
+                        else:
+                            char = '─'
+
+                        while steps < max_steps:
+                            if 0 <= y < height and 0 <= x < width:
+                                if canvas[y][x] == ' ':
+                                    canvas[y][x] = char
+
+                            if x == x1 and y == y1:
+                                break
+
+                            e2 = 2 * err
+                            if e2 > -dy:
+                                err -= dy
+                                x += sx
+                            if e2 < dx:
+                                err += dx
+                                y += sy
+
+                            steps += 1
+
+                    # Draw nodes (icons on circle)
+                    for i, (pos, node) in enumerate(zip(positions, nodes)):
+                        x, y = pos
+                        if 0 <= y < height and x < width - 1:
+                            canvas[y][x] = node['icon']
+
+                    # Draw labels (names outside circle)
+                    for i, (label_pos, node) in enumerate(zip(label_positions, nodes)):
+                        x, y = label_pos
+                        name = node['name']
+
+                        # Center the name around the label position
+                        start_x = x - len(name) // 2
+
+                        if 0 <= y < height:
+                            for j, char in enumerate(name):
+                                char_x = start_x + j
+                                if 0 <= char_x < width and canvas[y][char_x] == ' ':
+                                    canvas[y][char_x] = char
+
+                    # Render canvas with colors
                     map_lines = []
-
-                    # Show Profile Relationships
-                    if profile_relationships:
-                        for rel in profile_relationships:
-                            from_name = shorten_name(rel.from_profile.name, 15)
-                            to_name = shorten_name(rel.to_profile.name, 15)
-                            rel_type = rel.relationship_type[:12]
-
-                            # Determine arrow and status indicator
-                            if rel.bidirectional:
-                                arrow = "═══"
-                                connector = "═══"
+                    for row in canvas:
+                        line_parts = []
+                        for char in row:
+                            if char == '👥':
+                                line_parts.append(f"[cyan]{char}[/cyan]")
+                            elif char == '🏢':
+                                line_parts.append(f"[green]{char}[/green]")
+                            elif char in '═─':
+                                line_parts.append(f"[dim yellow]{char}[/dim yellow]")
                             else:
-                                arrow = "───"
-                                connector = "───>"
-
-                            # Status indicator
-                            if rel.status == "Bad":
-                                status_mark = "✗"
-                            elif rel.status == "Good":
-                                status_mark = "✓"
-                            else:
-                                status_mark = "○"
-
-                            # Draw FROM box
-                            from_box = create_box(f"👥 {from_name}", 20)
-                            for line in from_box:
-                                map_lines.append(line.center(100))
-
-                            # Draw relationship connection
-                            if rel.bidirectional:
-                                rel_line = f"{arrow}[{rel_type} {status_mark}]{arrow}"
-                            else:
-                                rel_line = f"{connector}[{rel_type} {status_mark}]"
-                            map_lines.append(rel_line.center(100))
-
-                            # Draw TO box
-                            to_box = create_box(f"👥 {to_name}", 20)
-                            for line in to_box:
-                                map_lines.append(line.center(100))
-
-                            map_lines.append("")  # Spacing between relationships
-
-                    # Show Company Relationships
-                    if company_relationships:
-                        if profile_relationships:
-                            map_lines.append("")
-                            map_lines.append("─── Company Relationships ───".center(100))
-                            map_lines.append("")
-
-                        for rel in company_relationships:
-                            from_name = shorten_name(rel.from_company.name, 15)
-                            to_name = shorten_name(rel.to_company.name, 15)
-                            rel_type = rel.relationship_type[:12]
-
-                            # Determine arrow and status
-                            if rel.bidirectional:
-                                arrow = "═══"
-                                connector = "═══"
-                            else:
-                                arrow = "───"
-                                connector = "───>"
-
-                            # Status indicator
-                            if rel.status == "Bad":
-                                status_mark = "✗"
-                            elif rel.status == "Good":
-                                status_mark = "✓"
-                            else:
-                                status_mark = "○"
-
-                            # Draw FROM box
-                            from_box = create_box(f"🏢 {from_name}", 20)
-                            for line in from_box:
-                                map_lines.append(line.center(100))
-
-                            # Draw relationship connection
-                            if rel.bidirectional:
-                                rel_line = f"{arrow}[{rel_type} {status_mark}]{arrow}"
-                            else:
-                                rel_line = f"{connector}[{rel_type} {status_mark}]"
-                            map_lines.append(rel_line.center(100))
-
-                            # Draw TO box
-                            to_box = create_box(f"🏢 {to_name}", 20)
-                            for line in to_box:
-                                map_lines.append(line.center(100))
-
-                            map_lines.append("")  # Spacing
+                                line_parts.append(char)
+                        map_lines.append(''.join(line_parts))
 
                     map_text = '\n'.join(map_lines)
 
@@ -2592,13 +2681,9 @@ def network_and_relationships_menu():
                     legend.append("  ", style="dim")
                     legend.append("🏢 Company", style="green")
                     legend.append("  ", style="dim")
-                    legend.append("───> Direct", style="dim")
+                    legend.append("─ Direct", style="dim yellow")
                     legend.append("  ", style="dim")
-                    legend.append("═══ Bidirectional", style="dim")
-                    legend.append("  ", style="dim")
-                    legend.append("✓ Good", style="green")
-                    legend.append("  ", style="dim")
-                    legend.append("✗ Bad", style="red")
+                    legend.append("═ Bidirectional", style="dim yellow")
 
                     console.print(Panel(
                         map_text,
