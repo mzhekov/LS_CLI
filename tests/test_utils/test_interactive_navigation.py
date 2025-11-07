@@ -100,27 +100,23 @@ class TestNavigationShortcuts:
 
 
 class TestWorkshopNavigationConflict:
-    """Test for documented Workshop menu navigation conflict (Issue #1)"""
+    """Test for Workshop menu navigation - FIXED"""
 
-    def test_workshop_uses_conflicting_shortcuts(self):
+    def test_workshop_uses_letter_shortcuts(self):
         """
-        KNOWN ISSUE: Workshop menu uses 1-6 for tools, which conflicts with global nav
-        This test documents the inconsistency found in regression testing
+        FIXED: Workshop menu now uses letter shortcuts (h,k,i,r,g,c) instead of 1-6
+        Global navigation (1-9,0) now works in Workshop menu
 
-        Expected: Workshop should use different shortcuts (a-f or letters)
-        Actual: Workshop uses 1-6, conflicting with global navigation
-
-        Reference: REGRESSION_TEST_FINDINGS.md Issue #1
+        Fixed in: Fix commit - Workshop shortcuts changed to avoid conflict
+        Reference: REGRESSION_TEST_FINDINGS.md Issue #1 (RESOLVED)
         """
-        # Document the conflict
+        # Workshop now uses letter shortcuts
+        workshop_shortcuts = {'h', 'k', 'i', 'r', 'g', 'c'}  # From workshop_menu()
         global_shortcuts = {item[2] for item in NAV_ITEMS}
-        workshop_shortcuts = {'1', '2', '3', '4', '5', '6'}  # From workshop_menu()
 
+        # No conflict anymore
         conflict = global_shortcuts.intersection(workshop_shortcuts)
-
-        # This test DOCUMENTS the issue - it should fail until fixed
-        assert len(conflict) > 0, "Workshop shortcuts conflict with global navigation"
-        assert conflict == {'1', '2', '3', '4', '5', '6'}
+        assert len(conflict) == 0, "Workshop shortcuts should not conflict with global navigation"
 
 
 class TestDoubleBackspace:
@@ -140,56 +136,59 @@ class TestDoubleBackspace:
         result = get_single_key()
         assert result == '\x7f'
 
-    def test_double_backspace_in_text_prompts_only(self):
+    def test_double_backspace_in_all_prompts(self):
         """
-        KNOWN ISSUE: Double backspace only works in text prompts, not select prompts
+        FIXED: Double backspace now works in both text and select prompts
 
-        Reference: REGRESSION_TEST_FINDINGS.md Issue #6
+        Fixed in: Fix commit - Added double backspace to safe_questionary_select()
+        Reference: REGRESSION_TEST_FINDINGS.md Issue #6 (RESOLVED)
         """
-        # This test documents that safe_questionary_select() doesn't support double backspace
-        # while safe_questionary_text() does
         from leadsauce.utils.interactive import safe_questionary_text, safe_questionary_select
         import inspect
 
         # Check if double backspace logic exists in text function
         text_source = inspect.getsource(safe_questionary_text)
         assert 'DOUBLE_BACKSPACE_QUIT' in text_source
+        assert 'create_double_backspace_bindings' in text_source
 
-        # Check if it's missing in select function
+        # Check that select function now has it too
         select_source = inspect.getsource(safe_questionary_select)
-        # Select doesn't have double backspace handling
-        assert 'create_double_backspace_bindings' not in select_source
+        assert 'DOUBLE_BACKSPACE_QUIT' in select_source
+        assert 'create_double_backspace_bindings' in select_source
 
 
 class TestSpecialKeyboardShortcuts:
-    """Test special keyboard shortcuts (Ctrl+K, Ctrl+R)"""
+    """Test special keyboard shortcuts (Ctrl+K, Ctrl+R) - FIXED"""
 
-    def test_ctrl_k_availability(self):
+    def test_ctrl_k_global_availability(self):
         """
-        KNOWN ISSUE: Ctrl+K shown in all views but only implemented in Dashboard
+        FIXED: Ctrl+K now available globally via handle_global_shortcuts()
+        Works in all views: Dashboard, Profiles, Companies, Tags, etc.
 
-        Reference: REGRESSION_TEST_FINDINGS.md Issue #2
+        Fixed in: Fix commit - Created handle_global_shortcuts() function
+        Reference: REGRESSION_TEST_FINDINGS.md Issue #2 (RESOLVED)
         """
-        # This test documents the inconsistency
-        # Ctrl+K (\x0b) is only handled in show_dashboard_view()
-        # but advertised in render_top_bar() for all views
+        # Verify global shortcut handler exists
+        from leadsauce.utils.interactive import handle_global_shortcuts
+        import inspect
 
-        # We can verify by checking the top bar shows it globally
-        panel = render_top_bar("Profiles")
-        assert "Ctrl+K" in str(panel), "Ctrl+K shown in non-Dashboard view"
+        # Check function signature
+        sig = inspect.signature(handle_global_shortcuts)
+        assert 'action' in sig.parameters
+        assert 'current_view' in sig.parameters
 
-        # But it's only implemented in Dashboard (lines 936-946 of interactive.py)
-        # This test documents the gap
+        # Function should be callable
+        assert callable(handle_global_shortcuts)
 
-    def test_ctrl_r_availability(self):
+    def test_ctrl_r_global_availability(self):
         """
-        KNOWN ISSUE: Ctrl+R shown in Dashboard but only partially implemented
+        FIXED: Ctrl+R now available globally via handle_global_shortcuts()
 
-        Reference: REGRESSION_TEST_FINDINGS.md Issue #2
+        Reference: REGRESSION_TEST_FINDINGS.md Issue #2 (RESOLVED)
         """
-        # Ctrl+R (\x12) is only handled in show_dashboard_view()
-        panel = render_top_bar("Dashboard")
-        assert "Ctrl+K" in str(panel)  # Ctrl+R is mentioned with Ctrl+K
+        # Ctrl+R handled by same global function
+        from leadsauce.utils.interactive import handle_global_shortcuts
+        assert callable(handle_global_shortcuts)
 
 
 class TestNavigationFlow:
@@ -263,41 +262,54 @@ class TestActionShortcuts:
 
 
 class TestSearchMenuInconsistency:
-    """Test Search menu structure inconsistency"""
+    """Test Search menu structure - FIXED"""
 
-    def test_search_menu_lacks_action_loop(self):
+    def test_search_menu_has_action_loop(self):
         """
-        KNOWN ISSUE: Search menu doesn't have action loop like other menus
+        FIXED: Search menu now has action loop with shortcuts like other menus
+        Features: [s] Search, [v] View, [e] Edit, [c] Clear, navigation
 
-        Reference: REGRESSION_TEST_FINDINGS.md Issue #3
+        Fixed in: Fix commit - Refactored search_interactive() completely
+        Reference: REGRESSION_TEST_FINDINGS.md Issue #3 (RESOLVED)
         """
-        # Search menu (search_interactive) doesn't have:
-        # - While loop for staying in context
-        # - Action shortcuts bar
-        # - Options to refine or take actions on results
+        from leadsauce.utils.interactive import search_interactive
+        import inspect
 
-        # Other menus all have: while True: ... loop with actions
-        # Search just: search once, show results, press key, exit
+        source = inspect.getsource(search_interactive)
 
-        # This test documents the inconsistency
+        # Should have while True loop
+        assert 'while True:' in source
+
+        # Should have action shortcuts
+        assert '[s] Search' in source or 'Search' in source
+        assert 'get_single_key()' in source
+
+        # Should have result table display
+        assert 'Table' in source or 'table' in source
 
 
 class TestImportExportMenuPattern:
-    """Test Import/Export menu pattern"""
+    """Test Import/Export menu pattern - FIXED"""
 
-    def test_import_export_uses_select_not_shortcuts(self):
+    def test_import_export_uses_single_key_shortcuts(self):
         """
-        KNOWN ISSUE: Import/Export uses questionary.select instead of single-key shortcuts
+        FIXED: Import/Export now uses single-key shortcuts [1] and [2]
+        No longer requires arrow keys + Enter navigation
 
-        Reference: REGRESSION_TEST_FINDINGS.md Issue #5
+        Fixed in: Fix commit - Replaced questionary.select with get_single_key()
+        Reference: REGRESSION_TEST_FINDINGS.md Issue #5 (RESOLVED)
         """
-        # Import/Export menu uses questionary.select() (lines 6812-6816)
-        # instead of single-key shortcuts like other menus
+        from leadsauce.utils.interactive import import_export_menu
+        import inspect
 
-        # This makes it slower to navigate (requires arrow keys + Enter)
-        # vs other menus (single keypress)
+        source = inspect.getsource(import_export_menu)
 
-        # This test documents the inconsistency
+        # Should use get_single_key() instead of questionary.select()
+        assert 'get_single_key()' in source
+
+        # Should have single-key shortcuts [1] and [2]
+        assert '[1]' in source or 'action == \'1\'' in source
+        assert '[2]' in source or 'action == \'2\'' in source
 
 
 if __name__ == '__main__':

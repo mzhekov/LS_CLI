@@ -36,6 +36,39 @@ _last_key_press = {'key': None, 'time': 0}
 _DOUBLE_BACKSPACE_WINDOW = 0.5  # seconds
 
 
+def handle_global_shortcuts(action, current_view="Unknown"):
+    """
+    Handle global keyboard shortcuts that work in all views.
+    Returns True if a global shortcut was handled, False otherwise.
+
+    Global shortcuts:
+    - Ctrl+K (\x0b): Quick Claude Command
+    - Ctrl+R (\x12): View Claude Results
+    """
+    # Handle Ctrl+K - Quick Claude Command
+    if action == '\x0b':  # Ctrl+K
+        from leadsauce.utils.claude_assistant import get_claude_assistant
+        assistant = get_claude_assistant()
+        # Pass current context
+        context = {
+            'view': current_view,
+            'working_dir': str(Path.cwd()),
+            'database': str(Path.cwd() / 'leadsauce.db')
+        }
+        assistant.show_quick_command_palette(context)
+        return True
+
+    # Handle Ctrl+R - View Claude Results
+    if action == '\x12':  # Ctrl+R
+        from leadsauce.utils.claude_assistant import get_claude_assistant
+        assistant = get_claude_assistant()
+        assistant.show_results()
+        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+        return True
+
+    return False
+
+
 def get_single_key():
     """Capture a single keypress without requiring Enter, with double backspace to quit"""
     import time
@@ -143,15 +176,25 @@ def safe_questionary_select(message, choices, **kwargs):
     """Questionary select with double backspace support"""
     import questionary
 
-    console.print("[dim]Tip: ESC or Ctrl+C to cancel[/dim]")
+    console.print("[dim]Tip: Double backspace, ESC, or Ctrl+C to cancel[/dim]")
 
     try:
+        # Create custom bindings for double backspace
+        custom_bindings = create_double_backspace_bindings()
+
         result = questionary.select(
             message,
             choices=choices,
             style=custom_style,
+            key_bindings=custom_bindings,
             **kwargs
         ).ask()
+
+        # Check for our special quit signal
+        if result == 'DOUBLE_BACKSPACE_QUIT':
+            console.print("\n[yellow]Cancelled (double backspace)[/yellow]")
+            return None
+
         return result
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled[/yellow]")
@@ -932,25 +975,8 @@ def show_dashboard_view():
         console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9/0 for navigation, [cyan]Ctrl+K[/cyan] Claude, [cyan]Ctrl+R[/cyan] Results):[/]")
         action = get_single_key()
 
-        # Handle Ctrl+K - Quick Claude Command
-        if action == '\x0b':  # Ctrl+K
-            from leadsauce.utils.claude_assistant import get_claude_assistant
-            assistant = get_claude_assistant()
-            # Pass current context
-            context = {
-                'view': 'Dashboard',
-                'working_dir': str(Path.cwd()),
-                'database': str(Path.cwd() / 'leadsauce.db')
-            }
-            assistant.show_quick_command_palette(context)
-            continue
-
-        # Handle Ctrl+R - View Claude Results
-        if action == '\x12':  # Ctrl+R
-            from leadsauce.utils.claude_assistant import get_claude_assistant
-            assistant = get_claude_assistant()
-            assistant.show_results()
-            questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Dashboard"):
             continue
 
         # Handle double backspace quit
@@ -1709,6 +1735,10 @@ def profiles_menu():
         # Action prompt with single-key input
         action = get_single_key()
 
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Profiles"):
+            continue
+
         # Navigation map for quick access
         nav_map = {
             '1': 'Dashboard',
@@ -1928,6 +1958,10 @@ def companies_menu():
         # Action prompt with single-key input
         action = get_single_key()
 
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Companies"):
+            continue
+
         # Navigation map for quick access
         nav_map = {
             '1': 'Dashboard',
@@ -2078,6 +2112,10 @@ def tags_menu():
 
         # Action prompt with single-key input
         action = get_single_key()
+
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Tags"):
+            continue
 
         # Navigation map for quick access
         nav_map = {
@@ -2774,6 +2812,10 @@ def network_and_relationships_menu():
 
         # Action prompt with single-key input
         action = get_single_key()
+
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Network & Relationships"):
+            continue
 
         # Navigation map for quick access
         nav_map = {
@@ -3732,45 +3774,188 @@ def add_company_interactive():
 
 
 def search_interactive():
-    """Interactive search"""
-    console.clear()
-
-    # Show top navigation bar
-    console.print(render_top_bar("Search"))
-    console.print()
-
-    console.print(Panel(
-        "[bold cyan]Search Profiles[/]",
-        border_style="cyan"
-    ))
-    console.print()
-
-    query = questionary.text("Search:", style=custom_style).ask()
-    if not query:
-        return
-
+    """Interactive search with action loop"""
     session = get_session()
-    from sqlalchemy import or_
+    query = ""
+    results = []
 
-    results = session.query(Profile).filter(
-        or_(
-            Profile.name.ilike(f"%{query}%"),
-            Profile.email.ilike(f"%{query}%"),
-            Profile.good_at.ilike(f"%{query}%")
-        )
-    ).all()
+    while True:
+        console.clear()
 
-    console.print()
-    if results:
-        console.print(f"[green]Found {len(results)} results:[/]\n")
-        for p in results:
-            company = f"@ {p.company.name}" if p.company else ""
-            console.print(f"  • [cyan]{p.name}[/] ({p.seniority}) {company}")
-    else:
-        console.print("[yellow]No results found[/]")
+        # Show top navigation bar
+        console.print(render_top_bar("Search"))
+        console.print()
 
-    console.print()
-    questionary.press_any_key_to_continue().ask()
+        # Action shortcuts top bar
+        actions_text = Text()
+        actions_text.append("[s] Search", style="green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[v] View Profile", style="cyan")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[e] Edit Profile", style="yellow")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[c] Clear Results", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
+
+        console.print(Panel(
+            actions_text,
+            title="[bold cyan]🔍 Search Profiles[/]",
+            border_style="cyan",
+            box=box.SIMPLE
+        ))
+        console.print()
+
+        # Show current search query if any
+        if query:
+            console.print(f"[dim]Current search: [cyan]{query}[/][/]\n")
+
+        # Display search results
+        if results:
+            console.print(f"[green]Found {len(results)} result(s):[/]\n")
+
+            # Create results table
+            from rich.table import Table
+            table = Table(show_header=True, box=box.SIMPLE_HEAD, border_style="cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Name", style="cyan", width=20)
+            table.add_column("Seniority", style="blue", width=12)
+            table.add_column("Email", style="dim", width=25)
+            table.add_column("Company", style="green", width=20)
+            table.add_column("Skills", style="yellow", width=25)
+
+            for idx, p in enumerate(results, 1):
+                company = p.company.name if p.company else "-"
+                email = p.email if p.email else "-"
+                skills = p.good_at if p.good_at else "-"
+                if skills != "-" and len(skills) > 25:
+                    skills = skills[:22] + "..."
+
+                table.add_row(
+                    str(idx),
+                    p.name,
+                    p.seniority,
+                    email,
+                    company,
+                    skills
+                )
+
+            console.print(table)
+        elif query:
+            console.print("[yellow]No results found for current search[/]")
+        else:
+            console.print("[dim]Press 's' to start a search[/]")
+
+        console.print()
+
+        # Get action
+        action = get_single_key()
+
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Search"):
+            continue
+
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            '8': 'Import/Export',
+            '9': 'AI CLI Control',
+            '0': 'Browser',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
+
+        # Check for navigation keys
+        if action in nav_map:
+            session.close()
+            return nav_map[action]
+
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
+            break
+
+        # Search action
+        if action.lower() == 's':
+            query = safe_questionary_text("Search (name, email, or skills):", default=query or "")
+            if query:
+                from sqlalchemy import or_
+                results = session.query(Profile).filter(
+                    or_(
+                        Profile.name.ilike(f"%{query}%"),
+                        Profile.email.ilike(f"%{query}%"),
+                        Profile.good_at.ilike(f"%{query}%")
+                    )
+                ).all()
+            continue
+
+        # View profile
+        elif action.lower() == 'v':
+            if not results:
+                console.print("[yellow]No search results to view[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Select profile to view
+            profile_choices = [{'name': f"{idx}. {p.name}", 'value': p.id} for idx, p in enumerate(results, 1)]
+            profile_choices.append({'name': '← Cancel', 'value': None})
+
+            profile_id = safe_questionary_select(
+                "Select profile to view:",
+                choices=profile_choices
+            )
+
+            if profile_id:
+                show_profile_details(profile_id, session)
+
+        # Edit profile
+        elif action.lower() == 'e':
+            if not results:
+                console.print("[yellow]No search results to edit[/]")
+                import time
+                time.sleep(1)
+                continue
+
+            # Select profile to edit
+            profile_choices = [{'name': f"{idx}. {p.name}", 'value': p.id} for idx, p in enumerate(results, 1)]
+            profile_choices.append({'name': '← Cancel', 'value': None})
+
+            profile_id = safe_questionary_select(
+                "Select profile to edit:",
+                choices=profile_choices
+            )
+
+            if profile_id:
+                profile = session.query(Profile).filter_by(id=profile_id).first()
+                if profile:
+                    edit_profile_interactive(profile, session)
+                    # Refresh results after edit
+                    if query:
+                        from sqlalchemy import or_
+                        results = session.query(Profile).filter(
+                            or_(
+                                Profile.name.ilike(f"%{query}%"),
+                                Profile.email.ilike(f"%{query}%"),
+                                Profile.good_at.ilike(f"%{query}%")
+                            )
+                        ).all()
+
+        # Clear results
+        elif action.lower() == 'c':
+            query = ""
+            results = []
+
+        else:
+            console.print("[yellow]Invalid option. Use s/v/e/c or 1-9/0 for navigation.[/]")
+            import time
+            time.sleep(1)
+
     session.close()
 
 
@@ -5140,17 +5325,19 @@ def workshop_menu():
 
         # Action shortcuts top bar
         actions_text = Text()
-        actions_text.append("[1] Network Health", style="green")
+        actions_text.append("[h] Network Health", style="green")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[2] Key Connectors", style="yellow")
+        actions_text.append("[k] Key Connectors", style="yellow")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[3] Isolated Nodes", style="red")
+        actions_text.append("[i] Isolated Nodes", style="red")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[4] Relationship Health", style="magenta")
+        actions_text.append("[r] Relationship Health", style="magenta")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[5] Gap Analysis", style="cyan")
+        actions_text.append("[g] Gap Analysis", style="cyan")
         actions_text.append(" • ", style="dim")
-        actions_text.append("[6] Recommendations", style="blue")
+        actions_text.append("[c] Recommendations", style="blue")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[1-9,0] Navigate", style="cyan")
         actions_text.append(" • ", style="dim")
         actions_text.append("[Enter] Back", style="dim white")
 
@@ -5175,7 +5362,11 @@ def workshop_menu():
         # Action prompt with single-key input
         action = get_single_key()
 
-        # Navigation map for quick access
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Workshop"):
+            continue
+
+        # Navigation map for global shortcuts (now available in Workshop!)
         nav_map = {
             '1': 'Dashboard',
             '2': 'Profiles',
@@ -5184,33 +5375,37 @@ def workshop_menu():
             '5': 'Search',
             '6': 'Tags',
             '7': 'Workshop',
+            '8': 'Import/Export',
+            '9': 'AI CLI Control',
+            '0': 'Browser',
             'q': 'Exit',
             'Q': 'Exit'
         }
 
-        # Check for navigation keys first - but workshop uses 1-6 for tools, so only check for 7 and q
-        if action == '7' or action.lower() == 'q':
+        # Check for global navigation keys first (now works in Workshop!)
+        if action in nav_map:
             session.close()
-            return nav_map.get(action.lower(), nav_map.get(action))
+            return nav_map[action]
 
         # Empty input (Enter) = back to dashboard
         if action == '\r' or action == '\n':
             break
 
-        if action == '1':
+        # Workshop-specific tool shortcuts (changed from 1-6 to h,k,i,r,g,c)
+        if action == 'h' or action == 'H':
             analyze_network_health(session)
-        elif action == '2':
+        elif action == 'k' or action == 'K':
             find_key_connectors(session)
-        elif action == '3':
+        elif action == 'i' or action == 'I':
             find_isolated_nodes(session)
-        elif action == '4':
+        elif action == 'r' or action == 'R':
             relationship_health_check(session)
-        elif action == '5':
+        elif action == 'g' or action == 'G':
             gap_analysis(session)
-        elif action == '6':
+        elif action == 'c' or action == 'C':
             get_recommendations(session)
         else:
-            console.print("[yellow]Invalid option. Try again.[/]")
+            console.print("[yellow]Invalid option. Use h/k/i/r/g/c for tools or 1-9/0 for navigation.[/]")
             time.sleep(1)
 
     session.close()
@@ -6762,6 +6957,8 @@ def import_export_menu():
         actions_text.append("[1] Export Data", style="bold cyan")
         actions_text.append(" • ", style="dim")
         actions_text.append("[2] Import Data", style="bold green")
+        actions_text.append(" • ", style="dim")
+        actions_text.append("[Enter] Back", style="dim white")
         console.print(Panel(actions_text, title="📦 Import/Export Operations", border_style="cyan"))
         console.print()
 
@@ -6802,46 +6999,60 @@ def import_export_menu():
         ))
         console.print()
 
-        # Create menu choices
-        choices = [
-            "📤 [1] Export Data → Save to CSV files",
-            "📥 [2] Import Data → Load from CSV files",
-            "🔙 Back to Dashboard"
-        ]
+        # Get action - single key press
+        action = get_single_key()
 
-        action = questionary.select(
-            "What would you like to do?",
-            choices=choices,
-            style=custom_style
-        ).ask()
+        # Handle global shortcuts (Ctrl+K, Ctrl+R)
+        if handle_global_shortcuts(action, "Import/Export"):
+            continue
 
-        if not action:
+        # Navigation map for quick access
+        nav_map = {
+            '1': 'Dashboard',
+            '2': 'Profiles',
+            '3': 'Companies',
+            '4': 'Network & Relationships',
+            '5': 'Search',
+            '6': 'Tags',
+            '7': 'Workshop',
+            '8': 'Import/Export',
+            '9': 'AI CLI Control',
+            '0': 'Browser',
+            'q': 'Exit',
+            'Q': 'Exit'
+        }
+
+        # Check for navigation keys
+        if action in nav_map:
             session.close()
-            return None  # User cancelled (Ctrl+C)
+            return nav_map[action]
 
-        if "Back to Dashboard" in action:
+        # Empty input (Enter) = back to dashboard
+        if action == '\r' or action == '\n':
             session.close()
             return None
 
-        elif "Export Data" in action:
-            # Close current session before calling export_menu
+        # Handle Import/Export menu options
+        if action == '1':
+            # Export Data
             session.close()
-            # Call export menu
             result = export_menu()
-            # Re-open session for next iteration
             session = get_session()
             if result:
                 return result
 
-        elif "Import Data" in action:
-            # Close current session before calling import_menu
+        elif action == '2':
+            # Import Data
             session.close()
-            # Call import menu
             result = import_menu()
-            # Re-open session for next iteration
             session = get_session()
             if result:
                 return result
+
+        else:
+            console.print("[yellow]Invalid option. Press 1 for Export, 2 for Import, or Enter to go back.[/]")
+            import time
+            time.sleep(1)
 
 
 def export_menu():
