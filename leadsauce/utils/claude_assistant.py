@@ -154,6 +154,12 @@ class ClaudeAssistantService:
 
         # Send to tmux session
         try:
+            # Capture pane before sending command (to know where the response starts)
+            result_before = subprocess.run([
+                "tmux", "capture-pane", "-t", self.SESSION_NAME, "-p"
+            ], capture_output=True, text=True)
+            lines_before = len(result_before.stdout.splitlines()) if result_before.returncode == 0 else 0
+
             # Send the command
             subprocess.run([
                 "tmux", "send-keys", "-t", self.SESSION_NAME,
@@ -162,6 +168,7 @@ class ClaudeAssistantService:
 
             # Update status to running
             task.status = "running"
+            task.result_file = str(self.RESULTS_DIR / f"task_{ticket_id}_response.txt")
             self._save_task(task)
 
             return ticket_id
@@ -280,6 +287,74 @@ class ClaudeAssistantService:
         with open(self.QUEUE_FILE, 'w') as f:
             json.dump(data, f, indent=2)
 
+    def check_and_update_running_tasks(self) -> int:
+        """Check running tasks and capture responses if complete"""
+        if not self.session_exists():
+            return 0
+
+        tasks = self.get_tasks()
+        running_tasks = [t for t in tasks if t.status == "running"]
+
+        if not running_tasks:
+            return 0
+
+        updated_count = 0
+
+        try:
+            # Capture current tmux pane content
+            result = subprocess.run([
+                "tmux", "capture-pane", "-t", self.SESSION_NAME, "-p", "-S", "-"
+            ], capture_output=True, text=True, timeout=5)
+
+            if result.returncode != 0:
+                return 0
+
+            pane_content = result.stdout
+
+            # Check each running task
+            for task in running_tasks:
+                # Look for signs that Claude has finished responding
+                # Claude typically ends with a prompt or "How can I help" or similar
+                lines = pane_content.splitlines()
+
+                # Simple heuristic: if we see the task command and there's content after it,
+                # and the last few lines don't seem to be streaming (no partial words),
+                # consider it complete
+
+                # Check if it's been more than 30 seconds since task started
+                time_elapsed = time.time() - task.timestamp
+
+                if time_elapsed > 30:  # Give Claude at least 30 seconds to respond
+                    # Look for the command in the pane
+                    task_cmd_line = -1
+                    for i, line in enumerate(lines):
+                        if task.command in line:
+                            task_cmd_line = i
+                            break
+
+                    if task_cmd_line >= 0:
+                        # Extract response (everything after the command)
+                        response_lines = lines[task_cmd_line + 1:]
+                        response = "\n".join(response_lines).strip()
+
+                        if response and len(response) > 10:  # Has some content
+                            # Save response to file
+                            if task.result_file:
+                                result_path = Path(task.result_file)
+                                result_path.parent.mkdir(parents=True, exist_ok=True)
+                                with open(result_path, 'w') as f:
+                                    f.write(response)
+
+                                # Mark as completed
+                                task.status = "completed"
+                                self._save_task(task)
+                                updated_count += 1
+
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            pass
+
+        return updated_count
+
     def show_quick_command_palette(self, context: Optional[Dict] = None) -> Optional[int]:
         """Show quick command palette and send to Claude"""
 
@@ -321,6 +396,9 @@ class ClaudeAssistantService:
 
     def show_results(self):
         """Show Claude results viewer with task management options"""
+
+        # First, check for any completed tasks and update statuses
+        self.check_and_update_running_tasks()
 
         tasks = self.get_tasks()
 
@@ -374,6 +452,29 @@ class ClaudeAssistantService:
         console.print()
         console.print(table)
         console.print()
+
+        # Show completed tasks with responses
+        completed_tasks = [t for t in tasks if t.status == "completed" and t.result_file]
+        if completed_tasks:
+            console.print(f"\n[green]✓ {len(completed_tasks)} completed task(s) with responses[/green]")
+            for task in completed_tasks[:5]:  # Show first 5 completed
+                response_path = Path(task.result_file)
+                if response_path.exists():
+                    with open(response_path, 'r') as f:
+                        response = f.read().strip()
+
+                    # Show preview
+                    console.print()
+                    console.print(Panel(
+                        f"[cyan]Command:[/cyan] {task.command}\n\n"
+                        f"[dim]{response[:300]}{'...' if len(response) > 300 else ''}[/dim]",
+                        title=f"Ticket #{task.ticket_id}",
+                        border_style="green"
+                    ))
+
+            console.print()
+            console.print("[dim]Tip: View full response with: tmux attach -t leadsauce-claude-assistant[/dim]")
+            console.print()
 
         # Check for stuck tasks and automatically clear them
         stuck_count = sum(1 for t in tasks if t.status == "running" and
