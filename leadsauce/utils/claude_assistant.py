@@ -158,31 +158,44 @@ class ClaudeAssistantService:
 
         # Run Claude command in background and capture output
         try:
-            # Ensure session exists
-            if not self.session_exists():
-                self.start_session()
-
-            # Save the command to a file (to handle multi-line properly)
+            # Save the command to a file
             prompt_file = self.RESULTS_DIR / f"task_{ticket_id}_prompt.txt"
             with open(prompt_file, 'w') as f:
                 f.write(full_command)
 
-            # Create a shell script to run the command and save output
+            # Create a shell script that properly invokes Claude
+            # Note: Claude CLI reads from stdin when you pipe to it, or use -m flag
             script_content = f'''#!/bin/bash
 # Task {ticket_id}
-cat "{prompt_file}" | claude > "{result_file}" 2>&1
-echo "TASK_COMPLETE_{ticket_id}" >> "{result_file}"
+# Set PATH to ensure claude is found
+export PATH="$PATH:/usr/local/bin:$HOME/.local/bin"
+
+# Run Claude with the prompt and capture output
+claude -m "$(cat '{prompt_file}')" > '{result_file}' 2>&1
+
+# Check if command succeeded
+if [ $? -eq 0 ]; then
+    echo "" >> '{result_file}'
+    echo "TASK_COMPLETE_{ticket_id}" >> '{result_file}'
+else
+    echo "" >> '{result_file}'
+    echo "ERROR: Claude command failed with exit code $?" >> '{result_file}'
+    echo "TASK_COMPLETE_{ticket_id}" >> '{result_file}'
+fi
 '''
             script_file = self.RESULTS_DIR / f"task_{ticket_id}_script.sh"
             with open(script_file, 'w') as f:
                 f.write(script_content)
             script_file.chmod(0o755)
 
-            # Send command to tmux to run the script in background
-            subprocess.run([
-                "tmux", "send-keys", "-t", self.SESSION_NAME,
-                f"bash {script_file} &", "Enter"
-            ], check=True)
+            # Run the script directly in background (no tmux needed for this)
+            # This is more reliable than sending keys to tmux
+            subprocess.Popen(
+                ['/bin/bash', str(script_file)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True  # Detach from parent
+            )
 
             # Update status to running
             task.status = "running"
@@ -190,9 +203,10 @@ echo "TASK_COMPLETE_{ticket_id}" >> "{result_file}"
 
             return ticket_id
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             task.status = "failed"
             self._save_task(task)
+            console.print(f"[red]Error starting task: {e}[/red]")
             return ticket_id
 
     def get_tasks(self) -> List[ClaudeTask]:
@@ -391,15 +405,7 @@ echo "TASK_COMPLETE_{ticket_id}" >> "{result_file}"
             console.print("[dim]Cancelled[/dim]")
             return None
 
-        # Ensure session is running
-        if not self.session_exists():
-            console.print("\n[yellow]Starting Claude assistant session...[/yellow]")
-            if not self.start_session():
-                console.print("[red]Failed to start Claude session[/red]")
-                return None
-            console.print("[green]✓ Claude session started[/green]\n")
-
-        # Send command
+        # Send command (runs in background, no tmux needed)
         ticket_id = self.send_command(command, context)
 
         # Show confirmation
@@ -491,8 +497,6 @@ echo "TASK_COMPLETE_{ticket_id}" >> "{result_file}"
                     ))
 
             console.print()
-            console.print("[dim]Tip: View full response with: tmux attach -t leadsauce-claude-assistant[/dim]")
-            console.print()
 
         # Check for stuck tasks and automatically clear them
         stuck_count = sum(1 for t in tasks if t.status == "running" and
@@ -523,17 +527,12 @@ echo "TASK_COMPLETE_{ticket_id}" >> "{result_file}"
                 console.print("\n[yellow]Skipped clearing tasks[/yellow]")
                 console.print()
 
-        # Show session info
-        if self.session_exists():
-            console.print("[green]● Claude session running[/green] [dim](tmux session active)[/dim]")
-        else:
-            console.print("[yellow]○ Claude session not running[/yellow] [dim](will start on first command)[/dim]")
-
+        # Show tips
         console.print()
         console.print("[dim]Tips:[/dim]")
-        console.print("  • View Claude session: [cyan]tmux attach -t leadsauce-claude-assistant[/cyan]")
-        console.print("  • Detach from session: [cyan]Ctrl+B then D[/cyan]")
         console.print("  • Send new task: [cyan]Ctrl+K[/cyan]")
+        console.print("  • Check results: [cyan]Ctrl+R[/cyan]")
+        console.print("  • View task files: [cyan]ls /tmp/leadsauce_claude_results/[/cyan]")
 
         if stuck_count > 0:
             console.print("  • Cancel task:  [cyan]get_claude_assistant().cancel_task(ticket_id)[/cyan]")
