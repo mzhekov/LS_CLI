@@ -375,13 +375,34 @@ class ClaudeAssistantService:
         console.print(table)
         console.print()
 
-        # Check for stuck tasks and offer to clear them
+        # Check for stuck tasks and automatically clear them
         stuck_count = sum(1 for t in tasks if t.status == "running" and
                          (time.time() - t.timestamp) > 3600)  # 1 hour
 
         if stuck_count > 0:
             console.print(f"[yellow]⚠ {stuck_count} task(s) running for over 1 hour (likely stuck)[/yellow]")
             console.print()
+
+            # Ask user if they want to clear stuck tasks
+            try:
+                response = Prompt.ask(
+                    "[yellow]Clear stuck tasks?[/yellow]",
+                    choices=["y", "n"],
+                    default="y"
+                )
+
+                if response.lower() == "y":
+                    cleared = self.clear_stuck_tasks()
+                    if cleared:
+                        console.print("[green]✓ Cleared stuck tasks[/green]")
+                        # Refresh task list
+                        tasks = self.get_tasks()
+                    else:
+                        console.print("[yellow]No tasks were cleared[/yellow]")
+                    console.print()
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[yellow]Skipped clearing tasks[/yellow]")
+                console.print()
 
         # Show session info
         if self.session_exists():
@@ -396,10 +417,6 @@ class ClaudeAssistantService:
         console.print("  • Send new task: [cyan]Ctrl+K[/cyan]")
 
         if stuck_count > 0:
-            console.print()
-            console.print("[yellow]To manage stuck tasks:[/yellow]")
-            console.print("  • From Python: [cyan]from leadsauce.utils.claude_assistant import get_claude_assistant[/cyan]")
-            console.print("  • Clear stuck:  [cyan]get_claude_assistant().clear_stuck_tasks()[/cyan]")
             console.print("  • Cancel task:  [cyan]get_claude_assistant().cancel_task(ticket_id)[/cyan]")
 
         console.print()
