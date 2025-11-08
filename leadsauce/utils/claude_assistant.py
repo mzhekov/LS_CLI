@@ -164,22 +164,23 @@ class ClaudeAssistantService:
                 f.write(full_command)
 
             # Create a shell script that properly invokes Claude
-            # Note: Claude CLI reads from stdin when you pipe to it, or use -m flag
+            # Claude CLI reads from stdin, so we redirect the prompt file to it
             script_content = f'''#!/bin/bash
 # Task {ticket_id}
 # Set PATH to ensure claude is found
 export PATH="$PATH:/usr/local/bin:$HOME/.local/bin"
 
-# Run Claude with the prompt and capture output
-claude -m "$(cat '{prompt_file}')" > '{result_file}' 2>&1
+# Run Claude with stdin redirection and capture output
+claude < '{prompt_file}' > '{result_file}' 2>&1
 
 # Check if command succeeded
-if [ $? -eq 0 ]; then
+exit_code=$?
+if [ $exit_code -eq 0 ]; then
     echo "" >> '{result_file}'
     echo "TASK_COMPLETE_{ticket_id}" >> '{result_file}'
 else
     echo "" >> '{result_file}'
-    echo "ERROR: Claude command failed with exit code $?" >> '{result_file}'
+    echo "ERROR: Claude command failed with exit code $exit_code" >> '{result_file}'
     echo "TASK_COMPLETE_{ticket_id}" >> '{result_file}'
 fi
 '''
