@@ -109,15 +109,15 @@ class ClaudeAssistantService:
             return True  # Already running
 
         try:
-            # Create detached tmux session with Claude
+            # Create detached tmux session with bash (so we can run commands)
             subprocess.run([
                 "tmux", "new-session", "-d", "-s", self.SESSION_NAME,
                 "-x", "120", "-y", "40",  # Set reasonable size
-                "claude"
+                "bash"
             ], check=True)
 
             # Give it a moment to start
-            time.sleep(1)
+            time.sleep(0.5)
 
             return True
         except subprocess.CalledProcessError as e:
@@ -143,6 +143,10 @@ class ClaudeAssistantService:
             status="pending"
         )
 
+        # Prepare result file path
+        result_file = self.RESULTS_DIR / f"task_{ticket_id}_response.txt"
+        task.result_file = str(result_file)
+
         # Save to queue
         self._save_task(task)
 
@@ -152,28 +156,41 @@ class ClaudeAssistantService:
             context_str = f"\n\nContext:\n{json.dumps(context, indent=2)}"
             full_command = f"{command}{context_str}"
 
-        # Send to tmux session
+        # Run Claude command in background and capture output
         try:
-            # Capture pane before sending command (to know where the response starts)
-            result_before = subprocess.run([
-                "tmux", "capture-pane", "-t", self.SESSION_NAME, "-p"
-            ], capture_output=True, text=True)
-            lines_before = len(result_before.stdout.splitlines()) if result_before.returncode == 0 else 0
+            # Ensure session exists
+            if not self.session_exists():
+                self.start_session()
 
-            # Send the command
+            # Save the command to a file (to handle multi-line properly)
+            prompt_file = self.RESULTS_DIR / f"task_{ticket_id}_prompt.txt"
+            with open(prompt_file, 'w') as f:
+                f.write(full_command)
+
+            # Create a shell script to run the command and save output
+            script_content = f'''#!/bin/bash
+# Task {ticket_id}
+cat "{prompt_file}" | claude > "{result_file}" 2>&1
+echo "TASK_COMPLETE_{ticket_id}" >> "{result_file}"
+'''
+            script_file = self.RESULTS_DIR / f"task_{ticket_id}_script.sh"
+            with open(script_file, 'w') as f:
+                f.write(script_content)
+            script_file.chmod(0o755)
+
+            # Send command to tmux to run the script in background
             subprocess.run([
                 "tmux", "send-keys", "-t", self.SESSION_NAME,
-                full_command, "Enter"
+                f"bash {script_file} &", "Enter"
             ], check=True)
 
             # Update status to running
             task.status = "running"
-            task.result_file = str(self.RESULTS_DIR / f"task_{ticket_id}_response.txt")
             self._save_task(task)
 
             return ticket_id
 
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             task.status = "failed"
             self._save_task(task)
             return ticket_id
@@ -288,10 +305,7 @@ class ClaudeAssistantService:
             json.dump(data, f, indent=2)
 
     def check_and_update_running_tasks(self) -> int:
-        """Check running tasks and capture responses if complete"""
-        if not self.session_exists():
-            return 0
-
+        """Check running tasks and update status based on result files"""
         tasks = self.get_tasks()
         running_tasks = [t for t in tasks if t.status == "running"]
 
@@ -300,58 +314,62 @@ class ClaudeAssistantService:
 
         updated_count = 0
 
-        try:
-            # Capture current tmux pane content
-            result = subprocess.run([
-                "tmux", "capture-pane", "-t", self.SESSION_NAME, "-p", "-S", "-"
-            ], capture_output=True, text=True, timeout=5)
+        for task in running_tasks:
+            # Check if result file exists
+            if not task.result_file:
+                continue
 
-            if result.returncode != 0:
-                return 0
+            result_path = Path(task.result_file)
 
-            pane_content = result.stdout
-
-            # Check each running task
-            for task in running_tasks:
-                # Look for signs that Claude has finished responding
-                # Claude typically ends with a prompt or "How can I help" or similar
-                lines = pane_content.splitlines()
-
-                # Simple heuristic: if we see the task command and there's content after it,
-                # and the last few lines don't seem to be streaming (no partial words),
-                # consider it complete
-
-                # Check if it's been more than 30 seconds since task started
+            if not result_path.exists():
+                # File doesn't exist yet, task still running
+                # Check if task has been running too long (over 10 minutes = likely failed)
                 time_elapsed = time.time() - task.timestamp
+                if time_elapsed > 600:  # 10 minutes
+                    task.status = "failed"
+                    self._save_task(task)
+                    updated_count += 1
+                continue
 
-                if time_elapsed > 30:  # Give Claude at least 30 seconds to respond
-                    # Look for the command in the pane
-                    task_cmd_line = -1
-                    for i, line in enumerate(lines):
-                        if task.command in line:
-                            task_cmd_line = i
-                            break
+            # File exists, check if task is complete
+            try:
+                with open(result_path, 'r') as f:
+                    content = f.read()
 
-                    if task_cmd_line >= 0:
-                        # Extract response (everything after the command)
-                        response_lines = lines[task_cmd_line + 1:]
-                        response = "\n".join(response_lines).strip()
+                # Check for completion marker
+                if f"TASK_COMPLETE_{task.ticket_id}" in content:
+                    # Task is complete, remove marker from displayed content
+                    content = content.replace(f"\nTASK_COMPLETE_{task.ticket_id}", "")
+                    content = content.strip()
 
-                        if response and len(response) > 10:  # Has some content
-                            # Save response to file
-                            if task.result_file:
-                                result_path = Path(task.result_file)
-                                result_path.parent.mkdir(parents=True, exist_ok=True)
-                                with open(result_path, 'w') as f:
-                                    f.write(response)
+                    # Re-save without marker
+                    with open(result_path, 'w') as f:
+                        f.write(content)
 
-                                # Mark as completed
-                                task.status = "completed"
-                                self._save_task(task)
-                                updated_count += 1
+                    # Mark as completed
+                    if content:  # Has actual response
+                        task.status = "completed"
+                    else:  # Empty response = failed
+                        task.status = "failed"
 
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            pass
+                    self._save_task(task)
+                    updated_count += 1
+
+                elif result_path.stat().st_size > 0:
+                    # File has content but no completion marker yet
+                    # Check if it hasn't been modified recently (likely complete but no marker)
+                    time_elapsed = time.time() - task.timestamp
+                    file_age = time.time() - result_path.stat().st_mtime
+
+                    # If task is old and file hasn't been modified in 30 seconds, consider it complete
+                    if time_elapsed > 60 and file_age > 30:
+                        task.status = "completed"
+                        self._save_task(task)
+                        updated_count += 1
+
+            except Exception:
+                # Error reading file, leave as running
+                pass
 
         return updated_count
 
