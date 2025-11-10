@@ -22,7 +22,7 @@ def cli(ctx, config, debug):
     A powerful command-line tool for managing your professional contacts,
     companies, interactions, and relationships.
 
-    Run without arguments to see the dashboard.
+    Run without arguments to launch the interactive TUI.
     Use 'leadsauce COMMAND --help' for help on a specific command.
     """
     ctx.ensure_object(dict)
@@ -46,7 +46,7 @@ def cli(ctx, config, debug):
         if debug:
             click.secho(f"Database initialization warning: {e}", fg='yellow')
 
-    # If no subcommand is provided, show dashboard
+    # If no subcommand is provided, launch TUI
     if ctx.invoked_subcommand is None:
         # Check if database exists (first run)
         if not DATABASE_FILE.exists():
@@ -54,8 +54,8 @@ def cli(ctx, config, debug):
             show_welcome()
             click.echo("Run 'leadsauce init' to set up the database.")
         else:
-            from leadsauce.utils.dashboard import show_dashboard
-            show_dashboard()
+            from leadsauce.utils.interactive import interactive_main_menu
+            interactive_main_menu()
 
 
 @cli.command()

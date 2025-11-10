@@ -109,15 +109,15 @@ class ClaudeAssistantService:
             return True  # Already running
 
         try:
-            # Create detached tmux session with Claude
+            # Create detached tmux session with bash (so we can run commands)
             subprocess.run([
                 "tmux", "new-session", "-d", "-s", self.SESSION_NAME,
                 "-x", "120", "-y", "40",  # Set reasonable size
-                "claude"
+                "bash"
             ], check=True)
 
             # Give it a moment to start
-            time.sleep(1)
+            time.sleep(0.5)
 
             return True
         except subprocess.CalledProcessError as e:
@@ -143,6 +143,10 @@ class ClaudeAssistantService:
             status="pending"
         )
 
+        # Prepare result file path
+        result_file = self.RESULTS_DIR / f"task_{ticket_id}_response.txt"
+        task.result_file = str(result_file)
+
         # Save to queue
         self._save_task(task)
 
@@ -152,13 +156,47 @@ class ClaudeAssistantService:
             context_str = f"\n\nContext:\n{json.dumps(context, indent=2)}"
             full_command = f"{command}{context_str}"
 
-        # Send to tmux session
+        # Run Claude command in background and capture output
         try:
-            # Send the command
-            subprocess.run([
-                "tmux", "send-keys", "-t", self.SESSION_NAME,
-                full_command, "Enter"
-            ], check=True)
+            # Save the command to a file
+            prompt_file = self.RESULTS_DIR / f"task_{ticket_id}_prompt.txt"
+            with open(prompt_file, 'w') as f:
+                f.write(full_command)
+
+            # Create a shell script that properly invokes Claude
+            # Claude CLI reads from stdin, so we redirect the prompt file to it
+            script_content = f'''#!/bin/bash
+# Task {ticket_id}
+# Set PATH to ensure claude is found
+export PATH="$PATH:/usr/local/bin:$HOME/.local/bin"
+
+# Run Claude with stdin redirection and capture output
+claude < '{prompt_file}' > '{result_file}' 2>&1
+
+# Check if command succeeded
+exit_code=$?
+if [ $exit_code -eq 0 ]; then
+    echo "" >> '{result_file}'
+    echo "TASK_COMPLETE_{ticket_id}" >> '{result_file}'
+else
+    echo "" >> '{result_file}'
+    echo "ERROR: Claude command failed with exit code $exit_code" >> '{result_file}'
+    echo "TASK_COMPLETE_{ticket_id}" >> '{result_file}'
+fi
+'''
+            script_file = self.RESULTS_DIR / f"task_{ticket_id}_script.sh"
+            with open(script_file, 'w') as f:
+                f.write(script_content)
+            script_file.chmod(0o755)
+
+            # Run the script directly in background (no tmux needed for this)
+            # This is more reliable than sending keys to tmux
+            subprocess.Popen(
+                ['/bin/bash', str(script_file)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True  # Detach from parent
+            )
 
             # Update status to running
             task.status = "running"
@@ -166,9 +204,10 @@ class ClaudeAssistantService:
 
             return ticket_id
 
-        except subprocess.CalledProcessError:
+        except Exception as e:
             task.status = "failed"
             self._save_task(task)
+            console.print(f"[red]Error starting task: {e}[/red]")
             return ticket_id
 
     def get_tasks(self) -> List[ClaudeTask]:
@@ -210,6 +249,46 @@ class ClaudeAssistantService:
                 break
         self._save_all_tasks(tasks)
 
+    def mark_completed(self, ticket_id: int):
+        """Mark a task as completed"""
+        tasks = self.get_tasks()
+        for task in tasks:
+            if task.ticket_id == ticket_id:
+                task.status = "completed"
+                break
+        self._save_all_tasks(tasks)
+
+    def mark_failed(self, ticket_id: int):
+        """Mark a task as failed"""
+        tasks = self.get_tasks()
+        for task in tasks:
+            if task.ticket_id == ticket_id:
+                task.status = "failed"
+                break
+        self._save_all_tasks(tasks)
+
+    def cancel_task(self, ticket_id: int):
+        """Cancel/remove a task"""
+        tasks = self.get_tasks()
+        tasks = [task for task in tasks if task.ticket_id != ticket_id]
+        self._save_all_tasks(tasks)
+
+    def clear_stuck_tasks(self, hours: int = 1):
+        """Clear tasks that have been running for too long (likely stuck)"""
+        tasks = self.get_tasks()
+        cutoff = time.time() - (hours * 3600)
+        updated = False
+
+        for task in tasks:
+            if task.status == "running" and task.timestamp < cutoff:
+                task.status = "failed"
+                updated = True
+
+        if updated:
+            self._save_all_tasks(tasks)
+
+        return updated
+
     def clear_old_tasks(self, hours: int = 24):
         """Clear tasks older than specified hours"""
         tasks = self.get_tasks()
@@ -240,6 +319,75 @@ class ClaudeAssistantService:
         with open(self.QUEUE_FILE, 'w') as f:
             json.dump(data, f, indent=2)
 
+    def check_and_update_running_tasks(self) -> int:
+        """Check running tasks and update status based on result files"""
+        tasks = self.get_tasks()
+        running_tasks = [t for t in tasks if t.status == "running"]
+
+        if not running_tasks:
+            return 0
+
+        updated_count = 0
+
+        for task in running_tasks:
+            # Check if result file exists
+            if not task.result_file:
+                continue
+
+            result_path = Path(task.result_file)
+
+            if not result_path.exists():
+                # File doesn't exist yet, task still running
+                # Check if task has been running too long (over 10 minutes = likely failed)
+                time_elapsed = time.time() - task.timestamp
+                if time_elapsed > 600:  # 10 minutes
+                    task.status = "failed"
+                    self._save_task(task)
+                    updated_count += 1
+                continue
+
+            # File exists, check if task is complete
+            try:
+                with open(result_path, 'r') as f:
+                    content = f.read()
+
+                # Check for completion marker
+                if f"TASK_COMPLETE_{task.ticket_id}" in content:
+                    # Task is complete, remove marker from displayed content
+                    content = content.replace(f"\nTASK_COMPLETE_{task.ticket_id}", "")
+                    content = content.strip()
+
+                    # Re-save without marker
+                    with open(result_path, 'w') as f:
+                        f.write(content)
+
+                    # Mark as completed
+                    if content:  # Has actual response
+                        task.status = "completed"
+                    else:  # Empty response = failed
+                        task.status = "failed"
+
+                    self._save_task(task)
+                    updated_count += 1
+
+                elif result_path.stat().st_size > 0:
+                    # File has content but no completion marker yet
+                    # Check if it hasn't been modified recently (likely complete but no marker)
+                    time_elapsed = time.time() - task.timestamp
+                    file_age = time.time() - result_path.stat().st_mtime
+
+                    # If task is old and file hasn't been modified in 30 seconds, consider it complete
+                    if time_elapsed > 60 and file_age > 30:
+                        task.status = "completed"
+                        self._save_task(task)
+                        updated_count += 1
+
+            except Exception:
+                # Error reading file, leave as running
+                pass
+
+        return updated_count
+
     def show_quick_command_palette(self, context: Optional[Dict] = None) -> Optional[int]:
         """Show quick command palette and send to Claude"""
 
@@ -258,15 +406,7 @@ class ClaudeAssistantService:
             console.print("[dim]Cancelled[/dim]")
             return None
 
-        # Ensure session is running
-        if not self.session_exists():
-            console.print("\n[yellow]Starting Claude assistant session...[/yellow]")
-            if not self.start_session():
-                console.print("[red]Failed to start Claude session[/red]")
-                return None
-            console.print("[green]✓ Claude session started[/green]\n")
-
-        # Send command
+        # Send command (runs in background, no tmux needed)
         ticket_id = self.send_command(command, context)
 
         # Show confirmation
@@ -280,7 +420,10 @@ class ClaudeAssistantService:
         return ticket_id
 
     def show_results(self):
-        """Show Claude results viewer"""
+        """Show Claude results viewer with task management options"""
+
+        # First, check for any completed tasks and update statuses
+        self.check_and_update_running_tasks()
 
         tasks = self.get_tasks()
 
@@ -335,17 +478,66 @@ class ClaudeAssistantService:
         console.print(table)
         console.print()
 
-        # Show session info
-        if self.session_exists():
-            console.print("[green]● Claude session running[/green] [dim](tmux session active)[/dim]")
-        else:
-            console.print("[yellow]○ Claude session not running[/yellow] [dim](will start on first command)[/dim]")
+        # Show completed tasks with responses
+        completed_tasks = [t for t in tasks if t.status == "completed" and t.result_file]
+        if completed_tasks:
+            console.print(f"\n[green]✓ {len(completed_tasks)} completed task(s) with responses[/green]")
+            for task in completed_tasks[:5]:  # Show first 5 completed
+                response_path = Path(task.result_file)
+                if response_path.exists():
+                    with open(response_path, 'r') as f:
+                        response = f.read().strip()
 
+                    # Show preview
+                    console.print()
+                    console.print(Panel(
+                        f"[cyan]Command:[/cyan] {task.command}\n\n"
+                        f"[dim]{response[:300]}{'...' if len(response) > 300 else ''}[/dim]",
+                        title=f"Ticket #{task.ticket_id}",
+                        border_style="green"
+                    ))
+
+            console.print()
+
+        # Check for stuck tasks and automatically clear them
+        stuck_count = sum(1 for t in tasks if t.status == "running" and
+                         (time.time() - t.timestamp) > 3600)  # 1 hour
+
+        if stuck_count > 0:
+            console.print(f"[yellow]⚠ {stuck_count} task(s) running for over 1 hour (likely stuck)[/yellow]")
+            console.print()
+
+            # Ask user if they want to clear stuck tasks
+            try:
+                response = Prompt.ask(
+                    "[yellow]Clear stuck tasks?[/yellow]",
+                    choices=["y", "n"],
+                    default="y"
+                )
+
+                if response.lower() == "y":
+                    cleared = self.clear_stuck_tasks()
+                    if cleared:
+                        console.print("[green]✓ Cleared stuck tasks[/green]")
+                        # Refresh task list
+                        tasks = self.get_tasks()
+                    else:
+                        console.print("[yellow]No tasks were cleared[/yellow]")
+                    console.print()
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[yellow]Skipped clearing tasks[/yellow]")
+                console.print()
+
+        # Show tips
         console.print()
         console.print("[dim]Tips:[/dim]")
-        console.print("  • View Claude session: [cyan]tmux attach -t leadsauce-claude-assistant[/cyan]")
-        console.print("  • Detach from session: [cyan]Ctrl+B then D[/cyan]")
         console.print("  • Send new task: [cyan]Ctrl+K[/cyan]")
+        console.print("  • Check results: [cyan]Ctrl+R[/cyan]")
+        console.print("  • View task files: [cyan]ls /tmp/leadsauce_claude_results/[/cyan]")
+
+        if stuck_count > 0:
+            console.print("  • Cancel task:  [cyan]get_claude_assistant().cancel_task(ticket_id)[/cyan]")
+
         console.print()
 
 
