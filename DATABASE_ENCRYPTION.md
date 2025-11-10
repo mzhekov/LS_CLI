@@ -1,26 +1,35 @@
 # Database Encryption
 
-LeadSauce now supports **AES-256 database encryption** to protect your high-value contact and relationship data.
+LeadSauce supports **optional AES-256 database encryption** to protect your high-value contact and relationship data.
 
 ## Overview
 
+- **Optional**: Encryption is optional - you choose during initialization
 - **Encryption**: AES-256 bit encryption using SQLCipher
-- **Password Required**: You must enter a password every time you launch LeadSauce
+- **Password Required**: If enabled, you must enter a password every time you launch LeadSauce
 - **No Recovery**: There is no password recovery mechanism - keep your password safe!
 - **Automatic**: All database operations are transparently encrypted/decrypted
+- **Flexible**: You can start without encryption and enable it later with `leadsauce encrypt`
 
 ## For New Installations
 
-When you initialize LeadSauce for the first time, you'll be prompted to create an encryption password:
+When you initialize LeadSauce for the first time, you'll be asked if you want to enable encryption:
 
 ```bash
 leadsauce init
 ```
 
-You will see:
-1. Password creation prompt (with confirmation)
-2. Minimum 8 characters required
-3. Password stored only in memory (never written to disk)
+**Setup Flow:**
+1. Configuration files are created
+2. You're asked: "Do you want to enable database encryption?" (default: Yes)
+3. **If Yes:**
+   - Password creation prompt (with confirmation)
+   - Minimum 8 characters required
+   - Password stored only in memory (never written to disk)
+   - Database created with AES-256 encryption
+4. **If No:**
+   - Database created without encryption
+   - You can enable encryption later with `leadsauce encrypt`
 
 ## For Existing Databases
 
@@ -42,6 +51,8 @@ This command will:
 
 ## Daily Usage
 
+**With Encryption Enabled:**
+
 Every time you launch LeadSauce, you'll be prompted for your password:
 
 ```bash
@@ -59,6 +70,15 @@ Enter database password:
 - Maximum 10 password attempts before access is denied (with warnings at 5+ attempts)
 - Password stored only in memory during the session
 - Password cleared when the application exits
+
+**Without Encryption:**
+
+If you chose not to enable encryption, LeadSauce launches immediately without any password prompt:
+
+```bash
+leadsauce
+# Launches directly to the TUI
+```
 
 ## Security Best Practices
 
@@ -128,6 +148,15 @@ cp ~/.leadsauce/database_original_unencrypted.db ~/.leadsauce/database.db
 
 ## FAQ
 
+**Q: Do I have to use encryption?**
+A: No, encryption is optional. You can choose not to enable it during initialization. However, it's highly recommended if you store sensitive contact information.
+
+**Q: Can I enable encryption after I've already started using LeadSauce?**
+A: Yes! Use the `leadsauce encrypt` command to encrypt an existing unencrypted database.
+
+**Q: Can I disable encryption once enabled?**
+A: Yes, but you'll need to manually restore from an unencrypted backup (created during the encryption process).
+
 **Q: Can I change my password?**
 A: Not directly. You would need to decrypt to a backup and re-encrypt with a new password.
 
@@ -135,13 +164,13 @@ A: Not directly. You would need to decrypt to a backup and re-encrypt with a new
 A: No. The password is only stored in memory during your session and is cleared when you exit.
 
 **Q: What if someone gets access to my database file?**
-A: Without your password, the database file is encrypted and unreadable.
+A: If encrypted: Without your password, the database file is unreadable. If unencrypted: Anyone with file access can read your data.
 
 **Q: Does this slow down the application?**
 A: The performance impact is minimal. SQLCipher's encryption/decryption is highly optimized.
 
 **Q: Can I share my database with teammates?**
-A: Yes, but you'll need to share the password securely. Consider using a secure password sharing tool.
+A: Yes. If encrypted, you'll need to share the password securely. Consider using a secure password sharing tool.
 
 ## Support
 

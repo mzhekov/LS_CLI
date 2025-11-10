@@ -8,7 +8,7 @@ from pathlib import Path
 from leadsauce.utils.config import get_config, init_config
 from leadsauce.utils.db import init_database
 from leadsauce.utils.constants import APP_VERSION, APP_DIR, CONFIG_FILE, DATABASE_FILE
-from leadsauce.utils.encryption import DatabasePasswordManager, prompt_for_password, verify_password_works
+from leadsauce.utils.encryption import DatabasePasswordManager, prompt_for_password, verify_password_works, is_database_encrypted
 
 
 @click.group(invoke_without_command=True)
@@ -43,9 +43,9 @@ def cli(ctx, config, debug):
     # Check if database exists
     db_exists = DATABASE_FILE.exists()
 
-    # Prompt for database password (required for encrypted databases)
-    if db_exists:
-        # Database exists - prompt for password to unlock
+    # Only prompt for password if database exists and is encrypted
+    if db_exists and is_database_encrypted(DATABASE_FILE):
+        # Database is encrypted - prompt for password to unlock
         max_attempts = 10
         for attempt in range(max_attempts):
             password = prompt_for_password(confirm=False, is_first_time=False)
@@ -84,9 +84,16 @@ def cli(ctx, config, debug):
                     click.echo("  - database_backup_*.db")
                     click.echo()
                     sys.exit(1)
+    elif db_exists:
+        # Database exists but is not encrypted - just initialize it
+        try:
+            init_database()
+        except Exception as e:
+            if debug:
+                click.secho(f"Database initialization warning: {e}", fg='yellow')
     else:
         # First run - database doesn't exist yet
-        # Password will be set during 'init' command
+        # Will be created during 'init' command
         pass
 
     # If no subcommand is provided, launch TUI
@@ -110,7 +117,7 @@ def init(ctx):
     This will create:
     - Configuration directory (~/.leadsauce/)
     - Default configuration file
-    - Encrypted database with AES-256 encryption
+    - Database (with optional AES-256 encryption)
     - Required directories
     """
     try:
@@ -120,14 +127,29 @@ def init(ctx):
         config = init_config()
         click.secho(f"✓ Created configuration at {CONFIG_FILE}", fg='green')
 
-        # Prompt for database encryption password
-        password = prompt_for_password(confirm=True, is_first_time=True)
-        DatabasePasswordManager.set_password(password)
-        click.secho("✓ Database password set", fg='green')
+        # Ask if user wants database encryption
+        click.echo()
+        click.secho("Database Encryption", fg='cyan', bold=True)
+        click.echo("LeadSauce can encrypt your database with AES-256 encryption for enhanced security.")
+        click.echo("If enabled, you'll need to enter a password every time you launch LeadSauce.")
+        click.echo()
 
-        # Initialize encrypted database
-        init_database()
-        click.secho(f"✓ Initialized encrypted database", fg='green')
+        enable_encryption = click.confirm("Do you want to enable database encryption?", default=True)
+
+        if enable_encryption:
+            # Prompt for database encryption password
+            click.echo()
+            password = prompt_for_password(confirm=True, is_first_time=True)
+            DatabasePasswordManager.set_password(password)
+            click.secho("✓ Database password set", fg='green')
+
+            # Initialize encrypted database
+            init_database()
+            click.secho(f"✓ Initialized encrypted database", fg='green')
+        else:
+            # Initialize unencrypted database
+            init_database()
+            click.secho(f"✓ Initialized database (unencrypted)", fg='green')
 
         # Create directories
         APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -137,8 +159,12 @@ def init(ctx):
         click.secho(f"✓ Created directories in {APP_DIR}", fg='green')
 
         click.echo()
-        click.secho("Your database is now encrypted with AES-256!", fg='green', bold=True)
-        click.echo("You will need to enter your password every time you launch LeadSauce.")
+        if enable_encryption:
+            click.secho("Your database is now encrypted with AES-256!", fg='green', bold=True)
+            click.echo("You will need to enter your password every time you launch LeadSauce.")
+        else:
+            click.secho("LeadSauce is ready to use!", fg='green', bold=True)
+            click.echo("Note: Your database is not encrypted. You can encrypt it later with 'leadsauce encrypt'.")
         click.echo()
 
         # Show welcome message

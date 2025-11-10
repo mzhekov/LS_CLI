@@ -2,7 +2,8 @@
 Database encryption and password management
 
 This module handles secure password prompts and database encryption key management.
-The password is stored only in memory and is required on every app launch.
+The password is stored only in memory and is required on every app launch for encrypted databases.
+Encryption is optional - users can choose to use an unencrypted database if preferred.
 """
 
 import sys
@@ -38,6 +39,36 @@ class DatabasePasswordManager:
         """Clear the password from memory"""
         cls._password = None
         cls._is_initialized = False
+
+
+def is_database_encrypted(database_path) -> bool:
+    """
+    Check if a database file is encrypted
+
+    Args:
+        database_path: Path to the database file
+
+    Returns:
+        True if encrypted, False if unencrypted or doesn't exist
+    """
+    try:
+        import sqlite3
+        from pathlib import Path
+
+        db_path = Path(database_path)
+        if not db_path.exists():
+            return False
+
+        # Try to open with standard SQLite
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        # If we can open it, it's not encrypted
+        return False
+    except Exception:
+        # If we can't open it, it's likely encrypted (or corrupted)
+        return True
 
 
 def prompt_for_password(confirm: bool = False, is_first_time: bool = False) -> str:
