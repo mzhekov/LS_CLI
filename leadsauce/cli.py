@@ -8,6 +8,7 @@ from pathlib import Path
 from leadsauce.utils.config import get_config, init_config
 from leadsauce.utils.db import init_database
 from leadsauce.utils.constants import APP_VERSION, APP_DIR, CONFIG_FILE, DATABASE_FILE
+from leadsauce.utils.encryption import DatabasePasswordManager, prompt_for_password, verify_password_works
 
 
 @click.group(invoke_without_command=True)
@@ -39,12 +40,32 @@ def cli(ctx, config, debug):
     if debug:
         ctx.obj['config'].set('logging.level', 'DEBUG')
 
-    # Ensure database is initialized
-    try:
-        init_database()
-    except Exception as e:
-        if debug:
-            click.secho(f"Database initialization warning: {e}", fg='yellow')
+    # Check if database exists
+    db_exists = DATABASE_FILE.exists()
+
+    # Prompt for database password (required for encrypted databases)
+    if db_exists:
+        # Database exists - prompt for password to unlock
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            password = prompt_for_password(confirm=False, is_first_time=False)
+            DatabasePasswordManager.set_password(password)
+
+            # Verify password works
+            try:
+                init_database()
+                break  # Success!
+            except Exception as e:
+                if attempt < max_attempts - 1:
+                    click.secho(f"\nIncorrect password. {max_attempts - attempt - 1} attempts remaining.", fg='red')
+                    DatabasePasswordManager.clear_password()
+                else:
+                    click.secho("\nMaximum attempts exceeded. Access denied.", fg='red')
+                    sys.exit(1)
+    else:
+        # First run - database doesn't exist yet
+        # Password will be set during 'init' command
+        pass
 
     # If no subcommand is provided, launch TUI
     if ctx.invoked_subcommand is None:
@@ -67,7 +88,7 @@ def init(ctx):
     This will create:
     - Configuration directory (~/.leadsauce/)
     - Default configuration file
-    - Database schema
+    - Encrypted database with AES-256 encryption
     - Required directories
     """
     try:
@@ -77,9 +98,14 @@ def init(ctx):
         config = init_config()
         click.secho(f"✓ Created configuration at {CONFIG_FILE}", fg='green')
 
-        # Initialize database
+        # Prompt for database encryption password
+        password = prompt_for_password(confirm=True, is_first_time=True)
+        DatabasePasswordManager.set_password(password)
+        click.secho("✓ Database password set", fg='green')
+
+        # Initialize encrypted database
         init_database()
-        click.secho(f"✓ Initialized database", fg='green')
+        click.secho(f"✓ Initialized encrypted database", fg='green')
 
         # Create directories
         APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -88,6 +114,9 @@ def init(ctx):
         (APP_DIR / "workflows").mkdir(exist_ok=True)
         click.secho(f"✓ Created directories in {APP_DIR}", fg='green')
 
+        click.echo()
+        click.secho("Your database is now encrypted with AES-256!", fg='green', bold=True)
+        click.echo("You will need to enter your password every time you launch LeadSauce.")
         click.echo()
 
         # Show welcome message
@@ -141,6 +170,147 @@ def tui(ctx):
     """
     from leadsauce.utils.interactive import interactive_main_menu
     interactive_main_menu()
+
+
+@cli.command()
+def encrypt():
+    """Encrypt an existing unencrypted database
+
+    This command will convert your existing unencrypted database to use
+    AES-256 encryption. A backup will be automatically created.
+
+    After encryption, you will need to enter a password every time you
+    launch LeadSauce.
+
+    Example:
+        leadsauce encrypt
+    """
+    import shutil
+    from datetime import datetime
+
+    click.echo()
+    click.secho("LeadSauce Database Encryption", fg='cyan', bold=True)
+    click.echo("=" * 60)
+    click.echo()
+
+    # Check if database exists
+    if not DATABASE_FILE.exists():
+        click.secho("✗ No database found. Nothing to encrypt.", fg='yellow')
+        click.echo("Run 'leadsauce init' to create a new encrypted database.")
+        return
+
+    # Check if database is already encrypted (try to open without password)
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        conn.close()
+        # If we can open it without password, it's not encrypted
+    except Exception:
+        click.secho("✗ Database appears to be already encrypted.", fg='red')
+        click.echo("You don't need to encrypt it again.")
+        return
+
+    click.echo(f"Database location: {DATABASE_FILE}")
+    click.echo()
+    click.secho("⚠ WARNING: This will encrypt your database with AES-256 encryption.", fg='yellow', bold=True)
+    click.echo("You will need to enter a password every time you launch LeadSauce.")
+    click.secho("\nIMPORTANT: There is no password recovery. Keep it safe!", fg='yellow', bold=True)
+    click.echo()
+
+    if not click.confirm("Do you want to continue?"):
+        click.echo("Encryption cancelled.")
+        return
+
+    # Create backup
+    backup_path = DATABASE_FILE.parent / f"database_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    click.echo(f"\nCreating backup at: {backup_path}")
+    shutil.copy2(DATABASE_FILE, backup_path)
+    click.secho("✓ Backup created successfully", fg='green')
+
+    # Get password for encryption
+    click.echo()
+    password = prompt_for_password(confirm=True, is_first_time=True)
+
+    # Try to import sqlcipher3
+    try:
+        from pysqlcipher3 import dbapi2 as sqlcipher
+    except ImportError:
+        click.secho("\n✗ Error: sqlcipher3-binary is not installed.", fg='red')
+        click.echo("Please install it with: pip install -r requirements.txt")
+        return
+
+    # Create encrypted database
+    import sqlite3
+    encrypted_path = DATABASE_FILE.parent / "database_encrypted.db"
+
+    try:
+        click.echo("\nEncrypting database...")
+
+        # Connect to unencrypted database
+        source_conn = sqlite3.connect(DATABASE_FILE)
+
+        # Connect to new encrypted database
+        dest_conn = sqlcipher.connect(str(encrypted_path))
+        dest_cursor = dest_conn.cursor()
+
+        # Set encryption key
+        dest_cursor.execute(f"PRAGMA key = '{password}'")
+
+        # Copy schema and data
+        click.echo("Copying database schema and data...")
+
+        for line in source_conn.iterdump():
+            if line not in ('BEGIN;', 'COMMIT;'):
+                try:
+                    dest_cursor.execute(line)
+                except Exception as e:
+                    if 'sqlite_sequence' not in str(e):
+                        pass  # Ignore internal tables
+
+        dest_conn.commit()
+        dest_conn.close()
+        source_conn.close()
+
+        click.secho("✓ Database encrypted successfully", fg='green')
+
+        # Verify encrypted database
+        click.echo("\nVerifying encrypted database...")
+        verify_conn = sqlcipher.connect(str(encrypted_path))
+        verify_cursor = verify_conn.cursor()
+        verify_cursor.execute(f"PRAGMA key = '{password}'")
+        verify_cursor.execute("SELECT count(*) FROM sqlite_master")
+        table_count = verify_cursor.fetchone()[0]
+        verify_conn.close()
+
+        click.secho(f"✓ Verification successful ({table_count} tables found)", fg='green')
+
+        # Replace original with encrypted version
+        click.echo("\nReplacing original database with encrypted version...")
+        original_backup = DATABASE_FILE.parent / "database_original_unencrypted.db"
+        shutil.move(DATABASE_FILE, original_backup)
+        shutil.move(encrypted_path, DATABASE_FILE)
+
+        click.echo()
+        click.secho("=" * 60, fg='green')
+        click.secho("✓ Database encryption complete!", fg='green', bold=True)
+        click.secho("=" * 60, fg='green')
+        click.echo()
+        click.echo("Backups created:")
+        click.echo(f"  - Timestamped backup: {backup_path.name}")
+        click.echo(f"  - Original unencrypted: {original_backup.name}")
+        click.echo()
+        click.secho("You will now need to enter your password every time you launch LeadSauce.", fg='cyan')
+        click.echo()
+
+    except Exception as e:
+        click.secho(f"\n✗ Encryption failed: {str(e)}", fg='red')
+        if encrypted_path.exists():
+            encrypted_path.unlink()
+        click.echo("\nYour original database is still intact.")
+        click.echo(f"A backup was created at: {backup_path}")
+        sys.exit(1)
 
 
 @cli.command()

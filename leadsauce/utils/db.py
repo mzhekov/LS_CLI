@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.pool import StaticPool
 from leadsauce.utils.config import get_config
 from leadsauce.utils.constants import DATABASE_FILE
+from leadsauce.utils.encryption import DatabasePasswordManager
 
 # Base class for models
 Base = declarative_base()
@@ -19,13 +20,21 @@ _engine: Optional[Engine] = None
 
 
 def get_database_url() -> str:
-    """Get database URL from configuration"""
+    """Get database URL from configuration with encryption support"""
     config = get_config()
     db_type = config.get('database.type', 'sqlite')
 
     if db_type == 'sqlite':
         db_path = config.get('database.path', str(DATABASE_FILE))
-        return f"sqlite:///{db_path}"
+
+        # Use SQLCipher if password is available
+        password = DatabasePasswordManager.get_password()
+        if password:
+            # SQLCipher URL format: sqlite+pysqlcipher://:password@/path
+            return f"sqlite+pysqlcipher://:{password}@/{db_path}"
+        else:
+            return f"sqlite:///{db_path}"
+
     elif db_type == 'postgresql':
         host = config.get('database.host', 'localhost')
         port = config.get('database.port', 5432)
@@ -54,7 +63,7 @@ def set_sqlite_pragma(dbapi_conn, connection_record):
 
 
 def init_engine(database_url: Optional[str] = None) -> Engine:
-    """Initialize database engine"""
+    """Initialize database engine with encryption support"""
     global _engine
 
     if _engine is not None:
@@ -62,11 +71,18 @@ def init_engine(database_url: Optional[str] = None) -> Engine:
 
     url = database_url or get_database_url()
 
-    # SQLite-specific settings
+    # SQLite-specific settings (including SQLCipher)
     if url.startswith('sqlite'):
+        connect_args = {"check_same_thread": False}
+
+        # Add SQLCipher-specific pragmas for encrypted databases
+        if 'pysqlcipher' in url:
+            # These pragmas are set via URL, but we can add connection-level settings if needed
+            pass
+
         _engine = create_engine(
             url,
-            connect_args={"check_same_thread": False},
+            connect_args=connect_args,
             poolclass=StaticPool,
             echo=False
         )
