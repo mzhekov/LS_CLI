@@ -46,7 +46,7 @@ def cli(ctx, config, debug):
     # Prompt for database password (required for encrypted databases)
     if db_exists:
         # Database exists - prompt for password to unlock
-        max_attempts = 3
+        max_attempts = 10
         for attempt in range(max_attempts):
             password = prompt_for_password(confirm=False, is_first_time=False)
             DatabasePasswordManager.set_password(password)
@@ -57,10 +57,32 @@ def cli(ctx, config, debug):
                 break  # Success!
             except Exception as e:
                 if attempt < max_attempts - 1:
-                    click.secho(f"\nIncorrect password. {max_attempts - attempt - 1} attempts remaining.", fg='red')
+                    attempts_remaining = max_attempts - attempt - 1
+
+                    # Basic error message
+                    click.secho(f"\n✗ Incorrect password. {attempts_remaining} attempts remaining.", fg='red')
+
+                    # Special warnings at different thresholds
+                    if attempt + 1 == 5:
+                        click.secho("⚠ WARNING: You have used 5 attempts. Please ensure you're entering the correct password.", fg='yellow', bold=True)
+                    elif attempt + 1 >= 6:
+                        click.secho(f"⚠ CRITICAL: Only {attempts_remaining} attempts left before lockout!", fg='yellow', bold=True)
+                        if attempts_remaining <= 2:
+                            click.echo("Tip: Make sure Caps Lock is off and you're using the correct password.")
+
                     DatabasePasswordManager.clear_password()
                 else:
-                    click.secho("\nMaximum attempts exceeded. Access denied.", fg='red')
+                    click.echo()
+                    click.secho("=" * 60, fg='red')
+                    click.secho("✗ MAXIMUM ATTEMPTS EXCEEDED - ACCESS DENIED", fg='red', bold=True)
+                    click.secho("=" * 60, fg='red')
+                    click.echo("\nYou have exceeded the maximum number of password attempts.")
+                    click.echo("If you've forgotten your password, check for unencrypted backups in:")
+                    click.echo(f"  {DATABASE_FILE.parent}/")
+                    click.echo("\nLook for files like:")
+                    click.echo("  - database_original_unencrypted.db")
+                    click.echo("  - database_backup_*.db")
+                    click.echo()
                     sys.exit(1)
     else:
         # First run - database doesn't exist yet

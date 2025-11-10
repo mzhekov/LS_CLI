@@ -56,7 +56,7 @@ Enter database password:
 ```
 
 **Security Features:**
-- Maximum 3 password attempts before access is denied
+- Maximum 10 password attempts before access is denied (with warnings at 5+ attempts)
 - Password stored only in memory during the session
 - Password cleared when the application exits
 
@@ -79,7 +79,8 @@ Enter database password:
 ### "Incorrect password" error
 - Make sure you're entering the correct password
 - Check for caps lock
-- You have 3 attempts before the application exits
+- You have 10 attempts before the application exits
+- Special warnings will appear after 5 attempts to help you avoid lockout
 
 ### "Database appears to be already encrypted"
 - Your database is already encrypted
