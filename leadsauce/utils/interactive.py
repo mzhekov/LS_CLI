@@ -2634,8 +2634,22 @@ def network_and_relationships_menu():
                                 'from': from_idx,
                                 'to': to_idx,
                                 'type': 'company',
-                                'bidirectional': rel.bidirectional
+                                'bidirectional': rel.bidirectional,
+                                'edge_type': 'relationship'
                             })
+
+                    # Add works_at edges (profile to company)
+                    for profile in profiles:
+                        if profile.company_id and profile.id in node_map:
+                            company_id = f"c_{profile.company_id}"
+                            if company_id in node_map:
+                                edges.append({
+                                    'from': node_map[profile.id],
+                                    'to': node_map[company_id],
+                                    'type': 'works_at',
+                                    'bidirectional': False,
+                                    'edge_type': 'works_at'
+                                })
 
                     # Draw edges using Bresenham's line algorithm
                     for edge in edges:
@@ -2653,7 +2667,9 @@ def network_and_relationships_menu():
                         max_steps = 200
 
                         # Choose character based on relationship type
-                        if edge['bidirectional']:
+                        if edge.get('edge_type') == 'works_at':
+                            char = '·'  # Dotted line for works_at
+                        elif edge['bidirectional']:
                             char = '═'
                         else:
                             char = '─'
@@ -2696,40 +2712,46 @@ def network_and_relationships_menu():
                                 if 0 <= char_x < width and canvas[y][char_x] == ' ':
                                     canvas[y][char_x] = char
 
-                    # Render canvas with colors
-                    map_lines = []
+                    # Render canvas with colors using Rich Text
+                    rendered_lines = []
                     for row in canvas:
-                        line_parts = []
+                        line_text = Text()
                         for char in row:
                             if char == '👥':
-                                line_parts.append(f"[cyan]{char}[/cyan]")
+                                line_text.append(char, style="cyan")
                             elif char == '🏢':
-                                line_parts.append(f"[green]{char}[/green]")
-                            elif char in '═─':
-                                line_parts.append(f"[dim yellow]{char}[/dim yellow]")
+                                line_text.append(char, style="green")
+                            elif char in '═─·':
+                                line_text.append(char, style="dim yellow")
                             else:
-                                line_parts.append(char)
-                        map_lines.append(''.join(line_parts))
+                                line_text.append(char, style="white")
+                        rendered_lines.append(line_text)
 
-                    map_text = '\n'.join(map_lines)
+                    # Create map panel content
+                    map_panel_content = Text()
+                    for i, line in enumerate(rendered_lines):
+                        if i > 0:
+                            map_panel_content.append("\n")
+                        map_panel_content.append(line)
 
-                    # Add legend
-                    legend = Text()
-                    legend.append("👥 Profile", style="cyan")
-                    legend.append("  ", style="dim")
-                    legend.append("🏢 Company", style="green")
-                    legend.append("  ", style="dim")
-                    legend.append("─ Direct", style="dim yellow")
-                    legend.append("  ", style="dim")
-                    legend.append("═ Bidirectional", style="dim yellow")
+                    # Create legend table
+                    legend_table = Table(show_header=False, box=None, padding=(0, 2), border_style="dim")
+                    legend_table.add_column(style="white")
+                    legend_row = Text()
+                    legend_row.append("👥 Profile (cyan)  ", style="cyan")
+                    legend_row.append("🏢 Company (green)  ", style="green")
+                    legend_row.append("─ Direct  ", style="dim yellow")
+                    legend_row.append("═ Bidirectional  ", style="dim yellow")
+                    legend_row.append("· Works at", style="dim yellow")
+                    legend_table.add_row(legend_row)
 
                     console.print(Panel(
-                        map_text,
+                        map_panel_content,
                         title="[bold cyan]Network Map[/]",
-                        subtitle=legend,
                         border_style="cyan",
                         box=box.SIMPLE
                     ))
+                    console.print(legend_table)
                     console.print()
 
         # Get relationships
