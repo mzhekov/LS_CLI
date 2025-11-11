@@ -89,10 +89,7 @@ def init(ctx):
         click.secho(f"✓ Created directories in {APP_DIR}", fg='green')
 
         click.echo()
-
-        # Show welcome message
-        from leadsauce.utils.dashboard import show_welcome
-        show_welcome()
+        click.echo("LeadSauce is ready to use!")
 
     except Exception as e:
         click.secho(f"✗ Initialization failed: {str(e)}", fg='red')
