@@ -18,10 +18,10 @@ setup(
     description="Command-line interface for professional network management",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/leadsauce-cli",
+    url="https://github.com/mzhekov/LS_CLI",
     packages=find_packages(),
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Intended Audience :: End Users/Desktop",
         "Topic :: Office/Business",
@@ -36,6 +36,19 @@ setup(
     ],
     python_requires=">=3.9",
     install_requires=requirements,
+    extras_require={
+        "dev": [
+            "pytest>=7.4.0",
+            "pytest-cov>=4.1.0",
+            "black>=23.0.0",
+            "flake8>=6.0.0",
+            "mypy>=1.5.0",
+            "types-python-dateutil>=2.8.0",
+            "types-PyYAML>=6.0.0",
+            "types-requests>=2.31.0",
+            "types-tabulate>=0.9.0",
+        ],
+    },
     entry_points={
         "console_scripts": [
             "leadsauce=leadsauce.cli:cli",

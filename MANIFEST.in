@@ -1,0 +1,31 @@
+# Include documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include requirements
+include requirements.txt
+include requirements-dev.txt
+include requirements-test.txt
+
+# Include configuration files
+include pytest.ini
+include setup.py
+
+# Include package data
+recursive-include leadsauce/templates *.html *.txt
+recursive-include leadsauce *.yaml *.yml
+
+# Exclude unnecessary files
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
+global-exclude *.swp
+global-exclude *.swo
+
+# Exclude development artifacts
+prune .git
+prune .github
+prune docs
+prune tests
+exclude .gitignore

@@ -26,16 +26,19 @@ LeadSauce CLI is a powerful command-line interface for managing professional con
 pip install leadsauce-cli
 
 # Or install from source
-git clone https://github.com/yourusername/leadsauce-cli.git
-cd leadsauce-cli
+git clone https://github.com/mzhekov/LS_CLI.git
+cd LS_CLI
 pip install -e .
 ```
 
 ## Quick Start
 
 ```bash
-# Launch the interactive TUI (recommended for first-time users)
-leadsauce tui
+# Initialize the database (first time only)
+leadsauce init
+
+# Launch the interactive TUI (recommended)
+leadsauce
 
 # Or use commands directly:
 
@@ -46,50 +49,28 @@ leadsauce profile create --name "John Doe" --seniority executive
 leadsauce profile list
 
 # View the dashboard
-leadsauce
+leadsauce dashboard
 
 # Get help on any command
 leadsauce --help
 leadsauce profile --help
 ```
 
-## Upgrading from Older Versions
-
-If you're upgrading from a version that had authentication, run the migration command to update your database schema:
-
-```bash
-# Migrate database (removes authentication-related columns)
-leadsauce migrate --backup
-
-# The --backup flag creates a backup before migrating (recommended)
-```
-
-See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for more details.
-
-## Documentation
-
-- [Installation Guide](docs/installation.md)
-- [Quick Start](docs/quick_start.md)
-- [Command Reference](docs/commands.md)
-- [Use Cases](docs/use_cases.md)
-
 ## Command Structure
 
 ```
 leadsauce
-├── tui           # Interactive TUI mode with arrow-key navigation
-├── migrate       # Database migration utility
+├── init          # Initialize database and configuration
+├── dashboard     # View overview dashboard
 ├── profile       # Contact management
 ├── company       # Company management
-├── interaction   # Interaction logging (coming soon)
-├── reminder      # Reminder and task management (coming soon)
-├── tag           # Tag management (coming soon)
-├── team          # Team collaboration (coming soon)
-├── document      # Document management (coming soon)
-├── bulk          # Bulk operations (coming soon)
-├── insights      # Analytics and insights (coming soon)
+├── goal          # Goal management
+├── task          # Task management
+├── reminder      # Reminder management
+├── interaction   # Interaction logging
+├── tag           # Tag management
+├── team          # Team collaboration
 ├── relationship  # Relationship mapping
-├── search        # Global search
 ├── export        # Export operations
 ├── import        # Import operations
 └── config        # Configuration management
@@ -189,9 +170,8 @@ MIT License - see LICENSE file for details
 
 ## Support
 
-- Documentation: https://docs.leadsauce.com
-- Issues: https://github.com/yourusername/leadsauce-cli/issues
-- Email: support@leadsauce.com
+- Issues: https://github.com/mzhekov/LS_CLI/issues
+- Repository: https://github.com/mzhekov/LS_CLI
 
 ## Authors
 
