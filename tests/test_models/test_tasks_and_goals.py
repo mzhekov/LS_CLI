@@ -122,7 +122,7 @@ class TestTaskRead:
         completed = test_db.query(Task).filter_by(status="Completed").all()
 
         assert len(completed) == 1
-        assert completed[0].completed_date is not None
+        assert completed[0].completed_at is not None
 
     def test_read_tasks_by_due_date(self, test_db, sample_tasks):
         """Test filtering tasks by due date range"""
@@ -176,12 +176,12 @@ class TestTaskUpdate:
         task = sample_tasks[0]
 
         task.status = "Completed"
-        task.completed_date = datetime.now()
+        task.completed_at = datetime.now()
         test_db.commit()
 
         updated = test_db.query(Task).filter_by(id=task.id).first()
         assert updated.status == "Completed"
-        assert updated.completed_date is not None
+        assert updated.completed_at is not None
 
     def test_update_task_priority(self, test_db, sample_tasks):
         """Test updating task priority"""
@@ -453,7 +453,7 @@ class TestGoalTaskIntegration:
         if len(goal.tasks) > 0:
             task = goal.tasks[0]
             task.status = "Completed"
-            task.completed_date = datetime.now()
+            task.completed_at = datetime.now()
             test_db.commit()
 
             # Application logic should update goal.progress

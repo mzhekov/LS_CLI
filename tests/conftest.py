@@ -192,7 +192,7 @@ def sample_tasks(test_db, sample_profiles):
             status="Completed",
             priority="Medium",
             due_date=datetime.now() - timedelta(days=2),
-            completed_date=datetime.now() - timedelta(days=1)
+            completed_at=datetime.now() - timedelta(days=1)
         ),
         Task(
             title="Coffee with Bob",
