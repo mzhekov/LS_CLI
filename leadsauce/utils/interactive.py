@@ -154,28 +154,19 @@ class RequiredValidator(Validator):
 
 
 def safe_questionary_text(message, default="", validate=None, **kwargs):
-    """Questionary text input with double backspace support"""
+    """Questionary text input with ESC or Ctrl+C to cancel"""
     import questionary
 
-    console.print("[dim]Tip: Double backspace, ESC, or Ctrl+C to cancel[/dim]")
+    console.print("[dim]Tip: ESC or Ctrl+C to cancel[/dim]")
 
     try:
-        # Create custom bindings for double backspace
-        custom_bindings = create_double_backspace_bindings()
-
         result = questionary.text(
             message,
             default=default,
             validate=validate,
             style=custom_style,
-            key_bindings=custom_bindings,
             **kwargs
         ).ask()
-
-        # Check for our special quit signal
-        if result == 'DOUBLE_BACKSPACE_QUIT':
-            console.print("\n[yellow]Cancelled (double backspace)[/yellow]")
-            return None
 
         return result
     except KeyboardInterrupt:
@@ -190,27 +181,18 @@ def safe_questionary_text(message, default="", validate=None, **kwargs):
 
 
 def safe_questionary_select(message, choices, **kwargs):
-    """Questionary select with double backspace support"""
+    """Questionary select with ESC or Ctrl+C to cancel"""
     import questionary
 
-    console.print("[dim]Tip: Double backspace, ESC, or Ctrl+C to cancel[/dim]")
+    console.print("[dim]Tip: ESC or Ctrl+C to cancel[/dim]")
 
     try:
-        # Create custom bindings for double backspace
-        custom_bindings = create_double_backspace_bindings()
-
         result = questionary.select(
             message,
             choices=choices,
             style=custom_style,
-            key_bindings=custom_bindings,
             **kwargs
         ).ask()
-
-        # Check for our special quit signal
-        if result == 'DOUBLE_BACKSPACE_QUIT':
-            console.print("\n[yellow]Cancelled (double backspace)[/yellow]")
-            return None
 
         return result
     except KeyboardInterrupt:
