@@ -8,7 +8,7 @@ import tty
 import termios
 import questionary
 from pathlib import Path
-from questionary import Style
+from questionary import Style, Validator, ValidationError
 from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
@@ -137,6 +137,20 @@ def create_double_backspace_bindings():
                 buffer.delete_before_cursor(count=1)
 
     return bindings
+
+
+class RequiredValidator(Validator):
+    """Validator that ensures text is not empty"""
+
+    def __init__(self, message="This field is required"):
+        self.message = message
+
+    def validate(self, document):
+        if len(document.text.strip()) == 0:
+            raise ValidationError(
+                message=self.message,
+                cursor_position=len(document.text)
+            )
 
 
 def safe_questionary_text(message, default="", validate=None, **kwargs):
@@ -6270,7 +6284,7 @@ def add_task_interactive():
         # Get task title
         title = safe_questionary_text(
             "Task title:",
-            validate=lambda x: len(x) > 0 or "Title is required"
+            validate=RequiredValidator("Task title is required")
         )
 
         if not title:
