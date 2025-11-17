@@ -168,6 +168,9 @@ def safe_questionary_text(message, default="", validate=None, **kwargs):
         console.print("\n[yellow]Cancelled[/yellow]")
         return None
     except Exception as e:
+        console.print(f"\n[red]Error in safe_questionary_text: {type(e).__name__}: {e}[/red]")
+        import traceback
+        traceback.print_exc()
         console.print("\n[yellow]Cancelled[/yellow]")
         return None
 
@@ -200,6 +203,9 @@ def safe_questionary_select(message, choices, **kwargs):
         console.print("\n[yellow]Cancelled[/yellow]")
         return None
     except Exception as e:
+        console.print(f"\n[red]Error in safe_questionary_select: {type(e).__name__}: {e}[/red]")
+        import traceback
+        traceback.print_exc()
         console.print("\n[yellow]Cancelled[/yellow]")
         return None
 
