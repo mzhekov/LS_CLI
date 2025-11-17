@@ -7,6 +7,7 @@ import sys
 import tty
 import termios
 import questionary
+import logging
 from pathlib import Path
 from questionary import Style
 from rich.console import Console, Group
@@ -30,6 +31,7 @@ from leadsauce.utils.ai_cli_control import AICLIControlMenu
 from datetime import datetime, timedelta
 
 console = Console()
+logger = logging.getLogger('leadsauce.interactive')
 
 # Global state for double backspace detection
 _last_key_press = {'key': None, 'time': 0}
@@ -44,6 +46,7 @@ def handle_global_shortcuts(action, current_view="Unknown"):
     Global shortcuts:
     - Ctrl+K (\x0b): Quick Claude Command
     - Ctrl+R (\x12): View Claude Results
+    - Ctrl+D (\x04): Toggle Debug Logging
     """
     # Handle Ctrl+K - Quick Claude Command
     if action == '\x0b':  # Ctrl+K
@@ -63,6 +66,26 @@ def handle_global_shortcuts(action, current_view="Unknown"):
         from leadsauce.utils.claude_assistant import get_claude_assistant
         assistant = get_claude_assistant()
         assistant.show_results()
+        questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
+        return True
+
+    # Handle Ctrl+D - Toggle Debug Logging
+    if action == '\x04':  # Ctrl+D
+        from leadsauce.utils.logger import toggle_debug_mode, get_log_level, _debug_logger
+
+        new_level = toggle_debug_mode()
+
+        # Show status message
+        if new_level == 'DEBUG':
+            console.print("\n[bold green]✓ DEBUG MODE ENABLED[/bold green]")
+            console.print("[dim]All operations will be logged to file.[/dim]")
+            if _debug_logger:
+                log_file = _debug_logger.get_log_file_path()
+                console.print(f"[dim]Log file: {log_file}[/dim]")
+        else:
+            console.print("\n[bold yellow]✓ DEBUG MODE DISABLED[/bold yellow]")
+            console.print("[dim]Logging level set to INFO[/dim]")
+
         questionary.press_any_key_to_continue("\nPress any key to continue...").ask()
         return True
 
@@ -288,10 +311,12 @@ def render_top_bar(current_view="Dashboard"):
 
 def interactive_main_menu():
     """Main interactive menu with top bar navigation and dashboard as main screen"""
+    logger.info("Starting interactive TUI main menu")
     current_view = "Dashboard"
 
     while True:
         console.clear()
+        logger.debug(f"Rendering view: {current_view}")
 
         # Show top bar
         console.print(render_top_bar(current_view))
@@ -302,18 +327,22 @@ def interactive_main_menu():
             new_view = show_dashboard_view()
             # If dashboard returns a view (user pressed number key), navigate to it
             if new_view:
+                logger.debug(f"Navigating from Dashboard to {new_view}")
                 current_view = new_view
                 continue
         elif current_view == "Profiles":
             new_view = profiles_menu()
             if new_view:
+                logger.debug(f"Navigating from Profiles to {new_view}")
                 current_view = new_view
             else:
+                logger.debug("Returning to Dashboard from Profiles")
                 current_view = "Dashboard"  # Return to dashboard after
             continue
         elif current_view == "Companies":
             new_view = companies_menu()
             if new_view:
+                logger.debug(f"Navigating from Companies to {new_view}")
                 current_view = new_view
             else:
                 current_view = "Dashboard"

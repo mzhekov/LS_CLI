@@ -4,6 +4,7 @@ Profile management commands
 
 import click
 import json
+import logging
 from datetime import datetime
 from tabulate import tabulate
 from sqlalchemy import or_
@@ -15,6 +16,8 @@ from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
 from leadsauce.models.tag import Tag
 from leadsauce.models.associations import profile_tags
+
+logger = logging.getLogger('leadsauce.commands.profile')
 
 
 @click.group()
@@ -65,12 +68,15 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
         print_error("Invalid phone number")
         raise click.Abort()
 
+    logger.debug(f"Creating profile: {name}, seniority: {seniority}")
+
     try:
         session = get_session()
 
         # Handle company
         company_id = None
         if company:
+            logger.debug(f"Looking up company: {company}")
             # Try to find existing company by ID or name
             if company.isdigit():
                 company_obj = session.query(Company).filter(
@@ -85,22 +91,24 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
 
             if company_obj:
                 company_id = company_obj.id
+                logger.debug(f"Found existing company: {company_obj.name} (ID: {company_id})")
                 click.echo(f"Using existing company: {company_obj.name}")
             else:
                 # Create new company
                 if click.confirm(f"Company '{company}' not found. Create it?", default=True):
                     new_company = Company(
-                        
+
                         name=company
                     )
                     session.add(new_company)
                     session.flush()
                     company_id = new_company.id
+                    logger.info(f"Created new company: {company} (ID: {company_id})")
                     click.echo(f"Created new company: {company}")
 
         # Create profile
         new_profile = Profile(
-            
+
             company_id=company_id,
             name=name,
             email=email or None,
@@ -115,10 +123,12 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
 
         session.add(new_profile)
         session.flush()
+        logger.debug(f"Profile {name} added to session (ID: {new_profile.id})")
 
         # Handle tags
         if tags:
             tag_names = parse_tags(tags)
+            logger.debug(f"Processing {len(tag_names)} tags: {tag_names}")
             for tag_name in tag_names:
                 # Find or create tag
                 tag = session.query(Tag).filter(
@@ -130,10 +140,12 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
                     tag = Tag( name=tag_name)
                     session.add(tag)
                     session.flush()
+                    logger.debug(f"Created new tag: {tag_name}")
 
                 new_profile.tags.append(tag)
 
         session.commit()
+        logger.info(f"Profile created successfully: {name} (ID: {new_profile.id})")
 
         print_success(f"Profile created successfully (ID: {new_profile.id})")
         click.echo(f"Name: {new_profile.name}")
@@ -144,6 +156,7 @@ def create_profile(ctx, name, seniority, company, email, phone, generation, marr
             click.echo(f"Tags: {', '.join([t.name for t in new_profile.tags])}")
 
     except Exception as e:
+        logger.error(f"Failed to create profile {name}: {str(e)}", exc_info=True)
         print_error(f"Failed to create profile: {str(e)}")
         raise click.Abort()
     finally:

@@ -9,6 +9,10 @@ from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.pool import StaticPool
 from leadsauce.utils.config import get_config
 from leadsauce.utils.constants import DATABASE_FILE
+import logging
+
+# Get logger for this module
+logger = logging.getLogger('leadsauce.db')
 
 # Base class for models
 Base = declarative_base()
@@ -22,9 +26,11 @@ def get_database_url() -> str:
     """Get database URL from configuration"""
     config = get_config()
     db_type = config.get('database.type', 'sqlite')
+    logger.debug(f"Getting database URL for type: {db_type}")
 
     if db_type == 'sqlite':
         db_path = config.get('database.path', str(DATABASE_FILE))
+        logger.debug(f"SQLite database path: {db_path}")
         return f"sqlite:///{db_path}"
     elif db_type == 'postgresql':
         host = config.get('database.host', 'localhost')
@@ -32,6 +38,7 @@ def get_database_url() -> str:
         name = config.get('database.name', 'leadsauce')
         user = config.get('database.user', 'leadsauce')
         password = config.get('database.password', '')
+        logger.debug(f"PostgreSQL connection: {user}@{host}:{port}/{name}")
         return f"postgresql://{user}:{password}@{host}:{port}/{name}"
     elif db_type == 'mysql':
         host = config.get('database.host', 'localhost')
@@ -39,8 +46,10 @@ def get_database_url() -> str:
         name = config.get('database.name', 'leadsauce')
         user = config.get('database.user', 'leadsauce')
         password = config.get('database.password', '')
+        logger.debug(f"MySQL connection: {user}@{host}:{port}/{name}")
         return f"mysql+pymysql://{user}:{password}@{host}:{port}/{name}"
     else:
+        logger.error(f"Unsupported database type: {db_type}")
         raise ValueError(f"Unsupported database type: {db_type}")
 
 
@@ -58,9 +67,11 @@ def init_engine(database_url: Optional[str] = None) -> Engine:
     global _engine
 
     if _engine is not None:
+        logger.debug("Reusing existing database engine")
         return _engine
 
     url = database_url or get_database_url()
+    logger.debug(f"Initializing database engine with URL: {url.split('://')[0]}://...")
 
     # SQLite-specific settings
     if url.startswith('sqlite'):
@@ -70,8 +81,10 @@ def init_engine(database_url: Optional[str] = None) -> Engine:
             poolclass=StaticPool,
             echo=False
         )
+        logger.debug("Created SQLite engine with StaticPool")
     else:
         _engine = create_engine(url, echo=False, pool_pre_ping=True)
+        logger.debug("Created database engine with connection pooling")
 
     return _engine
 
@@ -93,13 +106,16 @@ def init_session_factory(engine: Optional[Engine] = None) -> sessionmaker:
 def get_session() -> Session:
     """Get database session"""
     if _session_factory is None:
+        logger.debug("Session factory not initialized, initializing now")
         init_session_factory()
 
+    logger.debug("Creating new database session")
     return _session_factory()
 
 
 def init_database(database_url: Optional[str] = None):
     """Initialize database and create all tables"""
+    logger.debug("Initializing database...")
     engine = init_engine(database_url)
 
     # Import all models to ensure they're registered
@@ -107,12 +123,15 @@ def init_database(database_url: Optional[str] = None):
         profile, company, interaction,
         reminder, tag, team, document, activity, task, relationship, goal
     )
+    logger.debug("All models imported successfully")
 
     # Create all tables
     Base.metadata.create_all(engine)
+    logger.debug("Database tables created/verified")
 
     # Initialize session factory
     init_session_factory(engine)
+    logger.info("Database initialized successfully")
 
 
 def close_session(session: Session):

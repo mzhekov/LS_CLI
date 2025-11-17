@@ -8,6 +8,7 @@ from pathlib import Path
 from leadsauce.utils.config import get_config, init_config
 from leadsauce.utils.db import init_database
 from leadsauce.utils.constants import APP_VERSION, APP_DIR, CONFIG_FILE, DATABASE_FILE
+from leadsauce.utils.logger import setup_logging, get_logger
 
 
 @click.group(invoke_without_command=True)
@@ -39,10 +40,18 @@ def cli(ctx, config, debug):
     if debug:
         ctx.obj['config'].set('logging.level', 'DEBUG')
 
+    # Initialize logging system
+    setup_logging()
+    logger = get_logger('cli')
+    logger.debug(f"LeadSauce CLI started - Version {APP_VERSION}")
+    logger.debug(f"Debug mode: {debug}")
+
     # Ensure database is initialized
     try:
         init_database()
+        logger.debug("Database initialized successfully")
     except Exception as e:
+        logger.error(f"Database initialization error: {e}")
         if debug:
             click.secho(f"Database initialization warning: {e}", fg='yellow')
 
