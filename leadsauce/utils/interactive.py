@@ -279,6 +279,7 @@ NAV_ITEMS = [
 def render_top_bar(current_view="Dashboard"):
     """Render the interactive top navigation bar with keyboard shortcuts"""
     from leadsauce.utils.helpers import get_browser_session
+    from leadsauce.utils.logger import get_log_level
 
     nav_text = Text()
 
@@ -295,23 +296,54 @@ def render_top_bar(current_view="Dashboard"):
             nav_text.append(f"[{key}]", style="dim yellow")
             nav_text.append(f" {name}", style="white")
 
-    # Check for browser session and add indicator
+    # Build subtitle with shortcuts and status indicators
     browser_session = get_browser_session()
-    subtitle = "[dim]Press number keys to navigate │ [cyan]Ctrl+K[/cyan] Quick Claude Command[/]"
+    log_level = get_log_level()
 
+    # Base shortcuts
+    shortcuts = "[cyan]Ctrl+K[/cyan] Claude │ [cyan]Ctrl+D[/cyan] Debug"
+
+    # Add debug indicator if active
+    debug_indicator = ""
+    if log_level == 'DEBUG':
+        debug_indicator = " │ [bold green]🐛 DEBUG ON[/]"
+
+    # Add browser indicator if active
+    browser_indicator = ""
     if browser_session.has_active_tmux_window():
         info = browser_session.get_info()
-        subtitle = f"[dim]Press number keys to navigate │ [cyan]Ctrl+K[/cyan] Claude[/] │ [bold green]🌐 Browser active:[/] [cyan]{info['browser']} (tmux)[/]"
+        browser_indicator = f" │ [bold green]🌐 {info['browser']} (tmux)[/]"
     elif browser_session.has_recent_session():
         info = browser_session.get_info()
-        subtitle = f"[dim]Press number keys to navigate │ [cyan]Ctrl+K[/cyan] Claude[/] │ [bold cyan]🌐 Last:[/] [green]{info['browser']}[/]"
+        browser_indicator = f" │ [bold cyan]🌐 {info['browser']}[/]"
+
+    subtitle = f"[dim]{shortcuts}{debug_indicator}{browser_indicator}[/]"
 
     return Panel(nav_text, style="cyan", box=box.SIMPLE, subtitle=subtitle)
 
 
 def interactive_main_menu():
     """Main interactive menu with top bar navigation and dashboard as main screen"""
+    from leadsauce.utils.logger import get_log_level, _debug_logger
+
     logger.info("Starting interactive TUI main menu")
+
+    # Show startup message with log level status
+    log_level = get_log_level()
+    console.clear()
+    if log_level == 'DEBUG':
+        console.print("[bold green]🐛 DEBUG MODE ENABLED[/bold green]")
+        if _debug_logger:
+            log_file = _debug_logger.get_log_file_path()
+            console.print(f"[dim]Logging to: {log_file}[/dim]")
+        console.print("[dim]Press [cyan]Ctrl+D[/cyan] to toggle debug mode[/dim]")
+    else:
+        console.print("[dim]💡 Tip: Press [cyan]Ctrl+D[/cyan] to enable debug logging[/dim]")
+
+    console.print("[dim]Starting in 2 seconds...[/dim]\n")
+    import time
+    time.sleep(2)
+
     current_view = "Dashboard"
 
     while True:

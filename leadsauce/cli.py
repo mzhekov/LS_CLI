@@ -14,7 +14,7 @@ from leadsauce.utils.logger import setup_logging, get_logger
 @click.group(invoke_without_command=True)
 @click.version_option(version=APP_VERSION)
 @click.option('--config', type=click.Path(), help='Path to config file')
-@click.option('--debug', is_flag=True, help='Enable debug mode')
+@click.option('--debug', is_flag=True, help='Enable debug logging (logs to ~/.leadsauce/logs/leadsauce.log)')
 @click.pass_context
 def cli(ctx, config, debug):
     """
@@ -23,8 +23,18 @@ def cli(ctx, config, debug):
     A powerful command-line tool for managing your professional contacts,
     companies, interactions, and relationships.
 
-    Run without arguments to launch the interactive TUI.
-    Use 'leadsauce COMMAND --help' for help on a specific command.
+    \b
+    QUICK START:
+      leadsauce              Launch interactive TUI
+      leadsauce --debug      Launch with debug logging enabled
+      leadsauce init         Initialize database and config
+
+    \b
+    DEBUG MODE:
+      Use --debug flag or press Ctrl+D in TUI to toggle debug logging.
+      Logs are written to: ~/.leadsauce/logs/leadsauce.log
+
+    Run 'leadsauce COMMAND --help' for help on a specific command.
     """
     ctx.ensure_object(dict)
 
@@ -45,6 +55,15 @@ def cli(ctx, config, debug):
     logger = get_logger('cli')
     logger.debug(f"LeadSauce CLI started - Version {APP_VERSION}")
     logger.debug(f"Debug mode: {debug}")
+
+    # Show debug status message if debug mode is enabled
+    if debug:
+        from leadsauce.utils.logger import _debug_logger
+        click.secho("🐛 Debug logging enabled", fg='green', bold=True)
+        if _debug_logger:
+            log_file = _debug_logger.get_log_file_path()
+            click.secho(f"   Logging to: {log_file}", fg='cyan')
+        click.echo()
 
     # Ensure database is initialized
     try:

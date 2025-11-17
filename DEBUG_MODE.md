@@ -2,32 +2,60 @@
 
 ## Overview
 
-The LeadSauce CLI now includes a comprehensive debug logging system that helps you track and understand all operations happening in the system. This is particularly useful for testing and troubleshooting bugs.
+The LeadSauce CLI includes a comprehensive debug logging system that helps you track and understand all operations happening in the system. This is particularly useful for testing and troubleshooting bugs.
 
 ## Features
 
+- **Visual Indicators**: See debug status at a glance in the TUI top bar
+- **Startup Messages**: Know immediately if debug mode is active when launching
 - **Keyboard Shortcut**: Toggle debug mode on/off with `Ctrl+D` in the TUI
 - **CLI Flag**: Use `--debug` flag when launching from command line
 - **Comprehensive Logging**: Logs all operations to file
 - **Real-time Toggle**: Switch between DEBUG and INFO levels without restarting
 
-## Usage
+## Quick Start
 
-### Method 1: Keyboard Shortcut (TUI)
+**Easiest way to enable debug mode:**
 
-When running the interactive TUI:
+```bash
+leadsauce --debug
+```
 
-1. Press **`Ctrl+D`** at any time to toggle debug mode
-2. A confirmation message will appear showing the current state:
-   - `✓ DEBUG MODE ENABLED` - All operations will be logged
-   - `✓ DEBUG MODE DISABLED` - Logging level set to INFO
-3. The log file location will be displayed when enabled
+You'll see:
+```
+🐛 Debug logging enabled
+   Logging to: /home/user/.leadsauce/logs/leadsauce.log
+```
 
-**Note**: The `Ctrl+D` shortcut works from any view in the TUI (Dashboard, Profiles, Companies, etc.)
+Then when the TUI starts, you'll see:
+```
+🐛 DEBUG MODE ENABLED
+Logging to: /home/user/.leadsauce/logs/leadsauce.log
+Press Ctrl+D to toggle debug mode
+Starting in 2 seconds...
+```
 
-### Method 2: Command Line Flag
+The top bar will show: `🐛 DEBUG ON` indicator
 
-Launch the CLI with debug mode enabled:
+## Visual Indicators
+
+### Top Bar Status
+When debug mode is active, the TUI top bar displays:
+```
+Ctrl+K Claude │ Ctrl+D Debug │ 🐛 DEBUG ON
+```
+
+This makes it immediately obvious that debug logging is active.
+
+### Startup Screen
+- **If debug is enabled**: Shows green "🐛 DEBUG MODE ENABLED" message with log file path
+- **If debug is disabled**: Shows tip "💡 Tip: Press Ctrl+D to enable debug logging"
+
+## Usage Methods
+
+### Method 1: CLI Flag (Recommended for testing)
+
+Launch the CLI with debug mode enabled from the start:
 
 ```bash
 # Start TUI with debug mode
@@ -39,6 +67,23 @@ leadsauce --debug profile list
 # Any command works
 leadsauce --debug company create --name "Test Company"
 ```
+
+**Benefits**: Debug mode is active from the very beginning, catching all startup operations.
+
+### Method 2: Keyboard Shortcut (Quick toggle)
+
+When running the interactive TUI:
+
+1. Press **`Ctrl+D`** at any time to toggle debug mode
+2. A confirmation message will appear showing the current state:
+   - `✓ DEBUG MODE ENABLED` - All operations will be logged
+   - `✓ DEBUG MODE DISABLED` - Logging level set to INFO
+3. The log file location will be displayed when enabled
+4. The top bar updates immediately to show the new status
+
+**Benefits**: No need to restart, toggle on/off as needed during testing.
+
+**Note**: The `Ctrl+D` shortcut works from any view in the TUI (Dashboard, Profiles, Companies, etc.)
 
 ## Log File Location
 
@@ -148,12 +193,14 @@ Levels can be toggled between these two states.
 
 ## Keyboard Shortcuts Summary
 
-In the TUI, the following global shortcuts are available:
+In the TUI, the following global shortcuts are available from any view:
 
+- **`Ctrl+D`** - **Toggle Debug Logging** 🐛 *(Most important for testing!)*
 - **`Ctrl+K`** - Quick Claude Command
 - **`Ctrl+R`** - View Claude Results
-- **`Ctrl+D`** - Toggle Debug Logging *(NEW)*
 - **Number Keys (1-9, 0)** - Navigate to different sections
+
+**Note**: All shortcuts are displayed in the TUI top bar for easy reference.
 
 ## Troubleshooting
 
