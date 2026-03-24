@@ -109,6 +109,6 @@ class Task(Base):
 
     def is_overdue(self) -> bool:
         """Check if task is overdue"""
-        return (self.status not in ['completed', 'cancelled'] and
-                self.due_date and
-                self.due_date < datetime.utcnow())
+        if not self.due_date or self.status in ['completed', 'cancelled']:
+            return False
+        return self.due_date < datetime.utcnow()

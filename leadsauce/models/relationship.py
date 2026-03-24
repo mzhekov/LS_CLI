@@ -3,7 +3,7 @@ Relationship model for mapping connections between profiles and companies
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from datetime import datetime
 from leadsauce.utils.db import Base
 
@@ -32,8 +32,8 @@ class ProfileRelationship(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    from_profile = relationship('Profile', foreign_keys=[from_profile_id], backref='relationships_from')
-    to_profile = relationship('Profile', foreign_keys=[to_profile_id], backref='relationships_to')
+    from_profile = relationship('Profile', foreign_keys=[from_profile_id], backref=backref('relationships_from', passive_deletes=True))
+    to_profile = relationship('Profile', foreign_keys=[to_profile_id], backref=backref('relationships_to', passive_deletes=True))
 
     def __repr__(self):
         return f"<ProfileRelationship(from={self.from_profile_id}, to={self.to_profile_id}, type='{self.relationship_type}', status='{self.status}')>"
@@ -91,8 +91,8 @@ class CompanyRelationship(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    from_company = relationship('Company', foreign_keys=[from_company_id], backref='relationships_from')
-    to_company = relationship('Company', foreign_keys=[to_company_id], backref='relationships_to')
+    from_company = relationship('Company', foreign_keys=[from_company_id], backref=backref('relationships_from', passive_deletes=True))
+    to_company = relationship('Company', foreign_keys=[to_company_id], backref=backref('relationships_to', passive_deletes=True))
 
     def __repr__(self):
         return f"<CompanyRelationship(from={self.from_company_id}, to={self.to_company_id}, type='{self.relationship_type}', status='{self.status}')>"
