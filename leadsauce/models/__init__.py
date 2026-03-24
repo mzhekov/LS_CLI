@@ -2,6 +2,7 @@
 Database models
 """
 
+from leadsauce.models.conversation import Conversation
 from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
 from leadsauce.models.interaction import Interaction
@@ -22,6 +23,7 @@ from leadsauce.models.relationship import (
 )
 
 __all__ = [
+    'Conversation',
     'Profile',
     'Company',
     'Interaction',
