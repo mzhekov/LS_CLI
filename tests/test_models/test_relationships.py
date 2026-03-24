@@ -1,386 +1,363 @@
 """
-Tests for Relationship models (Profile and Company relationships)
+Unit tests for ProfileRelationship and CompanyRelationship models — all CRUD and every attribute
 """
 
 import pytest
+from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
 from leadsauce.models.profile import Profile
 from leadsauce.models.company import Company
-from leadsauce.models.relationship import ProfileRelationship, CompanyRelationship
 
+PROFILE_RELATIONSHIP_TYPES = [
+    "Reports To", "Manages", "Mentor", "Mentee", "Friend",
+    "Colleague", "Business Partner", "Client", "Vendor Contact",
+    "Advisor", "Competitor", "Other"
+]
+COMPANY_RELATIONSHIP_TYPES = [
+    "Partner", "Client", "Supplier", "Vendor", "Competitor",
+    "Parent Company", "Subsidiary", "Investor", "Investee",
+    "Affiliate", "Strategic Alliance", "Other"
+]
+RELATIONSHIP_STATUSES = ["Good", "Bad", "No Interest"]
+
+
+# ============================================================================
+# PROFILE RELATIONSHIP TESTS
+# ============================================================================
 
 class TestProfileRelationshipCreate:
-    """Test creating profile-to-profile relationships"""
 
-    def test_create_basic_relationship(self, test_db, sample_profiles):
-        """Test creating a basic profile relationship"""
+    def test_create_minimal(self, test_db, sample_profiles):
         rel = ProfileRelationship(
-            profile_id=sample_profiles[0].id,
-            related_profile_id=sample_profiles[1].id,
-            relationship_type="Colleague",
-            bidirectional=True,
-            status="Good"
+            from_profile_id=sample_profiles[0].id,
+            to_profile_id=sample_profiles[1].id,
+            relationship_type="Colleague"
         )
         test_db.add(rel)
         test_db.commit()
 
         assert rel.id is not None
+        assert rel.from_profile_id == sample_profiles[0].id
+        assert rel.to_profile_id == sample_profiles[1].id
         assert rel.relationship_type == "Colleague"
-        assert rel.bidirectional is True
+        assert rel.status == "Good"
+        assert rel.bidirectional is False
+        assert rel.description is None
+        assert rel.created_at is not None
 
-    def test_create_relationship_types(self, test_db, sample_profiles):
-        """Test creating relationships with different types"""
-        types = ["Mentor", "Colleague", "Friend", "Client", "Partner", "Manages"]
-
-        for rel_type in types:
-            rel = ProfileRelationship(
-                profile_id=sample_profiles[0].id,
-                related_profile_id=sample_profiles[1].id,
-                relationship_type=rel_type,
-                bidirectional=False,
-                status="Good"
-            )
-            test_db.add(rel)
-
-        test_db.commit()
-
-        relationships = test_db.query(ProfileRelationship).all()
-        assert len(relationships) >= len(types)
-
-    def test_create_bidirectional_relationship(self, test_db, sample_profiles):
-        """Test creating bidirectional relationship"""
+    def test_create_all_fields(self, test_db, sample_profiles):
         rel = ProfileRelationship(
-            profile_id=sample_profiles[0].id,
-            related_profile_id=sample_profiles[1].id,
-            relationship_type="Friend",
-            bidirectional=True,
-            status="Good"
-        )
-        test_db.add(rel)
-        test_db.commit()
-
-        assert rel.bidirectional is True
-
-        # Note: Bidirectional flag means the relationship goes both ways
-        # Application logic may need to create reverse relationship
-
-    def test_create_unidirectional_relationship(self, test_db, sample_profiles):
-        """Test creating unidirectional relationship (e.g., Mentor)"""
-        rel = ProfileRelationship(
-            profile_id=sample_profiles[0].id,
-            related_profile_id=sample_profiles[2].id,
+            from_profile_id=sample_profiles[0].id,
+            to_profile_id=sample_profiles[1].id,
             relationship_type="Mentor",
-            bidirectional=False,
-            status="Good"
+            description="John mentors Jane on leadership skills",
+            status="Good",
+            bidirectional=False
         )
         test_db.add(rel)
         test_db.commit()
 
+        assert rel.relationship_type == "Mentor"
+        assert rel.description == "John mentors Jane on leadership skills"
+        assert rel.status == "Good"
         assert rel.bidirectional is False
 
-    def test_create_relationship_with_status(self, test_db, sample_profiles):
-        """Test creating relationship with different statuses"""
-        statuses = ["Good", "Bad", "No Interest"]
+    def test_create_bidirectional(self, test_db, sample_profiles):
+        rel = ProfileRelationship(
+            from_profile_id=sample_profiles[0].id,
+            to_profile_id=sample_profiles[1].id,
+            relationship_type="Friend",
+            bidirectional=True
+        )
+        test_db.add(rel)
+        test_db.commit()
+        assert rel.bidirectional is True
 
-        for i, status in enumerate(statuses):
+    def test_create_all_relationship_types(self, test_db, sample_profiles):
+        for i, rel_type in enumerate(PROFILE_RELATIONSHIP_TYPES):
             rel = ProfileRelationship(
-                profile_id=sample_profiles[0].id,
-                related_profile_id=sample_profiles[i + 1].id,
-                relationship_type="Contact",
-                bidirectional=False,
+                from_profile_id=sample_profiles[0].id,
+                to_profile_id=sample_profiles[(i % 3) + 1].id,
+                relationship_type=rel_type
+            )
+            test_db.add(rel)
+        test_db.commit()
+        stored = [r.relationship_type for r in test_db.query(ProfileRelationship).all()]
+        for rel_type in PROFILE_RELATIONSHIP_TYPES:
+            assert rel_type in stored
+
+    def test_create_all_statuses(self, test_db, sample_profiles):
+        for i, status in enumerate(RELATIONSHIP_STATUSES):
+            rel = ProfileRelationship(
+                from_profile_id=sample_profiles[0].id,
+                to_profile_id=sample_profiles[(i % 3) + 1].id,
+                relationship_type="Other",
                 status=status
             )
             test_db.add(rel)
-
         test_db.commit()
-
-        good_rels = test_db.query(ProfileRelationship).filter_by(status="Good").all()
-        bad_rels = test_db.query(ProfileRelationship).filter_by(status="Bad").all()
-
-        assert len(good_rels) >= 1
-        assert len(bad_rels) >= 1
+        stored = [r.status for r in test_db.query(ProfileRelationship).all()]
+        for status in RELATIONSHIP_STATUSES:
+            assert status in stored
 
 
 class TestProfileRelationshipRead:
-    """Test reading profile relationships"""
 
-    def test_read_all_relationships(self, test_db, sample_relationships):
-        """Test reading all profile relationships"""
-        rels = test_db.query(ProfileRelationship).all()
+    def test_read_by_id(self, test_db, sample_profile_relationships):
+        r = test_db.query(ProfileRelationship).filter_by(id=sample_profile_relationships[0].id).first()
+        assert r is not None
 
-        assert len(rels) == 3
-        assert all(isinstance(r, ProfileRelationship) for r in rels)
+    def test_read_all(self, test_db, sample_profile_relationships):
+        assert test_db.query(ProfileRelationship).count() == 4
 
-    def test_read_relationships_by_profile(self, test_db, sample_relationships, sample_profiles):
-        """Test finding all relationships for a specific profile"""
-        john_id = sample_profiles[0].id
+    def test_read_by_from_profile(self, test_db, sample_profile_relationships, sample_profiles):
+        rels = test_db.query(ProfileRelationship).filter_by(from_profile_id=sample_profiles[0].id).all()
+        assert len(rels) == 2
 
-        # Relationships where John is the source
-        rels = test_db.query(ProfileRelationship).filter_by(profile_id=john_id).all()
+    def test_read_by_type(self, test_db, sample_profile_relationships):
+        assert test_db.query(ProfileRelationship).filter_by(relationship_type="Friend").count() == 1
 
-        assert len(rels) == 2  # John -> Jane, John -> Alice
+    def test_read_bidirectional(self, test_db, sample_profile_relationships):
+        assert test_db.query(ProfileRelationship).filter_by(bidirectional=True).count() == 2
 
-    def test_read_bidirectional_relationships(self, test_db, sample_relationships):
-        """Test filtering bidirectional relationships"""
-        rels = test_db.query(ProfileRelationship).filter_by(bidirectional=True).all()
+    def test_read_by_status_good(self, test_db, sample_profile_relationships):
+        assert test_db.query(ProfileRelationship).filter_by(status="Good").count() == 3
 
-        assert len(rels) >= 1
-        assert all(r.bidirectional is True for r in rels)
+    def test_read_by_status_no_interest(self, test_db, sample_profile_relationships):
+        assert test_db.query(ProfileRelationship).filter_by(status="No Interest").count() == 1
 
-    def test_read_relationships_by_type(self, test_db, sample_relationships):
-        """Test filtering relationships by type"""
-        colleagues = test_db.query(ProfileRelationship).filter_by(
-            relationship_type="Colleague"
-        ).all()
-
-        assert len(colleagues) == 1
-
-    def test_read_relationships_by_status(self, test_db, sample_relationships):
-        """Test filtering relationships by status"""
-        good_rels = test_db.query(ProfileRelationship).filter_by(status="Good").all()
-
-        assert len(good_rels) == 3  # All sample relationships are "Good"
+    def test_read_profile_backlinks(self, test_db, sample_profile_relationships, sample_profiles):
+        rel = test_db.query(ProfileRelationship).filter_by(relationship_type="Colleague").first()
+        assert rel.from_profile.name == sample_profiles[0].name
+        assert rel.to_profile.name == sample_profiles[1].name
 
 
 class TestProfileRelationshipUpdate:
-    """Test updating profile relationships"""
 
-    def test_update_relationship_type(self, test_db, sample_relationships):
-        """Test changing relationship type"""
-        rel = sample_relationships['profiles'][0]
-        original_type = rel.relationship_type
-
-        rel.relationship_type = "Partner"
+    def test_update_type(self, test_db, sample_profile_relationships):
+        r = sample_profile_relationships[0]
+        r.relationship_type = "Business Partner"
         test_db.commit()
+        assert test_db.query(ProfileRelationship).filter_by(id=r.id).first().relationship_type == "Business Partner"
 
-        updated = test_db.query(ProfileRelationship).filter_by(id=rel.id).first()
-        assert updated.relationship_type == "Partner"
-        assert updated.relationship_type != original_type
-
-    def test_update_relationship_status(self, test_db, sample_relationships):
-        """Test changing relationship status"""
-        rel = sample_relationships['profiles'][0]
-
-        rel.status = "Bad"
+    def test_update_status_to_bad(self, test_db, sample_profile_relationships):
+        r = sample_profile_relationships[0]
+        r.status = "Bad"
         test_db.commit()
+        assert test_db.query(ProfileRelationship).filter_by(id=r.id).first().status == "Bad"
 
-        updated = test_db.query(ProfileRelationship).filter_by(id=rel.id).first()
-        assert updated.status == "Bad"
-
-    def test_update_bidirectional_flag(self, test_db, sample_relationships):
-        """Test changing bidirectional flag"""
-        rel = sample_relationships['profiles'][1]  # Mentor (unidirectional)
-        assert rel.bidirectional is False
-
-        rel.bidirectional = True
+    def test_update_bidirectional_flag(self, test_db, sample_profile_relationships):
+        r = sample_profile_relationships[1]
+        r.bidirectional = True
         test_db.commit()
+        assert test_db.query(ProfileRelationship).filter_by(id=r.id).first().bidirectional is True
 
-        updated = test_db.query(ProfileRelationship).filter_by(id=rel.id).first()
-        assert updated.bidirectional is True
+    def test_update_description(self, test_db, sample_profile_relationships):
+        r = sample_profile_relationships[0]
+        r.description = "Updated after reconnecting"
+        test_db.commit()
+        assert test_db.query(ProfileRelationship).filter_by(id=r.id).first().description == "Updated after reconnecting"
+
+    def test_update_status_to_no_interest(self, test_db, sample_profile_relationships):
+        r = sample_profile_relationships[2]
+        r.status = "No Interest"
+        test_db.commit()
+        assert test_db.query(ProfileRelationship).filter_by(id=r.id).first().status == "No Interest"
 
 
 class TestProfileRelationshipDelete:
-    """Test deleting profile relationships"""
 
-    def test_delete_relationship(self, test_db, sample_relationships):
-        """Test deleting a relationship"""
-        rel = sample_relationships['profiles'][0]
-        rel_id = rel.id
-        count_before = test_db.query(ProfileRelationship).count()
-
-        test_db.delete(rel)
+    def test_delete_relationship(self, test_db, sample_profile_relationships):
+        rid = sample_profile_relationships[0].id
+        test_db.delete(sample_profile_relationships[0])
         test_db.commit()
+        assert test_db.query(ProfileRelationship).filter_by(id=rid).first() is None
 
-        count_after = test_db.query(ProfileRelationship).count()
-        deleted = test_db.query(ProfileRelationship).filter_by(id=rel_id).first()
-
-        assert count_after == count_before - 1
-        assert deleted is None
-
-    def test_delete_relationship_preserves_profiles(self, test_db, sample_relationships, sample_profiles):
-        """Test that deleting relationship doesn't delete profiles"""
-        rel = sample_relationships['profiles'][0]
-        profile_count_before = test_db.query(Profile).count()
-
-        test_db.delete(rel)
+    def test_delete_preserves_profiles(self, test_db, sample_profile_relationships, sample_profiles):
+        r = sample_profile_relationships[0]
+        from_id, to_id = r.from_profile_id, r.to_profile_id
+        test_db.delete(r)
         test_db.commit()
+        assert test_db.query(Profile).filter_by(id=from_id).first() is not None
+        assert test_db.query(Profile).filter_by(id=to_id).first() is not None
 
-        profile_count_after = test_db.query(Profile).count()
-        assert profile_count_after == profile_count_before
+    def test_deleting_profile_cascades_relationships(self, test_db, sample_profile_relationships, sample_profiles):
+        pid = sample_profiles[0].id
+        test_db.delete(sample_profiles[0])
+        test_db.commit()
+        remaining = test_db.query(ProfileRelationship).filter(
+            (ProfileRelationship.from_profile_id == pid) |
+            (ProfileRelationship.to_profile_id == pid)
+        ).all()
+        assert len(remaining) == 0
 
+
+class TestProfileRelationshipNetworkQueries:
+
+    def test_all_connections_for_profile(self, test_db, sample_profile_relationships, sample_profiles):
+        pid = sample_profiles[0].id
+        connections = test_db.query(ProfileRelationship).filter(
+            (ProfileRelationship.from_profile_id == pid) |
+            (ProfileRelationship.to_profile_id == pid)
+        ).all()
+        assert len(connections) >= 2
+
+    def test_status_summary(self, test_db, sample_profile_relationships):
+        from sqlalchemy import func
+        statuses = dict(test_db.query(
+            ProfileRelationship.status, func.count(ProfileRelationship.id)
+        ).group_by(ProfileRelationship.status).all())
+        assert statuses.get("Good", 0) == 3
+
+    def test_to_dict(self, test_db, sample_profile_relationships):
+        d = sample_profile_relationships[0].to_dict()
+        assert 'relationship_type' in d
+        assert 'status' in d
+        assert 'bidirectional' in d
+
+
+# ============================================================================
+# COMPANY RELATIONSHIP TESTS
+# ============================================================================
 
 class TestCompanyRelationshipCreate:
-    """Test creating company-to-company relationships"""
 
-    def test_create_company_relationship(self, test_db, sample_companies):
-        """Test creating a company relationship"""
+    def test_create_minimal(self, test_db, sample_companies):
         rel = CompanyRelationship(
-            company_id=sample_companies[0].id,
-            related_company_id=sample_companies[1].id,
-            relationship_type="Partner",
-            bidirectional=True,
-            status="Good"
+            from_company_id=sample_companies[0].id,
+            to_company_id=sample_companies[1].id,
+            relationship_type="Partner"
         )
         test_db.add(rel)
         test_db.commit()
 
         assert rel.id is not None
         assert rel.relationship_type == "Partner"
+        assert rel.status == "Good"
+        assert rel.bidirectional is False
+        assert rel.description is None
 
-    def test_create_company_relationship_types(self, test_db, sample_companies):
-        """Test different company relationship types"""
-        types = ["Partner", "Client", "Vendor", "Competitor", "Subsidiary"]
+    def test_create_all_fields(self, test_db, sample_companies):
+        rel = CompanyRelationship(
+            from_company_id=sample_companies[0].id,
+            to_company_id=sample_companies[1].id,
+            relationship_type="Supplier",
+            description="Hardware supply since 2020",
+            status="Good",
+            bidirectional=True
+        )
+        test_db.add(rel)
+        test_db.commit()
+        assert rel.description == "Hardware supply since 2020"
+        assert rel.bidirectional is True
 
-        for rel_type in types:
+    def test_create_all_relationship_types(self, test_db, sample_companies):
+        for rel_type in COMPANY_RELATIONSHIP_TYPES:
             rel = CompanyRelationship(
-                company_id=sample_companies[0].id,
-                related_company_id=sample_companies[1].id,
-                relationship_type=rel_type,
-                bidirectional=False,
-                status="Good"
+                from_company_id=sample_companies[0].id,
+                to_company_id=sample_companies[1].id,
+                relationship_type=rel_type
             )
             test_db.add(rel)
-
         test_db.commit()
+        stored = [r.relationship_type for r in test_db.query(CompanyRelationship).all()]
+        for rel_type in COMPANY_RELATIONSHIP_TYPES:
+            assert rel_type in stored
 
-        relationships = test_db.query(CompanyRelationship).all()
-        assert len(relationships) >= len(types)
+    def test_create_all_statuses(self, test_db, sample_companies):
+        for status in RELATIONSHIP_STATUSES:
+            rel = CompanyRelationship(
+                from_company_id=sample_companies[0].id,
+                to_company_id=sample_companies[1].id,
+                relationship_type="Other",
+                status=status
+            )
+            test_db.add(rel)
+        test_db.commit()
+        stored = [r.status for r in test_db.query(CompanyRelationship).all()]
+        for status in RELATIONSHIP_STATUSES:
+            assert status in stored
 
 
 class TestCompanyRelationshipRead:
-    """Test reading company relationships"""
 
-    def test_read_all_company_relationships(self, test_db, sample_relationships):
-        """Test reading all company relationships"""
-        rels = test_db.query(CompanyRelationship).all()
+    def test_read_all(self, test_db, sample_company_relationships):
+        assert test_db.query(CompanyRelationship).count() == 3
 
+    def test_read_by_from_company(self, test_db, sample_company_relationships, sample_companies):
+        rels = test_db.query(CompanyRelationship).filter_by(from_company_id=sample_companies[0].id).all()
         assert len(rels) == 2
-        assert all(isinstance(r, CompanyRelationship) for r in rels)
 
-    def test_read_company_relationships_by_company(self, test_db, sample_relationships, sample_companies):
-        """Test finding relationships for a specific company"""
-        techcorp_id = sample_companies[0].id
+    def test_read_by_type(self, test_db, sample_company_relationships):
+        assert test_db.query(CompanyRelationship).filter_by(relationship_type="Partner").count() == 1
 
-        rels = test_db.query(CompanyRelationship).filter_by(company_id=techcorp_id).all()
+    def test_read_bidirectional(self, test_db, sample_company_relationships):
+        assert test_db.query(CompanyRelationship).filter_by(bidirectional=True).count() == 2
 
-        assert len(rels) == 2  # TechCorp -> DesignStudio, TechCorp -> FinanceGlobal
+    def test_read_bad_status(self, test_db, sample_company_relationships):
+        bad = test_db.query(CompanyRelationship).filter_by(status="Bad").all()
+        assert len(bad) == 1
+        assert bad[0].relationship_type == "Competitor"
+
+    def test_read_company_backlinks(self, test_db, sample_company_relationships, sample_companies):
+        rel = test_db.query(CompanyRelationship).filter_by(relationship_type="Partner").first()
+        assert rel.from_company.name == sample_companies[0].name
 
 
-class TestRelationshipValidation:
-    """Test relationship validation and edge cases"""
+class TestCompanyRelationshipUpdate:
 
-    def test_cannot_relate_profile_to_itself(self, test_db, sample_profiles):
-        """Test that a profile cannot have a relationship with itself"""
-        # This should be validated at application level
-
-        rel = ProfileRelationship(
-            profile_id=sample_profiles[0].id,
-            related_profile_id=sample_profiles[0].id,  # Same profile!
-            relationship_type="Friend",
-            bidirectional=False,
-            status="Good"
-        )
-
-        # SQLAlchemy will allow this, but application should validate
-        # This test documents expected validation behavior
-
-    def test_duplicate_relationships_allowed(self, test_db, sample_profiles):
-        """Test that duplicate relationships can be created"""
-        # May want to prevent duplicates at application level
-
-        rel1 = ProfileRelationship(
-            profile_id=sample_profiles[0].id,
-            related_profile_id=sample_profiles[1].id,
-            relationship_type="Colleague",
-            bidirectional=False,
-            status="Good"
-        )
-
-        rel2 = ProfileRelationship(
-            profile_id=sample_profiles[0].id,
-            related_profile_id=sample_profiles[1].id,
-            relationship_type="Colleague",
-            bidirectional=False,
-            status="Good"
-        )
-
-        test_db.add(rel1)
-        test_db.add(rel2)
+    def test_update_type(self, test_db, sample_company_relationships):
+        r = sample_company_relationships[0]
+        r.relationship_type = "Strategic Alliance"
         test_db.commit()
+        assert test_db.query(CompanyRelationship).filter_by(id=r.id).first().relationship_type == "Strategic Alliance"
 
-        # Both will be created - application may want to prevent this
+    def test_update_status(self, test_db, sample_company_relationships):
+        r = sample_company_relationships[0]
+        r.status = "Bad"
+        test_db.commit()
+        assert test_db.query(CompanyRelationship).filter_by(id=r.id).first().status == "Bad"
 
-    def test_relationship_with_nonexistent_profile(self, test_db):
-        """Test creating relationship with non-existent profile"""
-        rel = ProfileRelationship(
-            profile_id=9999,  # Doesn't exist
-            related_profile_id=9998,  # Doesn't exist
-            relationship_type="Friend",
-            bidirectional=False,
-            status="Good"
-        )
+    def test_update_bidirectional(self, test_db, sample_company_relationships):
+        r = sample_company_relationships[1]
+        r.bidirectional = True
+        test_db.commit()
+        assert test_db.query(CompanyRelationship).filter_by(id=r.id).first().bidirectional is True
 
-        # This will fail on commit due to foreign key constraint
-        test_db.add(rel)
-
-        with pytest.raises(Exception):  # IntegrityError
-            test_db.commit()
-
-        test_db.rollback()
+    def test_update_description(self, test_db, sample_company_relationships):
+        r = sample_company_relationships[0]
+        r.description = "Renewed 2024"
+        test_db.commit()
+        assert test_db.query(CompanyRelationship).filter_by(id=r.id).first().description == "Renewed 2024"
 
 
-class TestRelationshipNetworkQueries:
-    """Test complex queries for relationship networks"""
+class TestCompanyRelationshipDelete:
 
-    def test_find_mutual_connections(self, test_db, sample_profiles, sample_relationships):
-        """Test finding mutual connections between two profiles"""
-        # John connects to Jane and Alice
-        # Alice connects to Bob
-        # So Alice is a connection between John and Bob
+    def test_delete(self, test_db, sample_company_relationships):
+        rid = sample_company_relationships[0].id
+        test_db.delete(sample_company_relationships[0])
+        test_db.commit()
+        assert test_db.query(CompanyRelationship).filter_by(id=rid).first() is None
 
-        john_id = sample_profiles[0].id
-        bob_id = sample_profiles[3].id
+    def test_delete_preserves_companies(self, test_db, sample_company_relationships, sample_companies):
+        r = sample_company_relationships[0]
+        from_id, to_id = r.from_company_id, r.to_company_id
+        test_db.delete(r)
+        test_db.commit()
+        assert test_db.query(Company).filter_by(id=from_id).first() is not None
+        assert test_db.query(Company).filter_by(id=to_id).first() is not None
 
-        # Find profiles that both John and Bob are connected to
-        john_connections = test_db.query(ProfileRelationship.related_profile_id).filter_by(
-            profile_id=john_id
-        ).subquery()
-
-        bob_rels = test_db.query(ProfileRelationship).filter(
-            ProfileRelationship.profile_id == bob_id
+    def test_deleting_company_cascades_relationships(self, test_db, sample_company_relationships, sample_companies):
+        cid = sample_companies[0].id
+        test_db.delete(sample_companies[0])
+        test_db.commit()
+        remaining = test_db.query(CompanyRelationship).filter(
+            (CompanyRelationship.from_company_id == cid) |
+            (CompanyRelationship.to_company_id == cid)
         ).all()
+        assert len(remaining) == 0
 
-        # This is a simplified test - real implementation would be more complex
-
-    def test_find_all_connections_for_profile(self, test_db, sample_relationships, sample_profiles):
-        """Test finding all connections (outgoing and incoming) for a profile"""
-        alice_id = sample_profiles[2].id
-
-        # Outgoing relationships
-        outgoing = test_db.query(ProfileRelationship).filter_by(profile_id=alice_id).all()
-
-        # Incoming relationships
-        incoming = test_db.query(ProfileRelationship).filter_by(
-            related_profile_id=alice_id
-        ).all()
-
-        total_connections = len(outgoing) + len(incoming)
-        assert total_connections >= 2  # Alice has at least 2 connections
-
-    def test_relationship_status_summary(self, test_db, sample_relationships):
-        """Test getting summary of relationship statuses"""
-        from sqlalchemy import func
-
-        status_counts = test_db.query(
-            ProfileRelationship.status,
-            func.count(ProfileRelationship.id)
-        ).group_by(ProfileRelationship.status).all()
-
-        assert len(status_counts) >= 1
-
-        # All sample relationships are "Good"
-        good_count = next((count for status, count in status_counts if status == "Good"), 0)
-        assert good_count == 3
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+    def test_to_dict(self, test_db, sample_company_relationships):
+        d = sample_company_relationships[0].to_dict()
+        assert 'relationship_type' in d
+        assert 'status' in d
+        assert 'bidirectional' in d

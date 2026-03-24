@@ -129,9 +129,9 @@ class Goal(Base):
 
     def is_overdue(self) -> bool:
         """Check if goal is overdue"""
-        return (self.status not in ['completed', 'cancelled'] and
-                self.target_date and
-                self.target_date < datetime.utcnow())
+        if not self.target_date or self.status in ['completed', 'cancelled']:
+            return False
+        return self.target_date < datetime.utcnow()
 
     def get_summary(self) -> dict:
         """Get a summary of the goal's status"""
