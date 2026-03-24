@@ -6,7 +6,8 @@ Usage:
     python run_api.py
 
 Environment variables:
-    ANTHROPIC_API_KEY     Required — your Anthropic API key
+    OLLAMA_BASE_URL       Ollama endpoint (default: http://localhost:11434)
+    OLLAMA_MODEL          Model to use (default: qwen2.5-coder:14b)
     LEADSAUCE_API_KEY     Recommended — shared secret for n8n → API auth
                           (leave empty to disable auth, dev mode only)
     FLASK_HOST            Host to bind (default: 0.0.0.0)
@@ -31,12 +32,6 @@ import sys
 
 # Ensure the package is importable when run from the project root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Validate required env vars before doing anything else
-if not os.environ.get('ANTHROPIC_API_KEY'):
-    print("ERROR: ANTHROPIC_API_KEY environment variable is not set.")
-    print("       Export it before starting: export ANTHROPIC_API_KEY=sk-ant-...")
-    sys.exit(1)
 
 if not os.environ.get('LEADSAUCE_API_KEY'):
     print("WARNING: LEADSAUCE_API_KEY is not set — API auth is DISABLED (dev mode).")

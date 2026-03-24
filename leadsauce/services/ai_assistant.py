@@ -1,12 +1,12 @@
 """
-AIAssistant — Claude-powered personal strategic coach for Miro.
-Manages conversation history, context injection, and Claude API calls.
+AIAssistant — Ollama-powered personal strategic coach for Miro.
+Manages conversation history, context injection, and Ollama API calls.
 """
 
 import os
 import logging
 from typing import Optional
-import anthropic
+import requests
 
 from leadsauce.utils.db import DatabaseSession
 from leadsauce.models.conversation import Conversation
@@ -119,13 +119,8 @@ class AIAssistantService:
     """
 
     def __init__(self):
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise EnvironmentError(
-                "ANTHROPIC_API_KEY environment variable is not set. "
-                "Set it before starting the assistant."
-            )
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.ollama_url = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
+        self.model = os.environ.get('OLLAMA_MODEL', 'qwen2.5-coder:14b')
         self.context_builder = ContextBuilder()
 
     def chat(
@@ -169,9 +164,9 @@ class AIAssistantService:
         # 5. Build messages list for the API
         messages = history + [{"role": "user", "content": user_content}]
 
-        # 6. Call Claude — system prompt is base + active user rules
+        # 6. Call Ollama — system prompt is base + active user rules
         system = SYSTEM_PROMPT + rules_section
-        response_text = self._call_claude(messages, system)
+        response_text = self._call_ollama(messages, system)
 
         # 7. Persist both turns (store raw message, not the context-injected version)
         self._store_message(session_id, "user", message, trigger_type)
@@ -262,34 +257,29 @@ class AIAssistantService:
             logger.exception("Failed to load rules — continuing without them")
             return ""
 
-    def _call_claude(self, messages: list, system: str) -> str:
-        """Call Claude API with streaming and return the complete response text."""
+    def _call_ollama(self, messages: list, system: str) -> str:
+        """Call Ollama API and return the response text."""
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}] + messages,
+            "stream": False,
+        }
         try:
-            with self.client.messages.stream(
-                model="claude-opus-4-6",
-                max_tokens=1024,
-                thinking={"type": "adaptive"},
-                system=system,
-                messages=messages,
-            ) as stream:
-                final = stream.get_final_message()
-
-            # Extract text from response content blocks
-            text_blocks = [
-                block.text
-                for block in final.content
-                if block.type == "text"
-            ]
-            return "\n".join(text_blocks).strip()
-
-        except anthropic.AuthenticationError:
-            logger.error("Invalid Anthropic API key")
+            resp = requests.post(
+                f"{self.ollama_url}/api/chat",
+                json=payload,
+                timeout=280,
+            )
+            resp.raise_for_status()
+            return resp.json()["message"]["content"].strip()
+        except requests.exceptions.ConnectionError:
+            logger.error("Cannot reach Ollama at %s", self.ollama_url)
             raise
-        except anthropic.RateLimitError:
-            logger.warning("Anthropic rate limit hit")
+        except requests.exceptions.HTTPError as e:
+            logger.error("Ollama HTTP error: %s", e)
             raise
-        except anthropic.APIStatusError as e:
-            logger.error("Anthropic API error %s: %s", e.status_code, e.message)
+        except Exception as e:
+            logger.error("Ollama call failed: %s", e)
             raise
 
     def _store_message(

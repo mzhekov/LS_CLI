@@ -151,25 +151,25 @@ class ContextBuilder:
             session.query(Reminder)
             .filter(
                 Reminder.completed == False,
-                Reminder.due_date != None,
-                Reminder.due_date >= now,
-                Reminder.due_date <= horizon,
+                Reminder.reminder_date != None,
+                Reminder.reminder_date >= now,
+                Reminder.reminder_date <= horizon,
             )
-            .order_by(Reminder.due_date.asc())
+            .order_by(Reminder.reminder_date.asc())
             .limit(self.MAX_REMINDERS)
             .all()
         )
 
         result = []
         for r in reminders:
-            delta = r.due_date - now
+            delta = r.reminder_date - now
             if delta.days == 0:
                 due_label = "due today"
             elif delta.days == 1:
                 due_label = "due tomorrow"
             else:
                 due_label = f"in {delta.days} days"
-            result.append({'title': r.title, 'due_label': due_label, 'due_date': r.due_date.isoformat()})
+            result.append({'title': r.title, 'due_label': due_label, 'due_date': r.reminder_date.isoformat()})
 
         return result
 
