@@ -26,16 +26,19 @@ services:
       - "5055:5055"       # exposes to host — used by n8n on option A, or for curl testing
 
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:14b}
       - LEADSAUCE_API_KEY=${LEADSAUCE_API_KEY}
       # Flask config (optional overrides)
       - FLASK_HOST=0.0.0.0
       - FLASK_PORT=5055
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     volumes:
       # Bind-mount ~/.leadsauce from the host so the container shares
       # the exact same SQLite database that the leadsauce CLI uses.
-      # Replace /home/miro with your actual home directory.
       - /home/miro/.leadsauce:/root/.leadsauce
 
     # OPTION B — uncomment these two blocks and set N8N_NETWORK in .env

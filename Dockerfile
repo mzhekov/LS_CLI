@@ -34,11 +34,11 @@ RUN mkdir -p /root/.leadsauce/logs
 EXPOSE 5055
 
 # 2 sync workers is plenty for a personal assistant API.
-# --timeout 120  gives Claude time to respond (streaming keeps the connection alive).
+# --timeout 300  gives Ollama time to load the model and generate a response.
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:5055", \
      "--workers", "2", \
-     "--timeout", "120", \
+     "--timeout", "300", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "wsgi:app"]
