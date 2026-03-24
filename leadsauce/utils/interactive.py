@@ -926,7 +926,7 @@ def show_dashboard_view():
         console.print()
 
         # Get action - single key press
-        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-9/0 for navigation, [cyan]Ctrl+K[/cyan] Claude, [cyan]Ctrl+R[/cyan] Results):[/]")
+        console.print("[dim]Press a key (t/c/e/d/v/r for tasks, 1-6 for navigation, [cyan]Ctrl+K[/cyan] Claude, [cyan]Ctrl+R[/cyan] Results):[/]")
         action = get_single_key()
 
         # Handle global shortcuts (Ctrl+K, Ctrl+R)
@@ -943,7 +943,7 @@ def show_dashboard_view():
             session.close()
             return None
 
-        # Check if user wants to navigate to another menu (numbers 1-9, 0 for Browser, or q)
+        # Check if user wants to navigate to another menu (numbers 1-6, or q)
         # Map numbers to view names
         nav_map = {
             '1': 'Dashboard',
@@ -3916,7 +3916,7 @@ def search_interactive():
             results = []
 
         else:
-            console.print("[yellow]Invalid option. Use s/v/e/c or 1-9/0 for navigation.[/]")
+            console.print("[yellow]Invalid option. Use s/v/e/c or 1-6 for navigation.[/]")
             import time
             time.sleep(1)
 
