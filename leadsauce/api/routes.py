@@ -13,6 +13,13 @@ Endpoints:
   GET  /api/sessions        — list conversation sessions
   GET  /api/sessions/<id>   — messages for a session
   GET  /api/status          — health + quick stats
+
+  GET    /api/rules              — list all rules
+  POST   /api/rules              — create a rule
+  GET    /api/rules/<id>         — get a single rule
+  PUT    /api/rules/<id>         — update a rule
+  DELETE /api/rules/<id>         — delete a rule
+  PATCH  /api/rules/<id>/toggle  — enable / disable a rule
 """
 
 import logging
@@ -25,6 +32,7 @@ from leadsauce.utils.db import DatabaseSession
 from leadsauce.models.task import Task
 from leadsauce.models.goal import Goal
 from leadsauce.models.reminder import Reminder
+from leadsauce.models.rule import Rule, VALID_SCOPES
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
@@ -327,3 +335,220 @@ def status():
     except Exception as e:
         logger.exception("Error in /status")
         return jsonify({'status': 'degraded', 'error': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Rules — user-defined instructions that shape AI behavior
+# ---------------------------------------------------------------------------
+
+def _parse_rule_body(data: dict) -> tuple[dict, str | None]:
+    """Validate and extract rule fields from request body. Returns (fields, error)."""
+    title = (data.get('title') or '').strip()
+    content = (data.get('content') or '').strip()
+    scope = (data.get('scope') or 'always').strip()
+    priority = data.get('priority', 50)
+    is_active = data.get('is_active', True)
+
+    if not title:
+        return {}, 'title is required'
+    if not content:
+        return {}, 'content is required'
+
+    # Validate each scope token
+    scope_tokens = [s.strip() for s in scope.split(',') if s.strip()]
+    if not scope_tokens:
+        return {}, 'scope cannot be empty'
+    invalid = [s for s in scope_tokens if s not in VALID_SCOPES]
+    if invalid:
+        return {}, f"invalid scope value(s): {', '.join(invalid)}. Valid: {', '.join(sorted(VALID_SCOPES))}"
+
+    try:
+        priority = int(priority)
+    except (TypeError, ValueError):
+        return {}, 'priority must be an integer'
+
+    return {
+        'title': title,
+        'content': content,
+        'scope': ','.join(scope_tokens),
+        'priority': max(0, min(priority, 1000)),
+        'is_active': bool(is_active),
+    }, None
+
+
+@api_bp.route('/rules', methods=['GET'])
+@require_api_key
+def list_rules():
+    """
+    List all rules, optionally filtered.
+
+    Query params:
+      active_only  bool  — '1' or 'true' to return only active rules (default: false)
+      scope        str   — filter by scope token (e.g. 'morning_checkin')
+    """
+    active_only = request.args.get('active_only', '').lower() in ('1', 'true')
+    scope_filter = request.args.get('scope', '').strip()
+
+    try:
+        with DatabaseSession() as session:
+            q = session.query(Rule)
+            if active_only:
+                q = q.filter(Rule.is_active == True)
+            rules = q.order_by(Rule.priority.asc(), Rule.created_at.asc()).all()
+
+            if scope_filter:
+                rules = [r for r in rules if r.applies_to(scope_filter)]
+
+            return jsonify({'rules': [r.to_dict() for r in rules], 'count': len(rules)})
+    except Exception as e:
+        logger.exception("Error in GET /rules")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/rules', methods=['POST'])
+@require_api_key
+def create_rule():
+    """
+    Create a new rule.
+
+    Request body (JSON):
+      title     str   — short label, e.g. "Language preference"         (required)
+      content   str   — the instruction text injected into system prompt (required)
+      scope     str   — 'always' or trigger type(s) comma-separated
+                        valid values: always, morning_checkin, evening_review,
+                        weekly_summary, re_anchor, progress_report,
+                        setback_report, free_form
+                        (default: 'always')
+      priority  int   — sort order; lower = applied first (default: 50)
+      is_active bool  — whether the rule is active (default: true)
+
+    Response: the created rule object.
+    """
+    data = request.get_json(silent=True) or {}
+    fields, error = _parse_rule_body(data)
+    if error:
+        return jsonify({'error': error}), 400
+
+    try:
+        with DatabaseSession() as session:
+            rule = Rule(**fields)
+            session.add(rule)
+            session.flush()
+            result = rule.to_dict()
+        return jsonify(result), 201
+    except Exception as e:
+        logger.exception("Error in POST /rules")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/rules/<int:rule_id>', methods=['GET'])
+@require_api_key
+def get_rule(rule_id: int):
+    """Get a single rule by ID."""
+    try:
+        with DatabaseSession() as session:
+            rule = session.query(Rule).filter(Rule.id == rule_id).first()
+            if not rule:
+                return jsonify({'error': 'Rule not found'}), 404
+            return jsonify(rule.to_dict())
+    except Exception as e:
+        logger.exception("Error in GET /rules/<id>")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/rules/<int:rule_id>', methods=['PUT'])
+@require_api_key
+def update_rule(rule_id: int):
+    """
+    Replace a rule's fields.
+    Accepts the same body as POST /api/rules.
+    All fields are optional — only provided fields are updated.
+    """
+    data = request.get_json(silent=True) or {}
+
+    try:
+        with DatabaseSession() as session:
+            rule = session.query(Rule).filter(Rule.id == rule_id).first()
+            if not rule:
+                return jsonify({'error': 'Rule not found'}), 404
+
+            # Only update fields that were explicitly provided
+            updatable = {}
+            if 'title' in data:
+                updatable['title'] = (data['title'] or '').strip()
+                if not updatable['title']:
+                    return jsonify({'error': 'title cannot be empty'}), 400
+
+            if 'content' in data:
+                updatable['content'] = (data['content'] or '').strip()
+                if not updatable['content']:
+                    return jsonify({'error': 'content cannot be empty'}), 400
+
+            if 'scope' in data:
+                scope_tokens = [s.strip() for s in str(data['scope']).split(',') if s.strip()]
+                invalid = [s for s in scope_tokens if s not in VALID_SCOPES]
+                if invalid:
+                    return jsonify({'error': f"invalid scope: {', '.join(invalid)}"}), 400
+                updatable['scope'] = ','.join(scope_tokens)
+
+            if 'priority' in data:
+                try:
+                    updatable['priority'] = max(0, min(int(data['priority']), 1000))
+                except (TypeError, ValueError):
+                    return jsonify({'error': 'priority must be an integer'}), 400
+
+            if 'is_active' in data:
+                updatable['is_active'] = bool(data['is_active'])
+
+            for key, value in updatable.items():
+                setattr(rule, key, value)
+
+            result = rule.to_dict()
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("Error in PUT /rules/<id>")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/rules/<int:rule_id>', methods=['DELETE'])
+@require_api_key
+def delete_rule(rule_id: int):
+    """Delete a rule permanently."""
+    try:
+        with DatabaseSession() as session:
+            rule = session.query(Rule).filter(Rule.id == rule_id).first()
+            if not rule:
+                return jsonify({'error': 'Rule not found'}), 404
+            session.delete(rule)
+        return jsonify({'deleted': rule_id})
+    except Exception as e:
+        logger.exception("Error in DELETE /rules/<id>")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/rules/<int:rule_id>/toggle', methods=['PATCH'])
+@require_api_key
+def toggle_rule(rule_id: int):
+    """
+    Enable or disable a rule without deleting it.
+
+    Optional body: {"is_active": true/false}
+    If omitted, flips the current state.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        with DatabaseSession() as session:
+            rule = session.query(Rule).filter(Rule.id == rule_id).first()
+            if not rule:
+                return jsonify({'error': 'Rule not found'}), 404
+
+            if 'is_active' in data:
+                rule.is_active = bool(data['is_active'])
+            else:
+                rule.is_active = not rule.is_active
+
+            result = rule.to_dict()
+        return jsonify(result)
+    except Exception as e:
+        logger.exception("Error in PATCH /rules/<id>/toggle")
+        return jsonify({'error': str(e)}), 500

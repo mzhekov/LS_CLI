@@ -106,7 +106,7 @@ def init_database(database_url: Optional[str] = None):
     from leadsauce.models import (
         profile, company, interaction,
         reminder, tag, team, document, activity, task, relationship, goal,
-        conversation
+        conversation, rule
     )
 
     # Create all tables

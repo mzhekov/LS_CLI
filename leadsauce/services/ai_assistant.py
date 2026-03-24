@@ -10,6 +10,7 @@ import anthropic
 
 from leadsauce.utils.db import DatabaseSession
 from leadsauce.models.conversation import Conversation
+from leadsauce.models.rule import Rule
 from leadsauce.services.context_builder import ContextBuilder
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,10 @@ class AIAssistantService:
         # 1. Build the context block from live DB data
         context_block = self.context_builder.build_context_block(external_context)
 
-        # 2. Construct the user content with context prefix
+        # 2. Load active rules for this trigger type
+        rules_section = self._load_rules_section(trigger_type)
+
+        # 3. Construct the user content with context prefix
         trigger_prefix = TRIGGER_PREFIXES.get(trigger_type)
         parts = []
         if context_block:
@@ -159,16 +163,17 @@ class AIAssistantService:
         parts.append(message)
         user_content = "\n\n".join(parts)
 
-        # 3. Load conversation history from DB
+        # 4. Load conversation history from DB
         history = self._load_history(session_id)
 
-        # 4. Build messages list for the API
+        # 5. Build messages list for the API
         messages = history + [{"role": "user", "content": user_content}]
 
-        # 5. Call Claude with streaming (prevents HTTP timeouts on long responses)
-        response_text = self._call_claude(messages)
+        # 6. Call Claude — system prompt is base + active user rules
+        system = SYSTEM_PROMPT + rules_section
+        response_text = self._call_claude(messages, system)
 
-        # 6. Persist both turns (store raw message, not the context-injected version)
+        # 7. Persist both turns (store raw message, not the context-injected version)
         self._store_message(session_id, "user", message, trigger_type)
         self._store_message(session_id, "assistant", response_text, trigger_type)
 
@@ -229,14 +234,42 @@ class AIAssistantService:
                 for m in reversed(msgs)
             ]
 
-    def _call_claude(self, messages: list) -> str:
+    def _load_rules_section(self, trigger_type: str) -> str:
+        """
+        Load active rules that apply to this trigger type and return them
+        as a formatted section to append to the system prompt.
+        Returns an empty string if no rules are active.
+        """
+        try:
+            with DatabaseSession() as session:
+                rules = (
+                    session.query(Rule)
+                    .filter(Rule.is_active == True)
+                    .order_by(Rule.priority.asc(), Rule.created_at.asc())
+                    .all()
+                )
+                applicable = [r for r in rules if r.applies_to(trigger_type)]
+
+            if not applicable:
+                return ""
+
+            lines = ["\n\n## User Rules", "Follow these rules in addition to your core instructions:"]
+            for i, rule in enumerate(applicable, 1):
+                lines.append(f"{i}. {rule.content.strip()}")
+            return "\n".join(lines)
+
+        except Exception:
+            logger.exception("Failed to load rules — continuing without them")
+            return ""
+
+    def _call_claude(self, messages: list, system: str) -> str:
         """Call Claude API with streaming and return the complete response text."""
         try:
             with self.client.messages.stream(
                 model="claude-opus-4-6",
                 max_tokens=1024,
                 thinking={"type": "adaptive"},
-                system=SYSTEM_PROMPT,
+                system=system,
                 messages=messages,
             ) as stream:
                 final = stream.get_final_message()
