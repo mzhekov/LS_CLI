@@ -1,0 +1,62 @@
+# LeadSauce AI Assistant — Docker Compose
+#
+# This adds the AI API service to burkana alongside your existing stack.
+#
+# OPTION A — standalone (no existing compose):
+#   docker compose up -d
+#   n8n calls http://<burkana-ip>:5055/api/chat
+#
+# OPTION B — attach to your existing n8n network:
+#   1. Find your n8n network name:
+#        docker network ls
+#   2. Set N8N_NETWORK in .env (e.g. N8N_NETWORK=n8n_default)
+#   3. Uncomment the "networks:" sections below
+#   4. n8n then calls http://leadsauce-ai:5055/api/chat  (by service name)
+
+services:
+  leadsauce-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: leadsauce-ai:latest
+    container_name: leadsauce-ai
+    restart: unless-stopped
+
+    ports:
+      - "5055:5055"       # exposes to host — used by n8n on option A, or for curl testing
+
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - LEADSAUCE_API_KEY=${LEADSAUCE_API_KEY}
+      # Flask config (optional overrides)
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5055
+
+    volumes:
+      # Bind-mount ~/.leadsauce from the host so the container shares
+      # the exact same SQLite database that the leadsauce CLI uses.
+      # Replace /home/miro with your actual home directory.
+      - /home/miro/.leadsauce:/root/.leadsauce
+
+    # OPTION B — uncomment these two blocks and set N8N_NETWORK in .env
+    # networks:
+    #   - n8n_net
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5055/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# OPTION B — uncomment to join an existing external Docker network
+# networks:
+#   n8n_net:
+#     external: true
+#     name: ${N8N_NETWORK:-n8n_default}
